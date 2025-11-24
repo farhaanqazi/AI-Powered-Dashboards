@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dataset Profile</title>
+</head>
+<body>
+    <h1>Dataset Profile</h1>
+
+    <table border="1" cellpadding="5" cellspacing="0">
+        <tr>
+            <th>Column Name</th>
+            <th>Data Type</th>
+            <th>Missing Values</th>
+            <th>Unique Values</th>
+            <th>Role</th>
+            <th>Min</th>
+            <th>Max</th>
+            <th>Mean</th>
+
+        </tr>
+
+        {% for item in profile %}
+        <tr>
+            <td>{{ item.column }}</td>
+            <td>{{ item.dtype }}</td>
+            <td>{{ item.missing }}</td>
+            <td>{{ item.unique }}</td>
+             <td>{{ item.role }}</td>
+              <td>
+        {% if item.min is not none %}
+            {{ item.min }}
+        {% else %}
+            -
+        {% endif %}
+    </td>
+    <td>
+        {% if item.max is not none %}
+            {{ item.max }}
+        {% else %}
+            -
+        {% endif %}
+    </td>
+    <td>
+        {% if item.mean is not none %}
+            {{ item.mean }}
+        {% else %}
+            -
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}
+    </table>
+
+</body>
+</html>
