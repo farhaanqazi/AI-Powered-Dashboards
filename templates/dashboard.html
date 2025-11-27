@@ -6,6 +6,24 @@
 <body>
     <h1>Dataset Profile</h1>
 
+    <!-- SECTION 1: Dataset Summary -->
+    <h2>Dataset Summary</h2>
+    <ul>
+        <li><strong>Total Rows:</strong> {{ dataset_profile.n_rows }}</li>
+        <li><strong>Total Columns:</strong> {{ dataset_profile.n_cols }}</li>
+    </ul>
+
+    <!-- SECTION 2: KPIs -->
+    <h2>KPIs</h2>
+    <ul>
+        {% for kpi in kpis %}
+            <li><strong>{{ kpi.label }}:</strong> {{ kpi.value }}</li>
+        {% endfor %}
+    </ul>
+
+    <!-- SECTION 3: Column Profiling -->
+    <h2>Column Profiling</h2>
+
     <table border="1" cellpadding="5" cellspacing="0">
         <tr>
             <th>Column Name</th>
@@ -16,39 +34,54 @@
             <th>Min</th>
             <th>Max</th>
             <th>Mean</th>
-
+            <th>Top Categories</th>
         </tr>
 
-        {% for item in profile %}
+        {% for col in dataset_profile.columns %}
         <tr>
-            <td>{{ item.column }}</td>
-            <td>{{ item.dtype }}</td>
-            <td>{{ item.missing }}</td>
-            <td>{{ item.unique }}</td>
-             <td>{{ item.role }}</td>
-              <td>
-        {% if item.min is not none %}
-            {{ item.min }}
-        {% else %}
-            -
-        {% endif %}
-    </td>
-    <td>
-        {% if item.max is not none %}
-            {{ item.max }}
-        {% else %}
-            -
-        {% endif %}
-    </td>
-    <td>
-        {% if item.mean is not none %}
-            {{ item.mean }}
-        {% else %}
-            -
-        {% endif %}
-    </td>
-</tr>
-{% endfor %}
+            <td>{{ col.name }}</td>
+            <td>{{ col.dtype }}</td>
+            <td>{{ col.missing_count }}</td>
+            <td>{{ col.unique_count }}</td>
+            <td>{{ col.role }}</td>
+
+            <td>
+                {% if col.stats and col.stats.min is not none %}
+                    {{ col.stats.min }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+
+            <td>
+                {% if col.stats and col.stats.max is not none %}
+                    {{ col.stats.max }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+
+            <td>
+                {% if col.stats and col.stats.mean is not none %}
+                    {{ col.stats.mean }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+
+            <!-- Top Categories cell -->
+            <td>
+                {% if col.top_categories and col.top_categories|length > 0 %}
+                    {% for cat in col.top_categories %}
+                        {{ cat.value }} ({{ cat.count }})
+                        {% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
     </table>
 
 </body>

@@ -1,6 +1,8 @@
 from flask import Flask, render_template, request
 from src.data.parser import load_csv
-from src.data.analyser import basic_profile
+from src.data.analyser import basic_profile, build_dataset_profile
+from src.ml.kpi_generator import generate_basic_kpis
+
 
 app = Flask(__name__)
 
@@ -25,14 +27,22 @@ def upload():
     print("Preview of uploaded data:")
     print(df.head())
     
+    dataset_profile = build_dataset_profile(df, max_cols=df.shape[1])
+    print("\nDatasetProfile:", dataset_profile)
+    
     # Basic profile
     profile = basic_profile(df)
     print("\nBasic profile:")
     for col_info in profile:
         print(col_info)
 
+    kpis = generate_basic_kpis(df, dataset_profile)
+
     # Show the profile in an HTML table
-    return render_template("dashboard.html", profile=profile)
+    return render_template("dashboard.html", 
+                            profile=profile, 
+                            dataset_profile=dataset_profile,
+                            kpis=kpis)
 
 if __name__ == "__main__":
     app.run(debug=True)
