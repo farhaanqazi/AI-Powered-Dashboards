@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request
-from src.data.parser import load_csv
-from src.data.analyser import basic_profile, build_dataset_profile
-from src.ml.kpi_generator import generate_basic_kpis
+from src.core.pipeline import build_dashboard_from_file  # use central pipeline
 
+DEBUG = False   # Set to True if you want detailed terminal logging
 
 app = Flask(__name__)
 
@@ -17,32 +16,36 @@ def upload():
     if not uploaded_file:
         return "No file uploaded", 400
 
-    # Load the CSV into a pandas DataFrame
-    df = load_csv(uploaded_file)
+    # Use the central pipeline to build everything
+    state = build_dashboard_from_file(uploaded_file)
 
-    if df is None:
+    if state is None:
         return "Failed to read CSV file", 400
 
-    # For now, just print the first 5 rows to the terminal
-    print("Preview of uploaded data:")
-    print(df.head())
-    
-    dataset_profile = build_dataset_profile(df, max_cols=df.shape[1])
-    print("\nDatasetProfile:", dataset_profile)
-    
-    # Basic profile
-    profile = basic_profile(df)
-    print("\nBasic profile:")
-    for col_info in profile:
-        print(col_info)
+    df = state["df"]
+    dataset_profile = state["dataset_profile"]
+    profile = state["profile"]
+    kpis = state["kpis"]
 
-    kpis = generate_basic_kpis(df, dataset_profile)
+    # Optional debug logging
+    if DEBUG:
+        print("\n=== Data Preview ===")
+        print(df.head())
 
-    # Show the profile in an HTML table
-    return render_template("dashboard.html", 
-                            profile=profile, 
-                            dataset_profile=dataset_profile,
-                            kpis=kpis)
+        print("\n=== Dataset Summary ===")
+        print(f"Rows: {dataset_profile['n_rows']}, Columns: {dataset_profile['n_cols']}")
+
+        print("\n=== First 3 Column Profiles ===")
+        for col in dataset_profile["columns"][:3]:
+            print(col)
+
+    # Render dashboard
+    return render_template(
+        "dashboard.html",
+        profile=profile,
+        dataset_profile=dataset_profile,
+        kpis=kpis
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)

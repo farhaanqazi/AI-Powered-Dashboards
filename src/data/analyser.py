@@ -43,31 +43,75 @@ def basic_profile(df, max_cols=10):
         })
 
     return profile
-
 def _infer_role(series: pd.Series) -> str:
     """
-    Simple role detection matching our project’s idea of roles.
+    Determine role:
+    - numeric
+    - datetime
+    - categorical
+    - text
     """
+    # 1) Numeric (with special handling for year-like integers)
     if is_numeric_dtype(series):
+        s_nonnull = series.dropna()
+        if not s_nonnull.empty:
+            try:
+                col_min = float(s_nonnull.min())
+                col_max = float(s_nonnull.max())
+            except Exception:
+                col_min = None
+                col_max = None
+
+            name_lower = (series.name or "").lower()
+
+            # Heuristic: treat as datetime if it looks like a year column
+            if (
+                col_min is not None and col_max is not None
+                and 1900 <= col_min <= 2100
+                and 1900 <= col_max <= 2100
+                and any(keyword in name_lower for keyword in ["year", "yr"])
+            ):
+                return "datetime"
+
+        # Otherwise, just numeric
         return "numeric"
+
+    # 2) Native datetime dtype
     if is_datetime64_any_dtype(series):
         return "datetime"
-   
 
-# 3) Try to detect datetime even if stored as object (e.g. "InvoiceDate")
+    # 3) Try to detect datetime even if stored as object (e.g. "InvoiceDate")
     if series.dtype == "object":
-        # Take a small sample of non-null values
         sample = series.dropna().astype(str).head(50)
-
         if not sample.empty:
-            parsed = pd.to_datetime(sample, errors="coerce", dayfirst=False, infer_datetime_format=True)
-            # If a good proportion of the sample parses as dates, treat as datetime
+            parsed = pd.to_datetime(
+                sample,
+                errors="coerce",
+                dayfirst=False,
+                infer_datetime_format=True,
+            )
             non_null_ratio = parsed.notna().mean()
             if non_null_ratio > 0.7:
                 return "datetime"
 
-    # 4) Fallback: treat everything else as categorical for now
+    # ---- Distinguish categorical vs text ----
+
+    n_rows = len(series)
+    n_unique = series.nunique(dropna=True)
+    unique_ratio = n_unique / n_rows if n_rows > 0 else 0
+
+    if series.notna().any():
+        avg_len = series.dropna().astype(str).str.len().mean()
+    else:
+        avg_len = 0
+
+    # Long / high-cardinality strings → text
+    if avg_len > 30 or unique_ratio > 0.5:
+        return "text"
+
+    # Otherwise categorical
     return "categorical"
+
 
 
 def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50):
