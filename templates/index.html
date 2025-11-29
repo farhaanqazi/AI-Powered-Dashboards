@@ -6,9 +6,33 @@
 <body>
     <h1>Welcome to Your ML Dashboard Generator</h1>
     <p>Upload a CSV file to start building a dashboard.</p>
-     <form action="/upload" method="post" enctype="multipart/form-data">
+
+    <!-- Existing CSV upload form -->
+    <form action="/upload" method="post" enctype="multipart/form-data">
         <input type="file" name="dataset" accept=".csv" />
         <button type="submit">Upload</button>
+    </form>
+
+    <hr />
+
+    <!-- New: load from external source (URL or Kaggle slug) -->
+    <h2>Or load a dataset from URL or Kaggle</h2>
+    <p>
+        Paste either:
+        <ul>
+            <li>A direct CSV URL (e.g. a GitHub raw CSV link)</li>
+            <li>A Kaggle dataset slug (e.g. <code>umitka/global-youth-unemployment-dataset</code>)</li>
+        </ul>
+    </p>
+
+    <form action="/load_external" method="post">
+        <input
+            type="text"
+            name="external_source"
+            placeholder="CSV URL or Kaggle slug"
+            style="width: 400px;"
+        />
+        <button type="submit">Load Dataset</button>
     </form>
 </body>
 </html>

@@ -2,28 +2,97 @@
 <html>
 <head>
     <title>Dataset Profile</title>
+    <!-- Load Plotly once from CDN for all charts -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
     <h1>Dataset Profile</h1>
 
-    <!-- SECTION 1: Dataset Summary -->
+    <!-- Dataset Summary -->
     <h2>Dataset Summary</h2>
     <ul>
         <li><strong>Total Rows:</strong> {{ dataset_profile.n_rows }}</li>
         <li><strong>Total Columns:</strong> {{ dataset_profile.n_cols }}</li>
+        {% if dataset_profile.role_counts %}
+            <li><strong>Numeric Columns:</strong> {{ dataset_profile.role_counts.numeric }}</li>
+            <li><strong>Datetime Columns:</strong> {{ dataset_profile.role_counts.datetime }}</li>
+            <li><strong>Categorical Columns:</strong> {{ dataset_profile.role_counts.categorical }}</li>
+            <li><strong>Text Columns:</strong> {{ dataset_profile.role_counts.text }}</li>
+        {% endif %}
     </ul>
 
-    <!-- SECTION 2: KPIs -->
+    <!-- KPIs (clickable pills) -->
     <h2>KPIs</h2>
     <ul>
-        {% for kpi in kpis %}
-            <li><strong>{{ kpi.label }}:</strong> {{ kpi.value }}</li>
-        {% endfor %}
+        {% if kpis and kpis|length > 0 %}
+            {% for kpi in kpis %}
+                {% set chart_obj = category_charts.get(kpi.label) %}
+                <li
+                    class="kpi-item"
+                    data-kpi-column="{{ kpi.label }}"
+                    data-has-chart="{{ '1' if chart_obj else '0' }}"
+                    style="
+                        display:inline-block;
+                        margin:4px;
+                        padding:4px 8px;
+                        border:1px solid #ccc;
+                        border-radius:4px;
+                        {% if chart_obj %}
+                            cursor:pointer;
+                            background-color:#eef;
+                        {% else %}
+                            cursor:default;
+                            opacity:0.5;
+                        {% endif %}
+                    "
+                    title="{% if chart_obj %}Click to view a chart for this column{% else %}No chart available yet for this KPI{% endif %}"
+                >
+                    <strong>{{ kpi.label }}</strong>: {{ kpi.value }}
+                </li>
+            {% endfor %}
+        {% else %}
+            <li>No KPIs generated yet.</li>
+        {% endif %}
     </ul>
 
-    <!-- SECTION 3: Column Profiling -->
-    <h2>Column Profiling</h2>
+    <!-- Primary Chart Area -->
+    {% if primary_chart %}
+        <h2>Primary Chart</h2>
+        <div id="primary-chart" style="width:100%; max-width:900px; height:400px;"></div>
 
+        <h3>Data behind this chart</h3>
+        <table border="1" cellpadding="5" cellspacing="0">
+            <tr>
+                <th>Category</th>
+                <th>Count</th>
+            </tr>
+            <tbody id="chart-data-body">
+                <!-- Filled by JS based on primary_chart -->
+            </tbody>
+        </table>
+    {% endif %}
+
+    <!-- Suggested Charts (textual list) -->
+    <h2>Suggested Charts (beta)</h2>
+    <ul>
+        {% if charts and charts|length > 0 %}
+            {% for chart in charts %}
+                <li>
+                    <strong>{{ chart.title }}</strong>
+                    — js type: {{ chart.chart_type }}
+                    {% if chart.intent %} (intent: {{ chart.intent }}){% endif %},
+                    x: {{ chart.x_field }}
+                    {% if chart.y_field %}, y: {{ chart.y_field }}{% endif %}
+                    {% if chart.agg_func %}, agg: {{ chart.agg_func }}{% endif %}
+                </li>
+            {% endfor %}
+        {% else %}
+            <li>No chart suggestions available for this dataset yet.</li>
+        {% endif %}
+    </ul>
+
+    <!-- Column Profiling Table -->
+    <h2>Column Profiling</h2>
     <table border="1" cellpadding="5" cellspacing="0">
         <tr>
             <th>Column Name</th>
@@ -52,7 +121,6 @@
                     -
                 {% endif %}
             </td>
-
             <td>
                 {% if col.stats and col.stats.max is not none %}
                     {{ col.stats.max }}
@@ -60,7 +128,6 @@
                     -
                 {% endif %}
             </td>
-
             <td>
                 {% if col.stats and col.stats.mean is not none %}
                     {{ col.stats.mean }}
@@ -69,7 +136,6 @@
                 {% endif %}
             </td>
 
-            <!-- Top Categories cell -->
             <td>
                 {% if col.top_categories and col.top_categories|length > 0 %}
                     {% for cat in col.top_categories %}
@@ -84,5 +150,147 @@
         {% endfor %}
     </table>
 
+    <script>
+        // Precomputed category charts from the backend (data only, no HTML)
+        const CATEGORY_CHARTS = {{ category_charts | tojson | safe }};
+        const PRIMARY_CHART = {% if primary_chart %}{{ primary_chart | tojson | safe }}{% else %}null{% endif %};
+
+        function renderChartFromSpec(spec) {
+            if (!spec || !spec.data || spec.data.length === 0) return;
+
+            const categories = spec.data.map(row => row.category);
+            const values = spec.data.map(row => row.count);
+
+            const maxVal = Math.max(...values, 0);
+            const avgLabelLen = categories.reduce((sum, c) => sum + c.length, 0) / categories.length;
+            const manyCategories = categories.length > 6;
+            const longLabels = avgLabelLen > 12;
+            const useHorizontal = manyCategories || longLabels;
+
+            const title = spec.title || `Count of ${spec.column || ""}`;
+
+            let trace, layout;
+
+            if (useHorizontal) {
+                trace = {
+                    type: "bar",
+                    x: values,
+                    y: categories,
+                    orientation: "h",
+                    text: values,
+                    textposition: "outside"
+                };
+
+                layout = {
+                    title: title,
+                    xaxis: {
+                        title: "Count",
+                        tickformat: ",d",
+                        exponentformat: "none",
+                        rangemode: "tozero",
+                        range: [0, maxVal * 1.15 || 1],
+                        automargin: true
+                    },
+                    yaxis: {
+                        title: spec.column || "",
+                        categoryorder: "array",
+                        categoryarray: categories,
+                        automargin: true
+                    },
+                    margin: {
+                        t: 80,
+                        b: 60,
+                        l: 120,
+                        r: 40
+                    }
+                };
+            } else {
+                trace = {
+                    type: "bar",
+                    x: categories,
+                    y: values,
+                    text: values,
+                    textposition: "outside"
+                };
+
+                layout = {
+                    title: title,
+                    xaxis: {
+                        title: spec.column || "",
+                        categoryorder: "array",
+                        categoryarray: categories,
+                        automargin: true
+                    },
+                    yaxis: {
+                        title: "Count",
+                        tickformat: ",d",
+                        exponentformat: "none",
+                        rangemode: "tozero",
+                        range: [0, maxVal * 1.15 || 1],
+                        automargin: true
+                    },
+                    margin: {
+                        t: 80,
+                        b: 100,
+                        l: 80,
+                        r: 40
+                    }
+                };
+            }
+
+            Plotly.react("primary-chart", [trace], layout);
+
+            // Update "data behind this chart" table
+            const tbody = document.getElementById("chart-data-body");
+            if (tbody) {
+                tbody.innerHTML = "";
+                spec.data.forEach(row => {
+                    const tr = document.createElement("tr");
+                    const tdCat = document.createElement("td");
+                    const tdCount = document.createElement("td");
+                    tdCat.textContent = row.category;
+                    tdCount.textContent = row.count;
+                    tr.appendChild(tdCat);
+                    tr.appendChild(tdCount);
+                    tbody.appendChild(tr);
+                });
+            }
+        }
+
+        function loadChartForColumn(columnName) {
+            const chart = CATEGORY_CHARTS[columnName];
+            if (!chart) {
+                // No precomputed chart for this column – silently ignore
+                return;
+            }
+            renderChartFromSpec(chart);
+        }
+        document.addEventListener("DOMContentLoaded", function () {
+            // Initial render
+            if (PRIMARY_CHART) {
+                renderChartFromSpec(PRIMARY_CHART);
+            }
+
+            // KPI click wiring
+            const kpiItems = document.querySelectorAll(".kpi-item");
+            kpiItems.forEach(item => {
+                item.addEventListener("click", function () {
+                    const hasChart = this.getAttribute("data-has-chart") === "1";
+                    if (!hasChart) {
+                        // No chart wired to this KPI; do nothing visibly.
+                        // Optional: console.log for debugging
+                        // console.log("No chart for KPI:", this.getAttribute("data-kpi-column"));
+                        return;
+                    }
+
+                    const col = this.getAttribute("data-kpi-column");
+                    if (col) {
+                        loadChartForColumn(col);
+                    }
+                });
+            });
+        });
+
+    </script>
 </body>
 </html>

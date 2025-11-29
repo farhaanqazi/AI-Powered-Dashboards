@@ -1,7 +1,7 @@
+# src/data/analyser.py
+
 import pandas as pd
 from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype
-
-
 
 
 def basic_profile(df, max_cols=10):
@@ -43,6 +43,8 @@ def basic_profile(df, max_cols=10):
         })
 
     return profile
+
+
 def _infer_role(series: pd.Series) -> str:
     """
     Determine role:
@@ -51,8 +53,9 @@ def _infer_role(series: pd.Series) -> str:
     - categorical
     - text
     """
-    # 1) Numeric (with special handling for year-like integers)
+    # 1) Numeric
     if is_numeric_dtype(series):
+        # year-like numeric → datetime
         s_nonnull = series.dropna()
         if not s_nonnull.empty:
             try:
@@ -63,8 +66,6 @@ def _infer_role(series: pd.Series) -> str:
                 col_max = None
 
             name_lower = (series.name or "").lower()
-
-            # Heuristic: treat as datetime if it looks like a year column
             if (
                 col_min is not None and col_max is not None
                 and 1900 <= col_min <= 2100
@@ -73,29 +74,21 @@ def _infer_role(series: pd.Series) -> str:
             ):
                 return "datetime"
 
-        # Otherwise, just numeric
         return "numeric"
 
     # 2) Native datetime dtype
     if is_datetime64_any_dtype(series):
         return "datetime"
 
-    # 3) Try to detect datetime even if stored as object (e.g. "InvoiceDate")
+    # 3) Try to detect datetime even if stored as object
     if series.dtype == "object":
         sample = series.dropna().astype(str).head(50)
         if not sample.empty:
-            parsed = pd.to_datetime(
-                sample,
-                errors="coerce",
-                dayfirst=False,
-                infer_datetime_format=True,
-            )
-            non_null_ratio = parsed.notna().mean()
-            if non_null_ratio > 0.7:
+            parsed = pd.to_datetime(sample, errors="coerce", infer_datetime_format=True)
+            if parsed.notna().mean() > 0.7:
                 return "datetime"
 
     # ---- Distinguish categorical vs text ----
-
     n_rows = len(series)
     n_unique = series.nunique(dropna=True)
     unique_ratio = n_unique / n_rows if n_rows > 0 else 0
@@ -113,13 +106,21 @@ def _infer_role(series: pd.Series) -> str:
     return "categorical"
 
 
-
 def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50):
-    
+    """
+    Build a richer dataset profile used across the app.
+    Returns a dict shaped like DatasetProfile.
+    """
     n_rows = int(len(df))
     n_cols = int(df.shape[1])
 
     columns = []
+    role_counts = {
+        "numeric": 0,
+        "datetime": 0,
+        "categorical": 0,
+        "text": 0,
+    }
 
     for i, col in enumerate(df.columns):
         if i >= max_cols:
@@ -128,11 +129,15 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50):
         s = df[col]
         role = _infer_role(s)
 
+        # Track role counts
+        if role in role_counts:
+            role_counts[role] += 1
+
         # Default: no stats
         stats = None
         top_categories = []
 
-        # Only compute stats for numeric columns with at least one non-NaN
+        # Numeric stats
         if role == "numeric" and s.notna().any():
             stats = {
                 "min": float(s.min()),
@@ -141,13 +146,28 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50):
                 "std": float(s.std()),
                 "sum": float(s.sum()),
             }
+
+        # Datetime stats (min/max as strings)
+        if role == "datetime" and s.notna().any():
+            s_dt = pd.to_datetime(s, errors="coerce")
+            s_dt = s_dt.dropna()
+            if not s_dt.empty:
+                stats = {
+                    "min": s_dt.min().isoformat(),
+                    "max": s_dt.max().isoformat(),
+                    "mean": None,
+                    "std": None,
+                    "sum": None,
+                }
+
+        # Categorical stats: top 3 categories
         if role == "categorical":
             value_counts = s.value_counts(dropna=True).head(3)
             top_categories = [
                 {"value": str(idx), "count": int(cnt)}
                 for idx, cnt in value_counts.items()
             ]
-            
+
         columns.append({
             "name": col,
             "dtype": str(s.dtype),
@@ -161,5 +181,6 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50):
     return {
         "n_rows": n_rows,
         "n_cols": n_cols,
+        "role_counts": role_counts,
         "columns": columns,
     }
