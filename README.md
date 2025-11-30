@@ -1,123 +1,91 @@
 
-# ML Dashboard Project
+# ML Dashboard Generator
 
-A Flask-based web application that generates a **data profiling dashboard** from an uploaded CSV file.  
-The system analyzes the dataset, computes statistics, identifies column roles, generates KPIs, and displays everything in a clean HTML dashboard.
-
----
+A Flask-based web application that generates **data profiling dashboards** from uploaded CSV files. The system intelligently analyzes datasets, computes statistics, identifies column roles, generates intelligent KPIs, and displays everything in an interactive HTML dashboard.
 
 ## 🚀 Features
 
-### ✓ CSV Upload
-Upload CSV files directly through the web interface.
+### Data Profiling
+- **Dataset Summary**: Total rows, total columns, type distribution
+- **Column Profiling**: For each column - name, data type, missing values, unique values, role detection (numeric, datetime, categorical, text)
+- **Numeric Statistics**: min, max, mean, std, sum
+- **Top Categories**: Top 3 categories for categorical columns
 
-### ✓ Dataset Summary
-- Total rows  
-- Total columns  
+### Intelligent KPIs
+- Automatically identifies important columns based on data behavior
+- Highlights numeric columns by variability metrics
+- Emphasizes categorical columns by richness and distribution
+- Identifies datetime columns for time-based analysis
 
-### ✓ Column Profiling
-For each column:
-- Name  
-- Data type  
-- Missing values  
-- Unique values  
-- Role detection:
-  - numeric  
-  - datetime  
-  - categorical  
-  - text  
-- Numeric statistics (min, max, mean, std, sum)  
-- Top 3 categories (categorical columns only)  
+### Interactive Dashboard
+- Multiple chart types: category count, histograms, time series, category summaries
+- Grid layout for efficient chart organization
+- Clickable KPIs that highlight corresponding charts
+- Column profiling table with detailed statistics
 
-### ✓ KPIs
-Automatically computed:
-- Numeric columns count  
-- Datetime columns count  
-- Categorical columns count  
-- Text columns count  
-
-### ✓ Dashboard Rendering
-The app displays:
-1. Dataset Summary  
-2. KPIs  
-3. Column Profiling Table  
+### Data Sources
+- CSV file upload
+- Direct CSV URLs
+- Kaggle dataset integration
 
 ---
 
-## 📐 Project Design Overview
+## 🏗️ Architecture
 
 ```
-
-```
-            +----------------------+
-            |      User Uploads    |
-            |        CSV File      |
-            +----------+-----------+
-                       |
-                       v
-            +----------------------+
-            |  Flask Web Server    |
-            |     (/upload)        |
-            +----------+-----------+
-                       |
-                       v
-            +----------------------+
-            |  Core Pipeline       |
-            | build_dashboard...   |
-            +----------+-----------+
-                       |
-    -------------------------------------------------
-    |                       |                       |
-    v                       v                       v
+User uploads CSV → Flask Server → Core Pipeline → Multiple Data Processors → Dashboard State → Interactive Dashboard
 ```
 
-+---------------+      +----------------+      +------------------+
-|  CSV Parser   |      | Dataset Profiler |    |   KPI Generator  |
-| load_csv()    |      | build_dataset... |    | generate_basic...|
-+---------------+      +----------------+      +------------------+
-|
-v
-+----------------------+
-|   Dashboard State    |
-| (profiles + KPIs)    |
-+----------+-----------+
-|
-v
-+----------------------+
-|   dashboard.html     |
-+----------------------+
-
-```
+### Core Components:
+- `app.py` - Flask web server and routing
+- `src/core/pipeline.py` - Main orchestration and dashboard building
+- `src/data/` - Data parsing and analysis (parser.py, analyser.py)
+- `src/ml/` - KPI generation and chart suggestions (kpi_generator.py, chart_selector.py)
+- `src/viz/` - Chart rendering (plotly_renderer.py)
+- `templates/` - Frontend templates (index.html, dashboard.html)
 
 ---
 
 ## 📁 Project Structure
 
 ```
-
-ML-dashboard-project/
-├── app.py
-├── requirements.txt
-├── README.md
-├── PROJECT_OVERVIEW.md
-├── templates/
-│   ├── index.html
-│   └── dashboard.html
-├── src/
+ml-dashboard/
+├── app.py                    # Flask application entry point
+├── requirements.txt          # Project dependencies
+├── README.md                 # Project documentation
+├── src/                      # Source code modules
 │   ├── core/
-│   │   └── pipeline.py
+│   │   └── pipeline.py       # Pipeline orchestration
 │   ├── data/
-│   │   ├── parser.py
-│   │   └── analyser.py
+│   │   ├── parser.py         # CSV parsing and loading
+│   │   └── analyser.py       # Dataset analysis
 │   ├── ml/
-│   │   └── kpi_generator.py
-│   └── visualization/
-│       └── layout.py
-└── static/
-├── css/
-└── js/
+│   │   ├── kpi_generator.py  # KPI computation
+│   │   └── chart_selector.py # Chart suggestions
+│   └── viz/
+│       └── plotly_renderer.py # Chart rendering
+├── templates/
+│   ├── index.html            # Upload interface
+│   └── dashboard.html        # Dashboard display
+└── static/                   # Static assets (CSS, JS)
+```
 
-````
+---
+
+## 🛠️ Usage
+
+### 1. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Run the Application
+```bash
+python app.py
+```
+
+### 3. Access the Dashboard
+Open `http://127.0.0.1:5000` in your browser
 
 ---
 
@@ -128,12 +96,17 @@ ML-dashboard-project/
 {
     "n_rows": int,
     "n_cols": int,
+    "role_counts": {
+        "numeric": int,
+        "datetime": int,
+        "categorical": int,
+        "text": int
+    },
     "columns": [ColumnProfile]
 }
-````
+```
 
 ### ColumnProfile
-
 ```python
 {
     "name": str,
@@ -155,74 +128,54 @@ ML-dashboard-project/
 ```
 
 ### KPI
-
 ```python
 {
     "label": str,
     "value": float | str,
-    "format": "integer" | None
+    "type": str  # Added for enhanced KPIs
 }
 ```
 
 ---
 
-## 🔧 Pipeline Flow
+## 🔮 Future Scalability
 
-```
-Upload CSV →
-load_csv() →
-build_dataset_profile() →
-generate_basic_kpis() →
-Render dashboard.html
-```
+### Planned Enhancements
+- **Advanced Statistical KPIs**: Correlation coefficients, outlier detection, distribution metrics (skewness, kurtosis)
+- **Semantic Column Understanding**: NLP-based column name analysis and pattern identification
+- **Domain-specific KPI Generators**: Industry-specific metrics for financial, healthcare, e-commerce, etc.
+- **Contextual KPIs**: Based on relationships between columns and temporal patterns
+- **Statistical Significance Testing**: Tests for significant differences or correlations
+- **Automated Insight Generation**: Pattern recognition for generating data insights
+- **Advanced Chart Recommendations**: More intelligent chart suggestions based on data characteristics
+- **Predictive KPIs**: Forecasting capabilities for time series data
+- **Multi-dimensional KPIs**: Based on combinations of categorical columns
+- **Anomaly Detection & Alerts**: Automatic flagging of unusual patterns
 
-Pipeline entry point:
-
-```
-src/core/pipeline.py
-```
-
----
-
-## 🛠 Running the App
-
-### 1. Install dependencies
-
-```
-pip install -r requirements.txt
-```
-
-### 2. Start Flask
-
-```
-python app.py
-```
-
-### 3. Open browser
-
-```
-http://127.0.0.1:5000
-```
-
-Upload your CSV → dashboard appears.
+### Development Roadmap
+1. **Enhanced Analytics**: Implement statistical and domain-specific KPIs
+2. **Intelligent Visualizations**: Smarter chart type selection and layout
+3. **Model Integration**: Potential for simple ML model integration for predictions
+4. **Advanced UI**: Interactive filtering, drill-down capabilities, export options
 
 ---
 
-## 🔮 Next Steps
+## 📋 Development Log
 
-* Improve text vs categorical detection
-* Add chart suggestions
-* Render charts using Chart.js
-* Build auto-layout engine
-* Add ML-based KPI and chart recommendation
-* Prepare deployment-ready backend/API
+*This section provides a chronological record of development activities. For the most recent updates, see the development log file.*
 
----
-
-## 📜 License
-
-MIT
-
-```
+### Recent Milestones
+- Initial dashboard framework with CSV upload and basic profiling
+- Column role detection (numeric, datetime, categorical, text)
+- Basic KPI generation system
+- Chart suggestion engine
+- Interactive dashboard with multiple chart types
+- Grid layout for organized chart display
+- Clickable KPI functionality
+- External data source support (URLs and Kaggle)
 
 ---
+
+## 📄 License
+
+MIT License

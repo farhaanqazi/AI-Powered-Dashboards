@@ -4,7 +4,7 @@ from src.data.parser import load_csv
 from src.data.analyser import basic_profile, build_dataset_profile
 from src.ml.kpi_generator import generate_basic_kpis
 from src.ml.chart_selector import suggest_charts
-from src.viz.plotly_renderer import build_category_count_charts
+from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
 
 
 def build_dashboard_from_df(df, max_cols=None):
@@ -35,6 +35,9 @@ def build_dashboard_from_df(df, max_cols=None):
     category_charts = build_category_count_charts(df, charts)
     primary_chart = next(iter(category_charts.values()), None)
 
+    # 7) Build all charts from chart specs (for rendering multiple chart types)
+    all_charts = build_charts_from_specs(df, charts)
+
     return {
         "df": df,
         "dataset_profile": dataset_profile,
@@ -43,6 +46,7 @@ def build_dashboard_from_df(df, max_cols=None):
         "charts": charts,
         "primary_chart": primary_chart,
         "category_charts": category_charts,
+        "all_charts": all_charts,
     }
 
 

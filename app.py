@@ -9,6 +9,8 @@ app = Flask(__name__)
 
 @app.route("/")
 def index():
+    # This is the main index route that renders the upload page
+    # The index.html template contains both file upload and external data loading options
     return render_template("index.html")
 
 
@@ -32,6 +34,7 @@ def upload():
     charts = state["charts"]
     primary_chart = state["primary_chart"]
     category_charts = state["category_charts"]
+    all_charts = state["all_charts"]
 
     if DEBUG:
         print("\n=== Data Preview ===")
@@ -45,6 +48,7 @@ def upload():
         charts=charts,
         primary_chart=primary_chart,
         category_charts=category_charts,
+        all_charts=all_charts,
     )
 
 
@@ -82,6 +86,7 @@ def load_external():
     charts = state["charts"]
     primary_chart = state["primary_chart"]
     category_charts = state["category_charts"]
+    all_charts = state["all_charts"]
 
     if DEBUG:
         print("\n=== External Data Preview ===")
@@ -95,6 +100,7 @@ def load_external():
         charts=charts,
         primary_chart=primary_chart,
         category_charts=category_charts,
+        all_charts=all_charts,
     )
 
 
