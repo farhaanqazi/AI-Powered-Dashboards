@@ -82,6 +82,8 @@ def _infer_role(series: pd.Series, uniqueness_cutoff: float = UNIQUENESS_CUTOFF,
     - datetime
     - categorical
     - text
+    - boolean (new)
+    - ordered categorical (new)
 
     Args:
         series: Input pandas Series
@@ -96,6 +98,14 @@ def _infer_role(series: pd.Series, uniqueness_cutoff: float = UNIQUENESS_CUTOFF,
     if series.empty:
         logger.warning(f"Empty series, defaulting to 'text' role")
         return "text", "empty_series"
+
+    # Check for boolean type
+    unique_vals = series.dropna().unique()
+    if len(unique_vals) <= 2:
+        unique_str = [str(val).lower() for val in unique_vals if pd.notna(val)]
+        boolean_indicators = {'true', 'false', 'yes', 'no', '1', '0', 't', 'f', 'y', 'n', '1.0', '0.0'}
+        if set(unique_str).issubset(boolean_indicators) or series.dtype == bool:
+            return "boolean", f"boolean_values_{len(unique_vals)}"
 
     # 1) Numeric
     if is_numeric_dtype(series):
@@ -134,7 +144,41 @@ def _infer_role(series: pd.Series, uniqueness_cutoff: float = UNIQUENESS_CUTOFF,
             except Exception as e:
                 logger.warning(f"Error parsing datetime for series {series.name}: {e}")
 
-    # ---- Distinguish categorical vs text ----
+    # 4) Check for ordered categorical/ordinal based on common patterns
+    if series.dtype == "object":
+        str_values = series.dropna().astype(str).str.lower().unique()
+        ordinal_patterns = [
+            {'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth'},
+            {'low', 'medium', 'high'},
+            {'small', 'medium', 'large'},
+            {'beginner', 'intermediate', 'advanced'},
+            {'junior', 'senior', 'expert'},
+            {'one', 'two', 'three', 'four', 'five'},
+            {'none', 'low', 'medium', 'high', 'maximum'},
+            {'min', 'mid', 'max'},
+            {'start', 'middle', 'end'},
+            {'level 1', 'level 2', 'level 3', 'level 4', 'level 5'},
+            {'grade 1', 'grade 2', 'grade 3', 'grade 4', 'grade 5'},
+            {'tier 1', 'tier 2', 'tier 3'},
+            {'class 1', 'class 2', 'class 3'}
+        ]
+
+        for pattern in ordinal_patterns:
+            if set(str_values).issubset(pattern):
+                return "ordinal", f"ordinal_pattern_{len(str_values)}"
+
+    # 5) Try to detect geo/text language hints
+    # Check if series name suggests geographic content
+    name_lower = (series.name or "").lower()
+    geo_indicators = ["country", "city", "state", "province", "address", "location", "region", "zone", "lat", "lon", "long", "coord"]
+    if any(indicator in name_lower for indicator in geo_indicators):
+        return "geographic", "name_geographic_hint"
+
+    text_indicators = ["desc", "comment", "note", "text", "message", "review", "comment"]
+    if any(indicator in name_lower for indicator in text_indicators):
+        return "text", "name_text_hint"
+
+    # 6) Distinguish categorical vs text based on characteristics
     n_rows = len(series)
     n_unique = series.nunique(dropna=True)
     unique_ratio = n_unique / n_rows if n_rows > 0 else 0
@@ -217,12 +261,19 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50,
             s_numeric = pd.to_numeric(s, errors='coerce')
             s_clean = s_numeric.dropna()
             if len(s_clean) > 0:
+                # Compute quantiles in a single operation for efficiency
+                quantiles = s_clean.quantile([0.25, 0.5, 0.75]).values
                 stats = {
                     "min": float(s_clean.min()),
                     "max": float(s_clean.max()),
                     "mean": float(s_clean.mean()),
                     "std": float(s_clean.std()) if len(s_clean) > 1 else 0.0,
                     "sum": float(s_clean.sum()),
+                    "variance": float(s_clean.var()) if len(s_clean) > 1 else 0.0,
+                    "q25": float(quantiles[0]),
+                    "q50": float(quantiles[1]),  # median
+                    "q75": float(quantiles[2]),
+                    "skew": float(s_clean.skew()) if len(s_clean) > 2 else 0.0,
                 }
             else:
                 logger.warning(f"Column {col} has no valid numeric values after cleaning")
@@ -233,6 +284,7 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50,
                 s_dt = pd.to_datetime(s, errors="coerce")
                 s_dt = s_dt.dropna()
                 if not s_dt.empty:
+                    # Compute datetime quantiles if possible
                     stats = {
                         "min": s_dt.min().isoformat(),
                         "max": s_dt.max().isoformat(),
@@ -242,6 +294,41 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50,
                     }
             except Exception as e:
                 logger.warning(f"Error computing datetime stats for {col}: {e}")
+
+        # Boolean stats
+        elif role == "boolean":
+            try:
+                value_counts = s.value_counts(dropna=True)
+                top_categories = [
+                    {"value": str(idx), "count": int(cnt)}
+                    for idx, cnt in value_counts.items()
+                ]
+            except Exception as e:
+                logger.warning(f"Error computing boolean stats for {col}: {e}")
+
+        # Ordinal stats
+        elif role == "ordinal":
+            try:
+                value_counts = s.value_counts(dropna=True)
+                top_categories = [
+                    {"value": str(idx), "count": int(cnt), "order": list(value_counts.index).index(idx)}
+                    for idx, cnt in value_counts.items()
+                ]
+                # Sort by the defined order
+                top_categories.sort(key=lambda x: x["order"])
+            except Exception as e:
+                logger.warning(f"Error computing ordinal stats for {col}: {e}")
+
+        # Geographic stats
+        elif role == "geographic":
+            try:
+                value_counts = s.value_counts(dropna=True).head(5)  # More top values for geographic data
+                top_categories = [
+                    {"value": str(idx), "count": int(cnt)}
+                    for idx, cnt in value_counts.items()
+                ]
+            except Exception as e:
+                logger.warning(f"Error computing geographic stats for {col}: {e}")
 
         # Categorical stats: top 3 categories
         elif role == "categorical":

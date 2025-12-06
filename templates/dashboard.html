@@ -307,114 +307,130 @@
         }
         // This function renders category count charts specifically
         function renderCategoryCountChart(spec, containerId) {
-            if (!spec || !spec.data) {
-                console.warn("Invalid category chart data for container:", containerId, spec);
-                return;
+            try {
+                if (!spec || !spec.data) {
+                    console.warn("Invalid category chart data for container:", containerId, spec);
+                    renderEmptyChart(containerId, "Invalid chart data");
+                    return;
+                }
+
+                if (!Array.isArray(spec.data) || spec.data.length === 0) {
+                    console.warn("Empty or invalid category chart data for container:", containerId, spec);
+                    renderEmptyChart(containerId, "No chart data available");
+                    return;
+                }
+
+                // Validate that required fields exist in the data
+                const validData = spec.data.filter(item =>
+                    item.category !== undefined && item.count !== undefined
+                );
+
+                if (validData.length === 0) {
+                    console.warn("No valid data points for category chart in container:", containerId, spec);
+                    renderEmptyChart(containerId, "No valid data points");
+                    return;
+                }
+
+                const categories = validData.map(row => String(row.category));
+                const values = validData.map(row => Number(row.count));
+
+                // Validate that we have numeric values to plot
+                const numericValues = values.filter(val => !isNaN(val) && isFinite(val));
+                if (numericValues.length === 0) {
+                    console.warn("No valid numeric values to plot for category chart in container:", containerId, spec);
+                    renderEmptyChart(containerId, "No valid values to plot");
+                    return;
+                }
+
+                const maxVal = Math.max(...numericValues, 0);
+                const avgLabelLen = categories.reduce((sum, c) => sum + c.length, 0) / categories.length;
+                const manyCategories = categories.length > 6;
+                const longLabels = avgLabelLen > 12;
+                const useHorizontal = manyCategories || longLabels;
+
+                const title = spec.title || `Count of ${spec.column || ""}`;
+
+                let trace, layout;
+
+                if (useHorizontal) {
+                    trace = {
+                        type: "bar",
+                        x: numericValues,
+                        y: categories,
+                        orientation: "h",
+                        text: numericValues,
+                        textposition: "outside"
+                    };
+
+                    layout = {
+                        xaxis: {
+                            title: "Count",
+                            tickformat: ",d",
+                            exponentformat: "none",
+                            rangemode: "tozero",
+                            range: [0, maxVal * 1.15 || 1],
+                            automargin: true
+                        },
+                        yaxis: {
+                            title: spec.column || "",
+                            categoryorder: "array",
+                            categoryarray: categories,
+                            automargin: true
+                        },
+                        margin: {
+                            t: 20,  // Very small top margin since we're removing title
+                            b: 60,  // Keep bottom margin for labels
+                            l: 80,  // Reduced left margin
+                            r: 20   // Reduced right margin
+                        },
+                        height: 300  // Explicit height to match container
+                    };
+                } else {
+                    trace = {
+                        type: "bar",
+                        x: categories,
+                        y: numericValues,
+                        text: numericValues,
+                        textposition: "outside"
+                    };
+
+                    layout = {
+                        xaxis: {
+                            title: spec.column || "",
+                            categoryorder: "array",
+                            categoryarray: categories,
+                            automargin: true
+                        },
+                        yaxis: {
+                            title: "Count",
+                            tickformat: ",d",
+                            exponentformat: "none",
+                            rangemode: "tozero",
+                            range: [0, maxVal * 1.15 || 1],
+                            automargin: true
+                        },
+                        margin: {
+                            t: 20,  // Very small top margin since we're removing title
+                            b: 80,  // Keep bottom margin for labels
+                            l: 60,  // Reduced left margin
+                            r: 20   // Reduced right margin
+                        },
+                        height: 300  // Explicit height to match container
+                    };
+                }
+
+                // Check if the container element exists before rendering
+                const containerElement = document.getElementById(containerId);
+                if (!containerElement) {
+                    console.warn(`Chart container element with ID '${containerId}' not found.`);
+                    return;
+                }
+
+                Plotly.react(containerId, [trace], layout);
+            } catch (error) {
+                console.error(`Error rendering category count chart in container '${containerId}':`, error);
+                renderEmptyChart(containerId, "Chart rendering error");
             }
-
-            if (!Array.isArray(spec.data) || spec.data.length === 0) {
-                console.warn("Empty or invalid category chart data for container:", containerId, spec);
-                return;
-            }
-
-            // Validate that required fields exist in the data
-            const validData = spec.data.filter(item =>
-                item.category !== undefined && item.count !== undefined
-            );
-
-            if (validData.length === 0) {
-                console.warn("No valid data points for category chart in container:", containerId, spec);
-                return;
-            }
-
-            const categories = validData.map(row => String(row.category));
-            const values = validData.map(row => Number(row.count));
-
-            // Validate that we have numeric values to plot
-            const numericValues = values.filter(val => !isNaN(val) && isFinite(val));
-            if (numericValues.length === 0) {
-                console.warn("No valid numeric values to plot for category chart in container:", containerId, spec);
-                return;
-            }
-
-            const maxVal = Math.max(...numericValues, 0);
-            const avgLabelLen = categories.reduce((sum, c) => sum + c.length, 0) / categories.length;
-            const manyCategories = categories.length > 6;
-            const longLabels = avgLabelLen > 12;
-            const useHorizontal = manyCategories || longLabels;
-
-            const title = spec.title || `Count of ${spec.column || ""}`;
-
-            let trace, layout;
-
-            if (useHorizontal) {
-                trace = {
-                    type: "bar",
-                    x: numericValues,
-                    y: categories,
-                    orientation: "h",
-                    text: numericValues,
-                    textposition: "outside"
-                };
-
-                layout = {
-                    xaxis: {
-                        title: "Count",
-                        tickformat: ",d",
-                        exponentformat: "none",
-                        rangemode: "tozero",
-                        range: [0, maxVal * 1.15 || 1],
-                        automargin: true
-                    },
-                    yaxis: {
-                        title: spec.column || "",
-                        categoryorder: "array",
-                        categoryarray: categories,
-                        automargin: true
-                    },
-                    margin: {
-                        t: 20,  // Very small top margin since we're removing title
-                        b: 60,  // Keep bottom margin for labels
-                        l: 80,  // Reduced left margin
-                        r: 20   // Reduced right margin
-                    },
-                    height: 300  // Explicit height to match container
-                };
-            } else {
-                trace = {
-                    type: "bar",
-                    x: categories,
-                    y: numericValues,
-                    text: numericValues,
-                    textposition: "outside"
-                };
-
-                layout = {
-                    xaxis: {
-                        title: spec.column || "",
-                        categoryorder: "array",
-                        categoryarray: categories,
-                        automargin: true
-                    },
-                    yaxis: {
-                        title: "Count",
-                        tickformat: ",d",
-                        exponentformat: "none",
-                        rangemode: "tozero",
-                        range: [0, maxVal * 1.15 || 1],
-                        automargin: true
-                    },
-                    margin: {
-                        t: 20,  // Very small top margin since we're removing title
-                        b: 80,  // Keep bottom margin for labels
-                        l: 60,  // Reduced left margin
-                        r: 20   // Reduced right margin
-                    },
-                    height: 300  // Explicit height to match container
-                };
-            }
-
-            Plotly.react(containerId, [trace], layout);
         }
 
         // Validate chart data and ensure it's in the expected format
@@ -499,67 +515,79 @@
 
         // This function renders different chart types based on their structure
         function renderChartByType(chartData, containerId) {
-            if (!validateChartData(chartData)) {
-                console.warn("Invalid chart data for container:", containerId, chartData);
-                // Render an empty chart with error message
-                renderEmptyChart(containerId, "Invalid chart data");
-                return;
-            }
-
-            // Handle the new simple renderer format (has 'type' field)
-            if (chartData.type) {
-                switch(chartData.type) {
-                    case 'bar':
-                        _renderSimpleBarChart(chartData, containerId);
-                        break;
-                    case 'line':
-                        _renderSimpleLineChart(chartData, containerId);
-                        break;
-                    case 'scatter':
-                        _renderSimpleScatterChart(chartData, containerId);
-                        break;
-                    case 'histogram':
-                        _renderSimpleHistogramChart(chartData, containerId);
-                        break;
-                    case 'pie':
-                        _renderSimplePieChart(chartData, containerId);
-                        break;
-                    default:
-                        _renderBarChart(chartData, containerId);
-                        break;
+            try {
+                if (!validateChartData(chartData)) {
+                    console.warn("Invalid chart data for container:", containerId, chartData);
+                    // Render an empty chart with error message
+                    renderEmptyChart(containerId, "Invalid chart data");
+                    return;
                 }
-                return;
-            }
 
-            // Handle original format
-            if (chartData.data.categories && Array.isArray(chartData.data.values)) {
-                // This is a correlation matrix
-                _renderCorrelationChart(chartData, containerId);
-            }
-            else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('values')) {
-                // This is a box plot
-                _renderBoxPlot(chartData, containerId);
-            }
-            else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('x') && chartData.data[0].hasOwnProperty('y')) {
-                // This is a scatter plot
-                _renderScatterPlot(chartData, containerId);
-            }
-            else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].date !== undefined) {
-                // This is a time series chart
-                _renderTimeSeriesChart(chartData, containerId);
-            }
-            else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('category') && (chartData.data[0].hasOwnProperty('value') || chartData.data[0].hasOwnProperty('count'))) {
-                // This could be pie or bar chart
-                if (chartData.intent && chartData.intent === 'category_pie') {
-                    _renderPieChart(chartData, containerId);
-                } else {
+                // Check if the container element exists before rendering
+                const containerElement = document.getElementById(containerId);
+                if (!containerElement) {
+                    console.warn(`Chart container element with ID '${containerId}' not found.`);
+                    return;
+                }
+
+                // Handle the new simple renderer format (has 'type' field)
+                if (chartData.type) {
+                    switch(chartData.type) {
+                        case 'bar':
+                            _renderSimpleBarChart(chartData, containerId);
+                            break;
+                        case 'line':
+                            _renderSimpleLineChart(chartData, containerId);
+                            break;
+                        case 'scatter':
+                            _renderSimpleScatterChart(chartData, containerId);
+                            break;
+                        case 'histogram':
+                            _renderSimpleHistogramChart(chartData, containerId);
+                            break;
+                        case 'pie':
+                            _renderSimplePieChart(chartData, containerId);
+                            break;
+                        default:
+                            _renderBarChart(chartData, containerId);
+                            break;
+                    }
+                    return;
+                }
+
+                // Handle original format
+                if (chartData.data.categories && Array.isArray(chartData.data.values)) {
+                    // This is a correlation matrix
+                    _renderCorrelationChart(chartData, containerId);
+                }
+                else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('values')) {
+                    // This is a box plot
+                    _renderBoxPlot(chartData, containerId);
+                }
+                else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('x') && chartData.data[0].hasOwnProperty('y')) {
+                    // This is a scatter plot
+                    _renderScatterPlot(chartData, containerId);
+                }
+                else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].date !== undefined) {
+                    // This is a time series chart
+                    _renderTimeSeriesChart(chartData, containerId);
+                }
+                else if (Array.isArray(chartData.data) && chartData.data.length > 0 && chartData.data[0].hasOwnProperty('category') && (chartData.data[0].hasOwnProperty('value') || chartData.data[0].hasOwnProperty('count'))) {
+                    // This could be pie or bar chart
+                    if (chartData.intent && chartData.intent === 'category_pie') {
+                        _renderPieChart(chartData, containerId);
+                    } else {
+                        _renderBarChart(chartData, containerId);
+                    }
+                }
+                else {
+                    // Fallback to bar chart if the data format is unexpected
+                    console.warn("Unexpected chart data format for container:", containerId, chartData);
                     _renderBarChart(chartData, containerId);
                 }
-            }
-            else {
-                // Fallback to bar chart if the data format is unexpected
-                console.warn("Unexpected chart data format for container:", containerId, chartData);
-                _renderBarChart(chartData, containerId);
+            } catch (error) {
+                console.error(`Error rendering chart by type in container '${containerId}':`, error);
+                renderEmptyChart(containerId, "Chart rendering error");
             }
         }
 
@@ -1154,40 +1182,83 @@
         }
 
         document.addEventListener("DOMContentLoaded", function () {
-            // Render all category charts
-            Object.keys(CATEGORY_CHARTS).forEach(function(columnName) {
-                const chartData = CATEGORY_CHARTS[columnName];
-                const containerId = "chart-" + columnName.replace(/[\s.]/g, '_');
-                renderCategoryCountChart(chartData, containerId);
-            });
+            try {
+                // Render all category charts
+                if (typeof CATEGORY_CHARTS === 'object' && CATEGORY_CHARTS !== null) {
+                    Object.keys(CATEGORY_CHARTS).forEach(function(columnName) {
+                        try {
+                            const chartData = CATEGORY_CHARTS[columnName];
+                            const containerId = "chart-" + columnName.replace(/[\s.]/g, '_');
+                            const containerElement = document.getElementById(containerId);
 
-            // Render all other chart types from ALL_CHARTS
-            // Render the new format of all_charts which is an array rather than an object
-            if (Array.isArray(ALL_CHARTS)) {
-                ALL_CHARTS.forEach(function(chartData, index) {
-                    const containerId = "chart_" + (index + 1);
-                    renderChartByType(chartData, containerId);
-                });
+                            if (!containerElement) {
+                                console.warn(`Chart container element with ID '${containerId}' not found for category chart.`);
+                                return;
+                            }
+
+                            renderCategoryCountChart(chartData, containerId);
+                        } catch (error) {
+                            console.error(`Error rendering category chart for column '${columnName}':`, error);
+                        }
+                    });
+                } else {
+                    console.warn("CATEGORY_CHARTS is not available or properly initialized.");
+                }
+
+                // Render all other chart types from ALL_CHARTS
+                try {
+                    if (Array.isArray(ALL_CHARTS)) {
+                        ALL_CHARTS.forEach(function(chartData, index) {
+                            try {
+                                const containerId = "chart_" + (index + 1);
+                                const containerElement = document.getElementById(containerId);
+
+                                if (!containerElement) {
+                                    console.warn(`Chart container element with ID '${containerId}' not found for chart ${index}.`);
+                                    return;
+                                }
+
+                                renderChartByType(chartData, containerId);
+                            } catch (error) {
+                                console.error(`Error rendering chart ${index}:`, error);
+                            }
+                        });
+                    } else {
+                        console.warn("ALL_CHARTS is not available or not an array.");
+                    }
+                } catch (error) {
+                    console.error("Error processing ALL_CHARTS:", error);
+                }
+            } catch (error) {
+                console.error("Error in DOMContentLoaded event handler:", error);
             }
 
             // KPI click wiring
-            const kpiItems = document.querySelectorAll(".kpi-item");
-            kpiItems.forEach(item => {
-                item.addEventListener("click", function () {
-                    const hasChart = this.getAttribute("data-has-chart") === "1";
-                    if (!hasChart) {
-                        // No chart wired to this KPI; do nothing visibly.
-                        // Optional: console.log for debugging
-                        // console.log("No chart for KPI:", this.getAttribute("data-kpi-column"));
-                        return;
-                    }
+            try {
+                const kpiItems = document.querySelectorAll(".kpi-item");
+                kpiItems.forEach(item => {
+                    item.addEventListener("click", function () {
+                        try {
+                            const hasChart = this.getAttribute("data-has-chart") === "1";
+                            if (!hasChart) {
+                                // No chart wired to this KPI; do nothing visibly.
+                                // Optional: console.log for debugging
+                                // console.log("No chart for KPI:", this.getAttribute("data-kpi-column"));
+                                return;
+                            }
 
-                    const col = this.getAttribute("data-kpi-column");
-                    if (col) {
-                        loadChartForColumn(col);
-                    }
+                            const col = this.getAttribute("data-kpi-column");
+                            if (col) {
+                                loadChartForColumn(col);
+                            }
+                        } catch (error) {
+                            console.error("Error in KPI click handler:", error);
+                        }
+                    });
                 });
-            });
+            } catch (error) {
+                console.error("Error setting up KPI click handlers:", error);
+            }
         });
 
     </script>
