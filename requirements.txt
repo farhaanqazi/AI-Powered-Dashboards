@@ -2,4 +2,6 @@ flask
 pandas
 plotly
 kagglehub
+scipy
+requests
 

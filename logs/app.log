@@ -1,0 +1,109 @@
+2025-12-06 16:51:02,898 ERROR: Error processing uploaded file [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:91]
+Traceback (most recent call last):
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py", line 46, in upload
+    uploaded_file = request.files.get("dataset")
+                    ^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 497, in files
+    self._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\flask\wrappers.py", line 198, in _load_form_data
+    super()._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 272, in _load_form_data
+    self._get_stream_for_parsing(),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 299, in _get_stream_for_parsing
+    return self.stream
+           ^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 351, in stream
+    return get_input_stream(
+           ^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wsgi.py", line 173, in get_input_stream
+    raise RequestEntityTooLarge()
+werkzeug.exceptions.RequestEntityTooLarge: 413 Request Entity Too Large: The data value transmitted exceeds the capacity limit.
+2025-12-06 16:54:48,159 ERROR: No file uploaded [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:49]
+2025-12-06 16:54:53,619 ERROR: Error processing uploaded file [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:91]
+Traceback (most recent call last):
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py", line 46, in upload
+    uploaded_file = request.files.get("dataset")
+                    ^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 497, in files
+    self._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\flask\wrappers.py", line 198, in _load_form_data
+    super()._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 272, in _load_form_data
+    self._get_stream_for_parsing(),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 299, in _get_stream_for_parsing
+    return self.stream
+           ^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 351, in stream
+    return get_input_stream(
+           ^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wsgi.py", line 173, in get_input_stream
+    raise RequestEntityTooLarge()
+werkzeug.exceptions.RequestEntityTooLarge: 413 Request Entity Too Large: The data value transmitted exceeds the capacity limit.
+2025-12-06 17:04:56,407 ERROR: Error processing uploaded file [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:91]
+Traceback (most recent call last):
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py", line 46, in upload
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 497, in files
+    self._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\flask\wrappers.py", line 198, in _load_form_data
+    super()._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 272, in _load_form_data
+    self._get_stream_for_parsing(),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 299, in _get_stream_for_parsing
+    return self.stream
+           ^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 351, in stream
+    return get_input_stream(
+           ^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wsgi.py", line 173, in get_input_stream
+    raise RequestEntityTooLarge()
+werkzeug.exceptions.RequestEntityTooLarge: 413 Request Entity Too Large: The data value transmitted exceeds the capacity limit.
+2025-12-06 17:04:58,900 ERROR: No file uploaded [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:49]
+2025-12-06 17:05:00,323 ERROR: No file uploaded [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:49]
+2025-12-06 17:58:28,883 ERROR: Error processing uploaded file [in F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py:91]
+Traceback (most recent call last):
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\app.py", line 46, in upload
+    try:
+         
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 497, in files
+    self._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\flask\wrappers.py", line 198, in _load_form_data
+    super()._load_form_data()
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 272, in _load_form_data
+    self._get_stream_for_parsing(),
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 299, in _get_stream_for_parsing
+    return self.stream
+           ^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\utils.py", line 107, in __get__
+    value = self.fget(obj)  # type: ignore
+            ^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wrappers\request.py", line 351, in stream
+    return get_input_stream(
+           ^^^^^^^^^^^^^^^^^
+  File "F:\pinokio\api\ML Dashboard Project\ml-dashboard\venv\Lib\site-packages\werkzeug\wsgi.py", line 173, in get_input_stream
+    raise RequestEntityTooLarge()
+werkzeug.exceptions.RequestEntityTooLarge: 413 Request Entity Too Large: The data value transmitted exceeds the capacity limit.

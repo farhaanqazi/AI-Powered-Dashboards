@@ -1,6 +1,7 @@
 # src/ml/chart_selector.py
 
 import re
+import pandas as pd
 
 
 def _is_id_like_name(name: str) -> bool:
@@ -56,6 +57,44 @@ def _is_metric_like_name(name: str) -> bool:
     return any(t in name_lower for t in tokens)
 
 
+def _is_time_like_name(name: str) -> bool:
+    """
+    Check if the name looks like a time-related field.
+    """
+    name_lower = name.lower()
+    tokens = [
+        "time", "date", "hour", "minute", "second", "day",
+        "week", "month", "year", "season", "period", "interval",
+        "morning", "evening", "night", "afternoon", "duration",
+        "time", "timestamp", "datetime"
+    ]
+    return any(t in name_lower for t in tokens)
+
+
+def _is_percentage_like_name(name: str) -> bool:
+    """
+    Check if the name looks like a percentage-related field.
+    """
+    name_lower = name.lower()
+    tokens = [
+        "percent", "percentage", "pct", "ratio", "proportion",
+        "rate", "fraction", "part", "discount", "tax", "interest"
+    ]
+    return any(t in name_lower for t in tokens)
+
+
+def _is_ranking_like_name(name: str) -> bool:
+    """
+    Check if the name looks like a ranking-related field.
+    """
+    name_lower = name.lower()
+    tokens = [
+        "rank", "level", "rating", "score", "grade", "point",
+        "quality", "satisfaction", "review", "feedback"
+    ]
+    return any(t in name_lower for t in tokens)
+
+
 def _choose_main_numeric(dataset_profile):
     """
     Choose a 'good' numeric column for charts on ANY dataset.
@@ -97,7 +136,15 @@ def _choose_main_numeric(dataset_profile):
         if _is_metric_like_name(name):
             score += 40
 
-        # 5) Generic reward based on unique_ratio
+        # 5) Reward percentage/rate names
+        if _is_percentage_like_name(name):
+            score += 20
+
+        # 6) Reward ranking/score names
+        if _is_ranking_like_name(name):
+            score += 20
+
+        # 7) Generic reward based on unique_ratio
         if 0.05 <= unique_ratio <= 0.8:
             score += 15
         elif 0.8 < unique_ratio <= 0.95:
@@ -118,6 +165,64 @@ def _choose_main_numeric(dataset_profile):
         return None
 
     return best_name
+
+
+def _choose_numeric_candidates(dataset_profile, max_charts: int = 3):
+    """
+    Choose multiple numeric columns for various chart types.
+    """
+    columns = dataset_profile["columns"]
+    n_rows = dataset_profile["n_rows"]
+
+    candidates = []
+    for col in columns:
+        if col["role"] != "numeric":
+            continue
+
+        name = col["name"]
+        unique_count = col["unique_count"]
+        unique_ratio = unique_count / n_rows if n_rows > 0 else 0.0
+
+        score = 0.0
+
+        # Penalise almost-unique columns (likely identifiers)
+        if unique_ratio > 0.95:
+            continue  # Skip high-cardinality numeric columns
+
+        # Penalise ID-like names
+        if _is_id_like_name(name):
+            continue  # Skip ID-like columns
+
+        # Reward metric-like names
+        if _is_metric_like_name(name):
+            score += 40
+
+        # Reward percentage/rate names
+        if _is_percentage_like_name(name):
+            score += 20
+
+        # Reward ranking/score names
+        if _is_ranking_like_name(name):
+            score += 20
+
+        # Generic reward based on unique_ratio
+        if 0.05 <= unique_ratio <= 0.8:
+            score += 15
+        elif 0.8 < unique_ratio <= 0.95:
+            score += 5
+        elif unique_ratio < 0.05:
+            # low variety but might still be a meaningful metric (e.g. ratings 1–5)
+            score += 5
+
+        candidates.append((score, name))
+
+    if not candidates:
+        return []
+
+    candidates.sort(reverse=True, key=lambda x: x[0])
+
+    # Return up to max_charts column names
+    return [name for _, name in candidates[:max_charts]]
 
 
 def _choose_categorical_candidates(dataset_profile, max_charts: int = 3):
@@ -176,27 +281,30 @@ def _choose_main_categorical(dataset_profile):
     return cats[0] if cats else None
 
 
-def _choose_main_datetime(dataset_profile):
+def _choose_datetime_candidates(dataset_profile, max_charts: int = 2):
     """
-    Choose a datetime column if available (first one is usually fine).
+    Choose datetime columns for time series analysis.
     """
+    datetime_cols = []
     for col in dataset_profile["columns"]:
         if col["role"] == "datetime":
-            return col["name"]
-    return None
+            datetime_cols.append(col["name"])
+
+    # Return up to max_charts datetime columns
+    return datetime_cols[:max_charts]
 
 
 def suggest_charts(df, dataset_profile, kpis):
     """
-    Rule-based chart suggestions that work for ANY dataset.
+    Rule-based chart suggestions that work for ANY dataset with diverse chart types.
 
     ChartSpec-like dicts:
 
     {
         "id": str,
         "title": str,
-        "chart_type": str,   # Chart.js type: 'bar', 'line', etc.
-        "intent": str,       # 'histogram', 'category_summary', 'time_series', 'category_count'
+        "chart_type": str,   # Chart.js type: 'bar', 'line', 'scatter', 'pie', etc.
+        "intent": str,       # 'histogram', 'category_summary', 'time_series', 'category_count', 'scatter', 'pie'
         "x_field": str,
         "y_field": str | None,
         "agg_func": str | None
@@ -207,60 +315,111 @@ def suggest_charts(df, dataset_profile, kpis):
     # Choose main fields based on generic heuristics
     main_numeric = _choose_main_numeric(dataset_profile)
     main_categorical = _choose_main_categorical(dataset_profile)
-    main_datetime = _choose_main_datetime(dataset_profile)
-
-    # Also get multiple categorical candidates for pure count charts
-    cat_for_counts = _choose_categorical_candidates(dataset_profile, max_charts=3)
+    datetime_cols = _choose_datetime_candidates(dataset_profile, max_charts=2)
+    numeric_cols = _choose_numeric_candidates(dataset_profile, max_charts=3)
+    categorical_cols = _choose_categorical_candidates(dataset_profile, max_charts=3)
 
     def next_id():
         return f"chart_{len(charts) + 1}"
 
-    # 1) Histogram-style chart for the main numeric column
-    if main_numeric:
+    # 1) Time series charts: numeric values over time
+    for dt_col in datetime_cols:
+        for num_col in numeric_cols[:2]:  # Limit to first 2 numeric columns per datetime
+            charts.append({
+                "id": next_id(),
+                "title": f"{num_col} over time ({dt_col})",
+                "chart_type": "line",
+                "intent": "time_series",
+                "x_field": dt_col,
+                "y_field": num_col,
+                "agg_func": "mean",
+            })
+
+    # 2) Scatter plots: relationship between two numeric variables
+    if len(numeric_cols) >= 2:
         charts.append({
             "id": next_id(),
-            "title": f"Distribution of {main_numeric}",
-            "chart_type": "bar",
+            "title": f"Relationship: {numeric_cols[0]} vs {numeric_cols[1]}",
+            "chart_type": "scatter",
+            "intent": "scatter",
+            "x_field": numeric_cols[1],
+            "y_field": numeric_cols[0],
+            "agg_func": None,
+        })
+
+    # 3) Distribution histogram for numeric columns
+    for num_col in numeric_cols[:2]:  # Limit to first 2 for histograms
+        charts.append({
+            "id": next_id(),
+            "title": f"Distribution of {num_col}",
+            "chart_type": "histogram",
             "intent": "histogram",
-            "x_field": main_numeric,
+            "x_field": num_col,
             "y_field": None,
             "agg_func": None,
         })
 
-    # 2) Categorical summary: main numeric by main categorical (sum)
+    # 4) Categorical summary: numeric by categorical (for different aggregation functions)
     if main_numeric and main_categorical:
-        charts.append({
-            "id": next_id(),
-            "title": f"{main_numeric} by {main_categorical} (sum)",
-            "chart_type": "bar",
-            "intent": "category_summary",
-            "x_field": main_categorical,
-            "y_field": main_numeric,
-            "agg_func": "sum",
-        })
+        for agg_func in ["mean", "sum", "count", "max", "min"]:
+            charts.append({
+                "id": next_id(),
+                "title": f"{main_numeric} by {main_categorical} ({agg_func})",
+                "chart_type": "bar",
+                "intent": "category_summary",
+                "x_field": main_categorical,
+                "y_field": main_numeric,
+                "agg_func": agg_func,
+            })
 
-    # 3) Time series: main numeric over main datetime
-    if main_numeric and main_datetime:
-        charts.append({
-            "id": next_id(),
-            "title": f"{main_numeric} over time ({main_datetime})",
-            "chart_type": "line",
-            "intent": "time_series",
-            "x_field": main_datetime,
-            "y_field": main_numeric,
-            "agg_func": "sum",
-        })
+    # 5) Pie charts for categorical distributions (only for categories with few unique values)
+    for cat_col in categorical_cols:
+        col_info = next((col for col in dataset_profile["columns"] if col["name"] == cat_col), None)
+        if col_info and col_info["unique_count"] <= 10:  # Only for low cardinality
+            charts.append({
+                "id": next_id(),
+                "title": f"Distribution of {cat_col}",
+                "chart_type": "pie",
+                "intent": "category_pie",
+                "x_field": cat_col,
+                "y_field": None,
+                "agg_func": "count",
+            })
 
-    # 4) Pure categorical count charts: category vs count
-    for cat_name in cat_for_counts:
+    # 6) Pure categorical count charts
+    for cat_name in categorical_cols:
         charts.append({
             "id": next_id(),
             "title": f"Count of {cat_name}",
             "chart_type": "bar",
             "intent": "category_count",
             "x_field": cat_name,
-            "y_field": None,       # we'll derive counts on x in the frontend/backend later
+            "y_field": None,
             "agg_func": "count",
+        })
+
+    # 7) Box plots for numeric distributions by category (if we have both)
+    if main_numeric and main_categorical:
+        charts.append({
+            "id": next_id(),
+            "title": f"Distribution of {main_numeric} by {main_categorical}",
+            "chart_type": "box",
+            "intent": "box_plot",
+            "x_field": main_categorical,
+            "y_field": main_numeric,
+            "agg_func": None,
+        })
+
+    # 8) Correlation heatmap if we have multiple numeric columns
+    if len(numeric_cols) >= 2:
+        charts.append({
+            "id": next_id(),
+            "title": "Correlation between numeric variables",
+            "chart_type": "heatmap",
+            "intent": "correlation",
+            "x_field": "variables",
+            "y_field": "variables",
+            "agg_func": "correlation",
         })
 
     return charts
