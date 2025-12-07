@@ -14,11 +14,12 @@
         <div class="flex-1 items-center">
             <a class="btn btn-ghost text-xl">AI Dashboard Generator</a>
             <!-- Display Dataset Name -->
-            {% if dataset_profile and dataset_profile.columns %}
-                <!-- Extract dataset name from the first column's name, replacing underscores and dots with spaces -->
-                {% set original_name = dataset_profile.columns[0].name %}
-                {% set cleaned_name = original_name.split('.')[0].split('/')[-1]|replace('_', ' ')|title %}
-                <div class="badge badge-lg badge-secondary capitalize ml-4">{{ cleaned_name }}</div>
+            {% if original_filename %}
+                <!-- Extract the name from the filename, removing extension and replacing underscores with spaces -->
+                {% set name_parts = original_filename.split('.') %}
+                {% set name_without_ext = name_parts[0] if name_parts|length > 0 else original_filename %}
+                {% set formatted_name = name_without_ext|replace('_', ' ')|replace('-', ' ')|title %}
+                <div class="badge badge-lg badge-info capitalize ml-4">{{ formatted_name }}</div>
             {% endif %}
         </div>
         <div class="flex-none gap-2">
@@ -39,8 +40,8 @@
         <div class="hero bg-base-100 rounded-box shadow-xl mb-6">
             <div class="hero-content text-center">
                 <div class="max-w-2xl">
-                    <h1 class="text-5xl font-bold text-primary mb-4">AI-Powered Dashboard Generator</h1>
-                    <p class="py-2 text-lg italic text-gray-600">AI Engine for Effortless Dashboards | Automated Intelligence for Every Dataset</p>
+                    <h1 class="text-4xl md:text-5xl font-bold text-primary mb-2">AI-Powered Dashboard Generator</h1>
+                    <p class="text-lg italic text-gray-600">AI Engine for Effortless Dashboards | Automated Intelligence for Every Dataset</p>
                 </div>
             </div>
         </div>

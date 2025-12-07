@@ -45,8 +45,11 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         file_stream = io.BytesIO(contents)
         file_stream.seek(0)
 
+        # Extract the original filename
+        original_filename = dataset.filename
+
         # Use the central pipeline to build everything
-        state = build_dashboard_from_file(file_stream)
+        state = build_dashboard_from_file(file_stream, original_filename=original_filename)
 
         if state is None:
             return templates.TemplateResponse("index.html", {
@@ -64,6 +67,8 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         category_charts = state.category_charts
         all_charts = state.all_charts
         eda_summary = state.eda_summary
+        # Pass the original filename to the template
+        state.original_filename = original_filename
 
         return templates.TemplateResponse(
             "dashboard.html",
@@ -77,6 +82,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
                 "category_charts": category_charts,
                 "all_charts": all_charts,
                 "eda_summary": eda_summary,
+                "original_filename": original_filename,
                 "success": True
             }
         )
@@ -91,11 +97,16 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
 async def load_external(request: Request, external_source: str = Form(...)):
     """Load a dataset from external source (URL or Kaggle)"""
     try:
-        # Decide how to load
+        # Extract a name from the external source
         if external_source.startswith("http://") or external_source.startswith("https://"):
+            # For URLs, extract the filename from the URL path
+            import urllib.parse
+            parsed_path = urllib.parse.urlparse(external_source).path
+            original_filename = parsed_path.split('/')[-1] or external_source
             df = load_csv_from_url(external_source)
         else:
             # Treat as Kaggle dataset slug
+            original_filename = external_source.split('/')[-1].replace('-', ' ').title() or "Kaggle Dataset"
             df = load_csv_from_kaggle(external_source)
 
         if df is None:
@@ -123,6 +134,8 @@ async def load_external(request: Request, external_source: str = Form(...)):
         category_charts = state.category_charts
         all_charts = state.all_charts
         eda_summary = state.eda_summary
+        # Set the original filename based on the source
+        state.original_filename = original_filename
 
         return templates.TemplateResponse(
             "dashboard.html",
@@ -136,6 +149,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
                 "category_charts": category_charts,
                 "all_charts": all_charts,
                 "eda_summary": eda_summary,
+                "original_filename": original_filename,
                 "success": True
             }
         )

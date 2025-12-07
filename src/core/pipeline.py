@@ -36,6 +36,7 @@ class DashboardState:
     category_charts: Dict[str, Any]
     all_charts: List[Dict[str, Any]]
     eda_summary: Optional[Dict[str, Any]] = None
+    original_filename: Optional[str] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -153,13 +154,15 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         primary_chart=primary_chart,
         category_charts=category_charts,
         all_charts=all_charts,
-        eda_summary=eda_summary
+        eda_summary=eda_summary,
+        original_filename=None
     )
 
 
 def build_dashboard_from_file(file_storage, max_cols: Optional[int] = None,
                              max_categories: int = 10, max_charts: int = 20,
-                             kpi_thresholds: Optional[Dict[str, float]] = None) -> Optional[DashboardState]:
+                             kpi_thresholds: Optional[Dict[str, float]] = None,
+                             original_filename: Optional[str] = None) -> Optional[DashboardState]:
     """
     Orchestrates the full dashboard build from an uploaded file.
     Keeps the old interface for the upload flow.
@@ -175,6 +178,9 @@ def build_dashboard_from_file(file_storage, max_cols: Optional[int] = None,
                                       max_categories=max_categories,
                                       max_charts=max_charts,
                                       kpi_thresholds=kpi_thresholds)
+
+        if state:
+            state.original_filename = original_filename
 
         total_time = time.time() - start_time
         logger.info(f"Dashboard built from file in {total_time:.2f}s")
