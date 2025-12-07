@@ -46,14 +46,14 @@
     <h1>Welcome to Your ML Dashboard Generator</h1>
     <p>Upload a CSV file to start building a dashboard.</p>
 
-    <!-- Display flash messages -->
-    {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-            {% for category, message in messages %}
-                <div class="{{ category }}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
-    {% endwith %}
+    <!-- Display potential error messages passed from backend -->
+    {% if error_message %}
+        <div class="error">{{ error_message }}</div>
+    {% endif %}
+
+    {% if success_message %}
+        <div class="success">{{ success_message }}</div>
+    {% endif %}
 
     <!-- Existing CSV upload form -->
     <form action="/upload" method="post" enctype="multipart/form-data">

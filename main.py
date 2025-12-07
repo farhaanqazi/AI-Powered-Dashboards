@@ -1,6 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader
 import pandas as pd
 import io
 import os
@@ -10,29 +12,49 @@ from starlette.responses import RedirectResponse
 
 app = FastAPI()
 
-# Set up templates
-templates = Jinja2Templates(directory="templates")
+# Create a custom Jinja2 environment to avoid Flask-specific functions
+env = Environment(
+    loader=FileSystemLoader("templates"),
+    autoescape=True
+)
+
+# Compatibility shim for old Flask-style templates that call get_flashed_messages()
+def fake_get_flashed_messages(*args, **kwargs):
+    # Always return an empty list so templates don't crash
+    return []
+
+env.globals["get_flashed_messages"] = fake_get_flashed_messages
+
+# Set up templates with the custom environment
+templates = Jinja2Templates(env=env)
+
+# Serve static files if any (CSS, JS, images)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    # Explicitly provide all necessary context variables
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+    })
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload(request: Request, dataset: UploadFile = File(...)):
     try:
         contents = await dataset.read()
-        
+
         # Create a temporary in-memory file for processing
         file_stream = io.BytesIO(contents)
         file_stream.seek(0)
-        
+
         # Use the central pipeline to build everything
         state = build_dashboard_from_file(file_stream)
 
         if state is None:
             return templates.TemplateResponse("index.html", {
-                "request": request, 
-                "error": "Failed to read CSV file. Please ensure the file is a valid CSV."
+                "request": request,
+                "error_message": "Failed to read CSV file. Please ensure the file is a valid CSV.",
+                "success": False
             })
 
         df = state.df
@@ -55,12 +77,14 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
                 "primary_chart": primary_chart,
                 "category_charts": category_charts,
                 "all_charts": all_charts,
+                "success": True
             }
         )
     except Exception as e:
         return templates.TemplateResponse("index.html", {
-            "request": request, 
-            "error": f"An error occurred while processing the file: {str(e)}"
+            "request": request,
+            "error_message": f"An error occurred while processing the file: {str(e)}",
+            "success": False
         })
 
 @app.post("/load_external", response_class=HTMLResponse)
@@ -76,16 +100,18 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
         if df is None:
             return templates.TemplateResponse("index.html", {
-                "request": request, 
-                "error": "Failed to load dataset from external source. Please check the URL or Kaggle dataset slug."
+                "request": request,
+                "error_message": "Failed to load dataset from external source. Please check the URL or Kaggle dataset slug.",
+                "success": False
             })
 
         state = build_dashboard_from_df(df)
 
         if state is None:
             return templates.TemplateResponse("index.html", {
-                "request": request, 
-                "error": "Failed to build dashboard from external dataset."
+                "request": request,
+                "error_message": "Failed to build dashboard from external dataset.",
+                "success": False
             })
 
         df = state.df
@@ -108,12 +134,14 @@ async def load_external(request: Request, external_source: str = Form(...)):
                 "primary_chart": primary_chart,
                 "category_charts": category_charts,
                 "all_charts": all_charts,
+                "success": True
             }
         )
     except Exception as e:
         return templates.TemplateResponse("index.html", {
-            "request": request, 
-            "error": f"An error occurred while loading the external dataset: {str(e)}"
+            "request": request,
+            "error_message": f"An error occurred while loading the external dataset: {str(e)}",
+            "success": False
         })
 
 if __name__ == "__main__":
