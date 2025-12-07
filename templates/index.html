@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ML Dashboard Generator</title>
+    <title>AI-Powered Dashboard Generator</title>
     <style>
         .error {
             color: #721c24;
@@ -40,11 +40,39 @@
         button:hover {
             background-color: #0056b3;
         }
+        .subtitle {
+            font-style: italic;
+            color: #666;
+            margin: 5px 0;
+        }
+        .options-container {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background-color: #f9f9f9;
+        }
+        .options-container h3 {
+            margin-top: 0;
+        }
+        .options-container ul {
+            list-style-type: none;
+            padding-left: 20px;
+        }
+        .options-container li {
+            margin: 8px 0;
+        }
+        .options-container input[type="radio"] {
+            margin-right: 8px;
+        }
     </style>
 </head>
 <body>
-    <h1>Welcome to Your ML Dashboard Generator</h1>
-    <p>Upload a CSV file to start building a dashboard.</p>
+    <h1>AI-Powered Dashboard Generator</h1>
+    <p class="subtitle">AI Engine for Effortless Dashboards</p>
+    <p class="subtitle">Automated Intelligence for Every Dataset</p>
+
+    <p>Upload a CSV file to start building a dashboard or choose an option below.</p>
 
     <!-- Display potential error messages passed from backend -->
     {% if error_message %}
@@ -54,6 +82,24 @@
     {% if success_message %}
         <div class="success">{{ success_message }}</div>
     {% endif %}
+
+    <div class="options-container">
+        <h3>Quick Options:</h3>
+        <ul>
+            <li>
+                <input type="radio" id="upload_option" name="option" checked>
+                <label for="upload_option">Upload a CSV file to analyze</label>
+            </li>
+            <li>
+                <input type="radio" id="url_option" name="option">
+                <label for="url_option">Load from a public URL</label>
+            </li>
+            <li>
+                <input type="radio" id="kaggle_option" name="option">
+                <label for="kaggle_option">Load from a Kaggle dataset</label>
+            </li>
+        </ul>
+    </div>
 
     <!-- Existing CSV upload form -->
     <form action="/upload" method="post" enctype="multipart/form-data">

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dataset Profile</title>
+    <title>AI-Powered Dashboard Generator</title>
     <!-- Load Plotly once from CDN for all charts -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <style>
@@ -187,12 +187,19 @@
             padding: 10px;
             margin: 10px 0;
         }
+
+        .subtitle {
+            font-style: italic;
+            color: #666;
+            margin: 5px 0;
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>ML Dashboard</h1>
-        <p>Interactive data visualization and analysis</p>
+        <h1>AI-Powered Dashboard Generator</h1>
+        <p class="subtitle">AI Engine for Effortless Dashboards</p>
+        <p class="subtitle">Automated Intelligence for Every Dataset</p>
     </div>
 
     <div class="content-container">
@@ -201,6 +208,7 @@
             <button class="section-btn active" onclick="showSection('dashboard')">Dashboard</button>
             <button class="section-btn" onclick="showSection('eda')">EDA Analysis</button>
             <button class="section-btn" onclick="showSection('visualizations')">Visualizations</button>
+            <button class="section-btn" onclick="showSection('column_profiling')">Column Profiling</button>
         </div>
 
         <div class="main-content">
@@ -287,26 +295,13 @@
                     <h2>Exploratory Data Analysis</h2>
                     
                     {% if eda_summary %}
-                        <!-- Summary Statistics -->
-                        <div class="eda-card">
-                            <h3>Dataset Overview</h3>
-                            <ul>
-                                <li><strong>Total Rows:</strong> {{ eda_summary.summary_statistics.total_rows }}</li>
-                                <li><strong>Total Columns:</strong> {{ eda_summary.summary_statistics.total_columns }}</li>
-                                <li><strong>Numeric Columns:</strong> {{ eda_summary.summary_statistics.numeric_columns }}</li>
-                                <li><strong>Categorical Columns:</strong> {{ eda_summary.summary_statistics.categorical_columns }}</li>
-                                <li><strong>Datetime Columns:</strong> {{ eda_summary.summary_statistics.datetime_columns }}</li>
-                                <li><strong>Text Columns:</strong> {{ eda_summary.summary_statistics.text_columns }}</li>
-                            </ul>
-                        </div>
-
                         <!-- Key Indicators -->
                         <div class="eda-card">
                             <h3>Key Indicators</h3>
                             {% if eda_summary.key_indicators %}
                                 {% for indicator in eda_summary.key_indicators[:10] %}  <!-- Show top 10 indicators -->
                                     <div class="key-indicator">
-                                        <strong>{{ indicator.indicator }}</strong> ({{ indicator.indicator_type }}) - 
+                                        <strong>{{ indicator.indicator }}</strong> ({{ indicator.indicator_type }}) -
                                         Significance: {{ "%.2f"|format(indicator.significance_score) }}<br>
                                         <em>{{ indicator.description }}</em>
                                     </div>
@@ -342,25 +337,25 @@
                                     <ul>
                                         {% for corr in eda_summary.patterns_and_relationships.correlations[:5] %}  <!-- Top 5 correlations -->
                                             <li>
-                                                <strong>{{ corr.variable1 }}</strong> ↔ <strong>{{ corr.variable2 }}</strong>: 
+                                                <strong>{{ corr.variable1 }}</strong> ↔ <strong>{{ corr.variable2 }}</strong>:
                                                 {{ "%.3f"|format(corr.correlation) }} ({{ corr.strength }} {{ corr.type }} correlation)
                                             </li>
                                         {% endfor %}
                                     </ul>
                                 {% endif %}
-                                
+
                                 {% if eda_summary.patterns_and_relationships.trends %}
                                     <h4>Trends</h4>
                                     <ul>
                                         {% for trend in eda_summary.patterns_and_relationships.trends[:5] %}  <!-- Top 5 trends -->
                                             <li>
-                                                <strong>{{ trend.datetime_column }}</strong> → <strong>{{ trend.numeric_column }}</strong>: 
+                                                <strong>{{ trend.datetime_column }}</strong> → <strong>{{ trend.numeric_column }}</strong>:
                                                 {{ trend.trend_type }} trend (correlation: {{ "%.3f"|format(trend.trend_correlation) }})
                                             </li>
                                         {% endfor %}
                                     </ul>
                                 {% endif %}
-                                
+
                                 {% if eda_summary.patterns_and_relationships.outliers %}
                                     <h4>Outliers</h4>
                                     <ul>
@@ -444,8 +439,8 @@
             </div>
         </div>
 
-        <!-- Column Profiling Table -->
-        <div>
+        <!-- Column Profiling Section -->
+        <div id="column-profiling-section" class="analysis-section">
             <h2>Column Profiling</h2>
             <table>
                 <tr>
@@ -521,18 +516,18 @@
             document.querySelectorAll('.analysis-section').forEach(section => {
                 section.classList.remove('active');
             });
-            
+
             // Remove active class from all buttons
             document.querySelectorAll('.section-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
-            
+
             // Show selected section
             document.getElementById(sectionName + '-section').classList.add('active');
-            
+
             // Add active class to clicked button
             event.target.classList.add('active');
-            
+
             // If switching to visualizations section, render the charts
             if (sectionName === 'visualizations' && EDA_SUMMARY) {
                 setTimeout(renderAdvancedVisualizations, 100);  // Delay to ensure DOM is ready
