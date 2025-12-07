@@ -1,3 +1,12 @@
+---
+title: ML Dashboard Generator
+emoji: 📊
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+---
+
 # ML Dashboard Generator
 
 A FastAPI-based dashboard generator that analyzes CSV datasets and creates interactive visualizations. The application automatically profiles datasets, identifies KPIs (important columns), suggests charts using a ChartSpec structure, and renders visualizations using Plotly.
