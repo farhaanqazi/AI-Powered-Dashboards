@@ -1,131 +1,112 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI-Powered Dashboard Generator</title>
-    <style>
-        .error {
-            color: #721c24;
-            background-color: #f8d7da;
-            border: 1px solid #f5c6cb;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .success {
-            color: #155724;
-            background-color: #d4edda;
-            border: 1px solid #c3e6cb;
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        form {
-            margin: 20px 0;
-        }
-        input[type="file"], input[type="text"] {
-            padding: 8px;
-            margin: 5px 0;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            width: 400px;
-        }
-        button {
-            padding: 10px 15px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        .subtitle {
-            font-style: italic;
-            color: #666;
-            margin: 5px 0;
-        }
-        .options-container {
-            margin: 20px 0;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background-color: #f9f9f9;
-        }
-        .options-container h3 {
-            margin-top: 0;
-        }
-        .options-container ul {
-            list-style-type: none;
-            padding-left: 20px;
-        }
-        .options-container li {
-            margin: 8px 0;
-        }
-        .options-container input[type="radio"] {
-            margin-right: 8px;
-        }
-    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
 </head>
-<body>
-    <h1>AI-Powered Dashboard Generator</h1>
-    <p class="subtitle">AI Engine for Effortless Dashboards</p>
-    <p class="subtitle">Automated Intelligence for Every Dataset</p>
+<body class="bg-base-200 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <div class="hero bg-base-100 rounded-box shadow-xl mb-8">
+            <div class="hero-content text-center">
+                <div class="max-w-md">
+                    <h1 class="text-4xl font-bold text-primary">AI-Powered Dashboard Generator</h1>
+                    <p class="py-2 text-lg italic text-gray-600">AI Engine for Effortless Dashboards</p>
+                    <p class="py-2 text-lg italic text-gray-600">Automated Intelligence for Every Dataset</p>
+                    <p class="py-4">Upload a CSV file to start building a dashboard or choose an option below.</p>
+                </div>
+            </div>
+        </div>
 
-    <p>Upload a CSV file to start building a dashboard or choose an option below.</p>
+        <!-- Display potential error messages passed from backend -->
+        {% if error_message %}
+            <div class="alert alert-error shadow-lg mb-4">
+                <div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span>{{ error_message }}</span>
+                </div>
+            </div>
+        {% endif %}
 
-    <!-- Display potential error messages passed from backend -->
-    {% if error_message %}
-        <div class="error">{{ error_message }}</div>
-    {% endif %}
+        {% if success_message %}
+            <div class="alert alert-success shadow-lg mb-4">
+                <div>
+                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    <span>{{ success_message }}</span>
+                </div>
+            </div>
+        {% endif %}
 
-    {% if success_message %}
-        <div class="success">{{ success_message }}</div>
-    {% endif %}
+        <div class="card bg-base-100 shadow-xl mb-8">
+            <div class="card-body">
+                <h2 class="card-title">Quick Options</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="flex items-center">
+                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="upload_option" checked />
+                        <label for="upload_option" class="ml-2">Upload a CSV file to analyze</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="url_option" />
+                        <label for="url_option" class="ml-2">Load from a public URL</label>
+                    </div>
+                    <div class="flex items-center">
+                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="kaggle_option" />
+                        <label for="kaggle_option" class="ml-2">Load from a Kaggle dataset</label>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-    <div class="options-container">
-        <h3>Quick Options:</h3>
-        <ul>
-            <li>
-                <input type="radio" id="upload_option" name="option" checked>
-                <label for="upload_option">Upload a CSV file to analyze</label>
-            </li>
-            <li>
-                <input type="radio" id="url_option" name="option">
-                <label for="url_option">Load from a public URL</label>
-            </li>
-            <li>
-                <input type="radio" id="kaggle_option" name="option">
-                <label for="kaggle_option">Load from a Kaggle dataset</label>
-            </li>
-        </ul>
+        <!-- Existing CSV upload form -->
+        <div class="card bg-base-100 shadow-xl mb-8">
+            <div class="card-body">
+                <h2 class="card-title">Upload CSV File</h2>
+                <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-4">
+                    <div class="form-control w-full">
+                        <label class="label">
+                            <span class="label-text">Select a CSV file</span>
+                        </label>
+                        <input type="file" name="dataset" accept=".csv" class="file-input file-input-bordered w-full max-w-xs" />
+                    </div>
+                    <div class="form-control mt-6">
+                        <button type="submit" class="btn btn-primary">Upload CSV</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="divider">OR</div>
+
+        <!-- New: load from external source (URL or Kaggle slug) -->
+        <div class="card bg-base-100 shadow-xl">
+            <div class="card-body">
+                <h2 class="card-title">Load Dataset from External Source</h2>
+                <p class="mb-4">Paste either:</p>
+                <ul class="mb-4 list-disc pl-6">
+                    <li>A direct CSV URL (e.g. a GitHub raw CSV link)</li>
+                    <li>A Kaggle dataset slug (e.g. <code class="bg-base-300 p-1 rounded">umitka/global-youth-unemployment-dataset</code>)</li>
+                </ul>
+
+                <form action="/load_external" method="post" class="space-y-4">
+                    <div class="form-control w-full">
+                        <label class="label">
+                            <span class="label-text">CSV URL or Kaggle slug</span>
+                        </label>
+                        <input
+                            type="text"
+                            name="external_source"
+                            placeholder="Enter URL or Kaggle dataset slug"
+                            class="input input-bordered w-full max-w-md"
+                        />
+                    </div>
+                    <div class="form-control">
+                        <button type="submit" class="btn btn-accent">Load Dataset</button>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
-
-    <!-- Existing CSV upload form -->
-    <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="dataset" accept=".csv" />
-        <button type="submit">Upload CSV</button>
-    </form>
-
-    <hr />
-
-    <!-- New: load from external source (URL or Kaggle slug) -->
-    <h2>Or load a dataset from URL or Kaggle</h2>
-    <p>
-        Paste either:
-        <ul>
-            <li>A direct CSV URL (e.g. a GitHub raw CSV link)</li>
-            <li>A Kaggle dataset slug (e.g. <code>umitka/global-youth-unemployment-dataset</code>)</li>
-        </ul>
-    </p>
-
-    <form action="/load_external" method="post">
-        <input
-            type="text"
-            name="external_source"
-            placeholder="CSV URL or Kaggle slug"
-        />
-        <button type="submit">Load Dataset</button>
-    </form>
 </body>
 </html>
