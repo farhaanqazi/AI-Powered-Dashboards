@@ -11,6 +11,7 @@ from src.ml.kpi_generator import generate_basic_kpis
 from src.ml.chart_selector import suggest_charts
 from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
 from src.viz.simple_renderer import generate_all_chart_data
+from src.eda.insights_generator import generate_eda_summary
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class DashboardState:
     primary_chart: Optional[Dict[str, Any]]
     category_charts: Dict[str, Any]
     all_charts: List[Dict[str, Any]]
+    eda_summary: Optional[Dict[str, Any]] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -127,6 +129,16 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         all_charts = []
     timing['all_charts'] = time.time() - all_charts_start
 
+    # 8) Generate EDA summary
+    eda_start = time.time()
+    try:
+        eda_summary = generate_eda_summary(df, dataset_profile)
+        logger.info(f"EDA summary generated with {len(eda_summary['use_cases'])} use cases and {len(eda_summary['key_indicators'])} key indicators")
+    except Exception as e:
+        logger.exception("Error generating EDA summary")
+        eda_summary = None
+    timing['eda_summary'] = time.time() - eda_start
+
     total_time = time.time() - start_time
     timing['total'] = total_time
     logger.info(f"Dashboard build completed in {total_time:.2f}s")
@@ -140,7 +152,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         charts=charts,
         primary_chart=primary_chart,
         category_charts=category_charts,
-        all_charts=all_charts
+        all_charts=all_charts,
+        eda_summary=eda_summary
     )
 
 

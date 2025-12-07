@@ -63,6 +63,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         primary_chart = state.primary_chart
         category_charts = state.category_charts
         all_charts = state.all_charts
+        eda_summary = state.eda_summary
 
         return templates.TemplateResponse(
             "dashboard.html",
@@ -75,6 +76,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
                 "primary_chart": primary_chart,
                 "category_charts": category_charts,
                 "all_charts": all_charts,
+                "eda_summary": eda_summary,
                 "success": True
             }
         )
@@ -120,6 +122,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
         primary_chart = state.primary_chart
         category_charts = state.category_charts
         all_charts = state.all_charts
+        eda_summary = state.eda_summary
 
         return templates.TemplateResponse(
             "dashboard.html",
@@ -132,6 +135,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
                 "primary_chart": primary_chart,
                 "category_charts": category_charts,
                 "all_charts": all_charts,
+                "eda_summary": eda_summary,
                 "success": True
             }
         )
