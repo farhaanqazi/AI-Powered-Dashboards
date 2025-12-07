@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pandas
+plotly
+kagglehub
+scipy
+requests
+python-multipart
+jinja2

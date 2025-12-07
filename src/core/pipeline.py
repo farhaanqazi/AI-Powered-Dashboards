@@ -1,0 +1,172 @@
+# src/core/pipeline.py
+import logging
+from dataclasses import dataclass
+from typing import Optional, Dict, Any, List
+import pandas as pd
+from datetime import datetime
+import time
+from src.data.parser import load_csv
+from src.data.analyser import basic_profile, build_dataset_profile
+from src.ml.kpi_generator import generate_basic_kpis
+from src.ml.chart_selector import suggest_charts
+from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
+from src.viz.simple_renderer import generate_all_chart_data
+
+logger = logging.getLogger(__name__)
+
+@dataclass
+class ProcessingResult:
+    """Structured result with warnings and errors"""
+    success: bool
+    data: Optional[Dict[str, Any]] = None
+    errors: List[str] = None
+    warnings: List[str] = None
+    timing: Dict[str, float] = None
+
+@dataclass
+class DashboardState:
+    """Structured return type for dashboard state"""
+    df: pd.DataFrame
+    dataset_profile: Dict[str, Any]
+    profile: List[Dict[str, Any]]
+    kpis: List[Dict[str, Any]]
+    charts: List[Dict[str, Any]]
+    primary_chart: Optional[Dict[str, Any]]
+    category_charts: Dict[str, Any]
+    all_charts: List[Dict[str, Any]]
+
+def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
+                           max_categories: int = 10, max_charts: int = 20,
+                           kpi_thresholds: Optional[Dict[str, float]] = None) -> Optional[DashboardState]:
+    """
+    Core dashboard builder that works from an-in-memory DataFrame.
+    All data sources (upload, URL, Kaggle, etc.) should end up here.
+    """
+    if df is None:
+        logger.error("Input DataFrame is None")
+        return None
+
+    # Cap rows and columns to prevent expensive processing
+    MAX_ROWS = 100000
+    if len(df) > MAX_ROWS:
+        logger.warning(f"DataFrame has {len(df)} rows, sampling to {MAX_ROWS} for performance")
+        df = df.sample(n=min(MAX_ROWS, len(df)), random_state=42)
+
+    start_time = time.time()
+    timing = {}
+
+    # 1) Determine max columns
+    if max_cols is None:
+        MAX_COLS = 50
+        max_cols = min(df.shape[1], MAX_COLS)
+
+    logger.info(f"Building dashboard for DataFrame with {df.shape[0]} rows and {df.shape[1]} columns (using up to {max_cols})")
+
+    # 2) Build dataset profile
+    profile_start = time.time()
+    try:
+        dataset_profile = build_dataset_profile(df, max_cols=max_cols)
+        if dataset_profile is None:
+            logger.error("Dataset profile generation failed")
+            return None
+        logger.info(f"Dataset profile built with {dataset_profile['n_cols']} columns")
+    except Exception as e:
+        logger.exception("Error building dataset profile")
+        return None
+    timing['profile'] = time.time() - profile_start
+
+    # 3) Legacy/simple profile (optional)
+    profile_start = time.time()
+    try:
+        profile = basic_profile(df)
+        logger.info(f"Basic profile built for {len(profile)} columns")
+    except Exception as e:
+        logger.exception("Error building basic profile")
+        profile = []
+    timing['basic_profile'] = time.time() - profile_start
+
+    # 4) KPIs
+    kpi_start = time.time()
+    try:
+        kpis = generate_basic_kpis(df, dataset_profile)
+        logger.info(f"Generated {len(kpis)} KPIs")
+    except Exception as e:
+        logger.exception("Error generating KPIs")
+        kpis = []
+    timing['kpis'] = time.time() - kpi_start
+
+    # 5) Chart suggestions (generic ChartSpec-like dicts)
+    chart_start = time.time()
+    try:
+        charts = suggest_charts(df, dataset_profile, kpis)
+        logger.info(f"Suggested {len(charts)} charts")
+    except Exception as e:
+        logger.exception("Error suggesting charts")
+        charts = []
+    timing['charts'] = time.time() - chart_start
+
+    # 6) Build multiple category_count charts and pick a primary one
+    category_start = time.time()
+    try:
+        category_charts = build_category_count_charts(df, charts, max_categories=max_categories, max_charts=max_charts)
+        logger.info(f"Built {len(category_charts)} category count charts")
+        primary_chart = next(iter(category_charts.values()), None)
+    except Exception as e:
+        logger.exception("Error building category charts")
+        category_charts = {}
+        primary_chart = None
+    timing['category_charts'] = time.time() - category_start
+
+    # 7) Build all charts using the new simple renderer for more reliable chart data
+    all_charts_start = time.time()
+    try:
+        all_charts = generate_all_chart_data(df, dataset_profile)
+        logger.info(f"Generated {len(all_charts)} all charts")
+    except Exception as e:
+        logger.exception("Error generating all charts")
+        all_charts = []
+    timing['all_charts'] = time.time() - all_charts_start
+
+    total_time = time.time() - start_time
+    timing['total'] = total_time
+    logger.info(f"Dashboard build completed in {total_time:.2f}s")
+    logger.info(f"Timing breakdown: {timing}")
+
+    return DashboardState(
+        df=df,
+        dataset_profile=dataset_profile,
+        profile=profile,
+        kpis=kpis,
+        charts=charts,
+        primary_chart=primary_chart,
+        category_charts=category_charts,
+        all_charts=all_charts
+    )
+
+
+def build_dashboard_from_file(file_storage, max_cols: Optional[int] = None,
+                             max_categories: int = 10, max_charts: int = 20,
+                             kpi_thresholds: Optional[Dict[str, float]] = None) -> Optional[DashboardState]:
+    """
+    Orchestrates the full dashboard build from an uploaded file.
+    Keeps the old interface for the upload flow.
+    """
+    start_time = time.time()
+    try:
+        df = load_csv(file_storage)
+        if df is None:
+            logger.error("Failed to load CSV from file storage")
+            return None
+
+        state = build_dashboard_from_df(df, max_cols=max_cols,
+                                      max_categories=max_categories,
+                                      max_charts=max_charts,
+                                      kpi_thresholds=kpi_thresholds)
+
+        total_time = time.time() - start_time
+        logger.info(f"Dashboard built from file in {total_time:.2f}s")
+        return state
+
+    except Exception as e:
+        logger.exception("Error in build_dashboard_from_file")
+        return None

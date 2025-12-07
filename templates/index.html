@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ML Dashboard Generator</title>
+    <style>
+        .error {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            color: #155724;
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        form {
+            margin: 20px 0;
+        }
+        input[type="file"], input[type="text"] {
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 400px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <h1>Welcome to Your ML Dashboard Generator</h1>
+    <p>Upload a CSV file to start building a dashboard.</p>
+
+    <!-- Display flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Existing CSV upload form -->
+    <form action="/upload" method="post" enctype="multipart/form-data">
+        <input type="file" name="dataset" accept=".csv" />
+        <button type="submit">Upload CSV</button>
+    </form>
+
+    <hr />
+
+    <!-- New: load from external source (URL or Kaggle slug) -->
+    <h2>Or load a dataset from URL or Kaggle</h2>
+    <p>
+        Paste either:
+        <ul>
+            <li>A direct CSV URL (e.g. a GitHub raw CSV link)</li>
+            <li>A Kaggle dataset slug (e.g. <code>umitka/global-youth-unemployment-dataset</code>)</li>
+        </ul>
+    </p>
+
+    <form action="/load_external" method="post">
+        <input
+            type="text"
+            name="external_source"
+            placeholder="CSV URL or Kaggle slug"
+        />
+        <button type="submit">Load Dataset</button>
+    </form>
+</body>
+</html>
