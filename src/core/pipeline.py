@@ -7,7 +7,7 @@ from datetime import datetime
 import time
 from src.data.parser import load_csv
 from src.data.analyser import basic_profile, build_dataset_profile
-from src.ml.kpi_generator import generate_basic_kpis
+from src.ml.kpi_generator import generate_kpis
 from src.ml.chart_selector import suggest_charts
 from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
 from src.viz.simple_renderer import generate_all_chart_data
@@ -91,7 +91,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     # 4) KPIs
     kpi_start = time.time()
     try:
-        kpis = generate_basic_kpis(df, dataset_profile)
+        kpis = generate_kpis(df, dataset_profile)
         logger.info(f"Generated {len(kpis)} KPIs")
     except Exception as e:
         logger.exception("Error generating KPIs")

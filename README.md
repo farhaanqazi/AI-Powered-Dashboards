@@ -48,7 +48,7 @@ A FastAPI-based dashboard generator that analyzes CSV datasets and creates inter
 - `src/core/pipeline.py`: Core dashboard builder orchestrating the entire flow
 - `src/data/parser.py`: CSV loading from various sources with validation
 - `src/data/analyser.py`: Dataset profiling (detects roles: numeric, datetime, categorical, text)
-- `src/ml/kpi_generator.py`: Generates KPIs based on statistical and semantic analysis
+- `src/ml/kpi_generator.py`: Generates KPIs based on statistical and semantic analysis with enhanced identifier detection and meaningful scoring
 - `src/ml/chart_selector.py`: Suggests charts for different data types and relationships
 - `src/viz/plotly_renderer.py`: Plotly chart rendering functions
 - `src/viz/simple_renderer.py`: Simple chart data generation for reliable frontend rendering
