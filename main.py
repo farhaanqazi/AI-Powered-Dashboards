@@ -28,8 +28,6 @@ env.globals["get_flashed_messages"] = fake_get_flashed_messages
 # Set up templates with the custom environment
 templates = Jinja2Templates(env=env)
 
-# Serve static files if any (CSS, JS, images)
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
