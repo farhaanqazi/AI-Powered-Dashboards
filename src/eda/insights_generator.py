@@ -4,13 +4,71 @@ Advanced EDA and Insights Generator for the ML Dashboard
 
 import pandas as pd
 import numpy as np
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 import logging
 from scipy.stats import pearsonr
 from collections import Counter
 import re
+from src.ml.correlation_engine import analyze_correlations, generate_correlation_insights
 
 logger = logging.getLogger(__name__)
+
+
+def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
+    """
+    Determine if a series is likely an identifier based on multiple heuristics.
+    This is a simplified version of the identifier detection logic from chart_selector.py.
+
+    Args:
+        series: The pandas Series to analyze
+        name: The column name
+
+    Returns:
+        True if the series is likely an identifier
+    """
+    n_total = len(series)
+    if n_total == 0:
+        return False
+
+    n_unique = series.nunique()
+    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
+
+    # Check for high cardinality (potential ID)
+    if unique_ratio > 0.98:
+        # Check if it's numeric (potential sequential ID)
+        if pd.api.types.is_numeric_dtype(series):
+            numeric_vals = pd.to_numeric(series, errors='coerce').dropna()
+            if len(numeric_vals) > 5:  # Need at least 5 values to check sequence
+                sorted_vals = numeric_vals.sort_values()
+                diffs = sorted_vals.diff().dropna()
+                if len(diffs) > 0:
+                    # Check for mostly constant differences (sequential IDs)
+                    unique_diffs = diffs.unique()
+                    if len(unique_diffs) == 1 and abs(unique_diffs[0] - 1) < 0.01:  # Step of 1
+                        return True
+        # Check for UUID patterns in string values
+        if series.dtype == 'object':
+            sample = series.dropna().head(20).astype(str)
+            uuid_matches = 0
+            for val in sample:
+                # Check for UUID v4 pattern (with case insensitivity)
+                if re.match(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', val, re.IGNORECASE):
+                    uuid_matches += 1
+            if uuid_matches / len(sample) > 0.5:  # More than 50% are UUIDs
+                return True
+
+    # Check for ID-like names
+    name_lower = name.lower()
+    id_keywords = [
+        "id", "uuid", "guid", "key", "code", "no", "number", "index",
+        "account", "user", "customer", "product", "item", "order",
+        "transaction", "invoice", "booking", "session", "token", "hash"
+    ]
+
+    if any(keyword in name_lower for keyword in id_keywords):
+        return True
+
+    return False
 
 def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -36,37 +94,58 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
         "distribution_insights": []
     }
 
-    # 1. Find correlations between numeric columns
-    numeric_cols = [col['name'] for col in dataset_profile['columns'] if col['role'] == 'numeric']
-    
-    if len(numeric_cols) >= 2:
-        # Calculate pair-wise correlations
+    # 1. Find meaningful correlations using the advanced correlation engine
+    correlation_analysis = analyze_correlations(df, dataset_profile)
+
+    # Update results with meaningful correlations from the new engine
+    results["correlations"] = correlation_analysis.get("meaningful_correlations", [])
+    results["cross_type_relationships"] = correlation_analysis.get("cross_type_relationships", [])
+    results["spurious_correlations_detected"] = correlation_analysis.get("spurious_correlations", [])
+    results["correlation_summary"] = correlation_analysis.get("summary_stats", {})
+
+    # If the correlation engine returns empty correlations, fall back to basic analysis
+    if not results["correlations"] and len(numeric_cols) >= 2:
+        # Basic correlation analysis as fallback
         for i in range(len(numeric_cols)):
             for j in range(i+1, len(numeric_cols)):
                 col1, col2 = numeric_cols[i], numeric_cols[j]
-                
+
+                # Check if either column is likely an identifier
+                series1 = df[col1]
+                series2 = df[col2]
+
+                # Skip if either column is likely an identifier
+                if _is_likely_identifier(series1, col1) or _is_likely_identifier(series2, col2):
+                    continue
+
                 # Convert to numeric and drop NaN
-                series1 = pd.to_numeric(df[col1], errors='coerce')
-                series2 = pd.to_numeric(df[col2], errors='coerce')
-                
+                s1_numeric = pd.to_numeric(series1, errors='coerce')
+                s2_numeric = pd.to_numeric(series2, errors='coerce')
+
                 # Remove NaN values
-                mask = ~(series1.isna() | series2.isna())
-                s1_clean = series1[mask]
-                s2_clean = series2[mask]
-                
+                mask = ~(s1_numeric.isna() | s2_numeric.isna())
+                s1_clean = s1_numeric[mask]
+                s2_clean = s2_numeric[mask]
+
                 if len(s1_clean) > 2:  # Need at least 3 points for correlation
                     try:
                         corr, p_value = pearsonr(s1_clean, s2_clean)
-                        
+
                         if not np.isnan(corr):
-                            results["correlations"].append({
-                                "variable1": col1,
-                                "variable2": col2,
-                                "correlation": corr,
-                                "p_value": p_value,
-                                "strength": "strong" if abs(corr) > 0.7 else "moderate" if abs(corr) > 0.3 else "weak",
-                                "type": "positive" if corr > 0 else "negative"
-                            })
+                            # Only include if correlation is meaningful (>0.1) and both have variance
+                            std1 = s1_clean.std()
+                            std2 = s2_clean.std()
+
+                            if abs(corr) > 0.1 and std1 > 0.001 and std2 > 0.001:
+                                results["correlations"].append({
+                                    "variable1": col1,
+                                    "variable2": col2,
+                                    "correlation": corr,
+                                    "p_value": p_value,
+                                    "strength": "strong" if abs(corr) > 0.7 else "moderate" if abs(corr) > 0.3 else "weak",
+                                    "type": "positive" if corr > 0 else "negative",
+                                    "sample_size": len(s1_clean)
+                                })
                     except Exception as e:
                         logger.warning(f"Error calculating correlation between {col1} and {col2}: {e}")
     
@@ -607,21 +686,41 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
     return key_indicators
 
 
-def generate_eda_summary(df: pd.DataFrame, dataset_profile: Dict[str, Any]) -> Dict[str, Any]:
+def generate_eda_summary(df: pd.DataFrame, dataset_profile: Dict[str, Any], correlation_insights: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Generate a comprehensive EDA summary for the dataset
+
+    Args:
+        df: Input DataFrame
+        dataset_profile: Dataset profile with column information
+        correlation_insights: Optional list of correlation insights to incorporate
     """
     logger.info("Starting EDA analysis for dataset")
-    
+
     # Perform pattern and relationship analysis
     patterns = detect_pattern_relationships(df, dataset_profile)
-    
+
+    # If correlation insights are provided, use them instead of the basic correlations
+    if correlation_insights is not None:
+        patterns['correlation_insights'] = correlation_insights
+    else:
+        # Generate correlation insights using the new correlation engine
+        try:
+            correlation_analysis = analyze_correlations(df, dataset_profile)
+            correlation_insights = generate_correlation_insights(correlation_analysis)
+            patterns['correlation_insights'] = correlation_insights
+        except Exception as e:
+            logger.warning(f"Error generating correlation insights: {e}")
+            patterns['correlation_insights'] = []
+            correlation_insights = []
+
     # Extract potential use cases
     use_cases = extract_use_cases(df, dataset_profile)
-    
-    # Identify key indicators
-    key_indicators = identify_key_indicators(df, dataset_profile, patterns['correlations'])
-    
+
+    # Identify key indicators using the correlation insights
+    meaningful_correlations = patterns.get('meaningful_correlations', [])
+    key_indicators = identify_key_indicators(df, dataset_profile, meaningful_correlations)
+
     # Create the EDA summary object
     eda_summary = {
         "summary_statistics": {
@@ -635,9 +734,10 @@ def generate_eda_summary(df: pd.DataFrame, dataset_profile: Dict[str, Any]) -> D
         "patterns_and_relationships": patterns,
         "use_cases": use_cases,
         "key_indicators": key_indicators,
+        "correlation_insights": correlation_insights,
         "recommendations": generate_recommendations(df, dataset_profile, patterns, use_cases, key_indicators)
     }
-    
+
     logger.info("EDA analysis completed")
     return eda_summary
 

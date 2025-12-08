@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import re
 import logging
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from scipy import stats
 
 logger = logging.getLogger(__name__)
@@ -333,11 +333,12 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
     return score
 
 
-def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any], 
+def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                  min_variability_threshold: float = 0.01,
-                 min_unique_ratio: float = 0.01, 
+                 min_unique_ratio: float = 0.01,
                  max_unique_ratio: float = 0.9,
-                 top_k: int = 10) -> List[Dict[str, Any]]:
+                 top_k: int = 10,
+                 eda_summary: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Enhanced KPIs with robust statistical metrics and semantic understanding.
     Addresses issues with misidentified IDs, inappropriate correlations, and 

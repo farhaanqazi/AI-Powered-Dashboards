@@ -12,6 +12,7 @@ from src.ml.chart_selector import suggest_charts
 from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
 from src.viz.simple_renderer import generate_all_chart_data
 from src.eda.insights_generator import generate_eda_summary
+from src.ml.correlation_engine import analyze_correlations, generate_correlation_insights
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,7 @@ class DashboardState:
     category_charts: Dict[str, Any]
     all_charts: List[Dict[str, Any]]
     eda_summary: Optional[Dict[str, Any]] = None
+    correlation_analysis: Optional[Dict[str, Any]] = None
     original_filename: Optional[str] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
@@ -88,17 +90,40 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         profile = []
     timing['basic_profile'] = time.time() - profile_start
 
-    # 4) KPIs
+    # 4) Generate correlation insights using the new engine
+    correlation_start = time.time()
+    try:
+        correlation_analysis = analyze_correlations(df, dataset_profile)
+        # Get correlation insights from the analysis
+        correlation_insights = generate_correlation_insights(correlation_analysis)
+        logger.info(f"Correlation analysis completed with {len(correlation_insights)} insights generated")
+    except Exception as e:
+        logger.exception("Error generating correlation insights")
+        correlation_analysis = None
+        correlation_insights = []
+    timing['correlation_analysis'] = time.time() - correlation_start
+
+    # 5) Generate EDA summary (now incorporating correlation insights)
+    eda_start = time.time()
+    try:
+        eda_summary = generate_eda_summary(df, dataset_profile, correlation_insights=correlation_insights)
+        logger.info(f"EDA summary generated with {len(eda_summary.get('use_cases', []))} use cases and {len(eda_summary.get('key_indicators', []))} key indicators")
+    except Exception as e:
+        logger.exception("Error generating EDA summary")
+        eda_summary = {}
+    timing['eda_summary'] = time.time() - eda_start
+
+    # 6) KPIs (now using EDA insights for better identification)
     kpi_start = time.time()
     try:
-        kpis = generate_kpis(df, dataset_profile)
+        kpis = generate_kpis(df, dataset_profile, eda_summary=eda_summary)
         logger.info(f"Generated {len(kpis)} KPIs")
     except Exception as e:
         logger.exception("Error generating KPIs")
         kpis = []
     timing['kpis'] = time.time() - kpi_start
 
-    # 5) Chart suggestions (generic ChartSpec-like dicts)
+    # 7) Chart suggestions (generic ChartSpec-like dicts)
     chart_start = time.time()
     try:
         charts = suggest_charts(df, dataset_profile, kpis)
@@ -108,10 +133,16 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         charts = []
     timing['charts'] = time.time() - chart_start
 
-    # 6) Build multiple category_count charts and pick a primary one
+    # 6) Build multiple category_count charts with semantic awareness and pick a primary one
     category_start = time.time()
     try:
-        category_charts = build_category_count_charts(df, charts, max_categories=max_categories, max_charts=max_charts)
+        category_charts = build_category_count_charts(
+            df,
+            charts,  # chart_specs are the suggestions from suggest_charts
+            dataset_profile=dataset_profile,
+            max_categories=max_categories,
+            max_charts=max_charts
+        )
         logger.info(f"Built {len(category_charts)} category count charts")
         primary_chart = next(iter(category_charts.values()), None)
     except Exception as e:
@@ -120,21 +151,41 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         primary_chart = None
     timing['category_charts'] = time.time() - category_start
 
-    # 7) Build all charts using the new simple renderer for more reliable chart data
+    # 7) Build all charts using the new intelligent renderer with semantic awareness
     all_charts_start = time.time()
     try:
-        all_charts = generate_all_chart_data(df, dataset_profile)
+        all_charts = build_charts_from_specs(
+            df,
+            charts,
+            dataset_profile=dataset_profile,
+            eda_summary=eda_summary,
+            max_categories=max_categories,
+            max_charts=max_charts
+        )
         logger.info(f"Generated {len(all_charts)} all charts")
     except Exception as e:
         logger.exception("Error generating all charts")
         all_charts = []
     timing['all_charts'] = time.time() - all_charts_start
 
-    # 8) Generate EDA summary
+    # 8) Generate correlation insights using the new engine
+    correlation_start = time.time()
+    try:
+        correlation_analysis = analyze_correlations(df, dataset_profile)
+        # Get correlation insights from the analysis
+        correlation_insights = generate_correlation_insights(correlation_analysis)
+        logger.info(f"Correlation analysis completed with {len(correlation_insights)} insights generated")
+    except Exception as e:
+        logger.exception("Error generating correlation insights")
+        correlation_analysis = None
+        correlation_insights = []
+    timing['correlation_analysis'] = time.time() - correlation_start
+
+    # 9) Generate EDA summary (now incorporating correlation insights)
     eda_start = time.time()
     try:
-        eda_summary = generate_eda_summary(df, dataset_profile)
-        logger.info(f"EDA summary generated with {len(eda_summary['use_cases'])} use cases and {len(eda_summary['key_indicators'])} key indicators")
+        eda_summary = generate_eda_summary(df, dataset_profile, correlation_insights=correlation_insights)
+        logger.info(f"EDA summary generated with {len(eda_summary.get('use_cases', []))} use cases and {len(eda_summary.get('key_indicators', []))} key indicators")
     except Exception as e:
         logger.exception("Error generating EDA summary")
         eda_summary = None
@@ -155,6 +206,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         category_charts=category_charts,
         all_charts=all_charts,
         eda_summary=eda_summary,
+        correlation_analysis=correlation_analysis,
         original_filename=None
     )
 
