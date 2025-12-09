@@ -1,7 +1,3 @@
-"""
-Advanced EDA and Insights Generator for the ML Dashboard
-"""
-
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
@@ -84,6 +80,12 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
             "outliers": [],
             "anomalies": []
         }
+
+    columns = dataset_profile.get("columns", []) if dataset_profile else []
+    numeric_cols = [col.get("name") for col in columns if col.get("role") == "numeric" and col.get("name") in df.columns]
+    if not numeric_cols:
+        # Fall back to dtype-based detection if profile is missing or empty
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
 
     results = {
         "correlations": [],

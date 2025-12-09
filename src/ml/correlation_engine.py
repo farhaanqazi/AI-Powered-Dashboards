@@ -1,12 +1,7 @@
-"""
-Advanced correlation analysis engine with meaningful relationship detection.
-Implements proper filtering to avoid spurious correlations between identifiers
-and meaningful correlation analysis based on column roles and semantics.
-"""
-
 import pandas as pd
 import numpy as np
 import logging
+import re
 from typing import Dict, List, Any, Tuple, Optional
 from scipy.stats import pearsonr, spearmanr
 import math

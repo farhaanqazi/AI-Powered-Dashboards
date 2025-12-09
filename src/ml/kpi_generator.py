@@ -1,9 +1,3 @@
-"""
-Advanced KPI generator with robust column analysis and semantic understanding.
-Addresses core issues with misidentification of IDs, inappropriate correlations,
-and meaningless KPI scoring that plagued the original implementation.
-"""
-
 import pandas as pd
 import numpy as np
 import re

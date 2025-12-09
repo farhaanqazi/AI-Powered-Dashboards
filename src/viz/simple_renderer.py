@@ -1,7 +1,3 @@
-"""
-Simple and reliable chart renderer that creates ready-to-use chart data for the frontend.
-"""
-
 import pandas as pd
 import numpy as np
 import json

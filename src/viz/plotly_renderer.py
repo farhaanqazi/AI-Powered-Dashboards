@@ -1,8 +1,3 @@
-"""
-Advanced visualization renderer with semantic awareness and intelligent chart selection.
-Works with the new correlation engine and EDA insights to generate meaningful visualizations.
-"""
-
 import pandas as pd
 import numpy as np
 import logging

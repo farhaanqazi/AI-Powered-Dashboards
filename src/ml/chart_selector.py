@@ -1,9 +1,3 @@
-"""
-Advanced chart selection engine with semantic awareness and meaningful visualization recommendations.
-Replaces naive heuristics with context-aware chart suggestions based on column roles, 
-semantic meanings, and statistical properties.
-"""
-
 import pandas as pd
 import numpy as np
 import logging

@@ -1,4 +1,3 @@
-# src/core/pipeline.py
 import logging
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
@@ -167,29 +166,6 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.exception("Error generating all charts")
         all_charts = []
     timing['all_charts'] = time.time() - all_charts_start
-
-    # 8) Generate correlation insights using the new engine
-    correlation_start = time.time()
-    try:
-        correlation_analysis = analyze_correlations(df, dataset_profile)
-        # Get correlation insights from the analysis
-        correlation_insights = generate_correlation_insights(correlation_analysis)
-        logger.info(f"Correlation analysis completed with {len(correlation_insights)} insights generated")
-    except Exception as e:
-        logger.exception("Error generating correlation insights")
-        correlation_analysis = None
-        correlation_insights = []
-    timing['correlation_analysis'] = time.time() - correlation_start
-
-    # 9) Generate EDA summary (now incorporating correlation insights)
-    eda_start = time.time()
-    try:
-        eda_summary = generate_eda_summary(df, dataset_profile, correlation_insights=correlation_insights)
-        logger.info(f"EDA summary generated with {len(eda_summary.get('use_cases', []))} use cases and {len(eda_summary.get('key_indicators', []))} key indicators")
-    except Exception as e:
-        logger.exception("Error generating EDA summary")
-        eda_summary = None
-    timing['eda_summary'] = time.time() - eda_start
 
     total_time = time.time() - start_time
     timing['total'] = total_time
