@@ -14,11 +14,6 @@ import re
 
 logger = logging.getLogger(__name__)
 
-
-def _is_numeric_role(role: str) -> bool:
-    """Treat extended numeric roles (e.g., numeric_duration) as numeric."""
-    return str(role).startswith("numeric")
-
 def _analyze_column_for_viz(series: pd.Series, role: str, semantic_tags: List[str] = []) -> Dict[str, Any]:
     """
     Analyze a column's characteristics for appropriate visualization selection.
@@ -754,7 +749,7 @@ def suggest_charts(df: pd.DataFrame, dataset_profile: Dict[str, Any], kpis: List
 
         # At minimum, suggest one histogram for a meaningful numeric column
         for col in dataset_profile.get("columns", []):
-            if _is_numeric_role(col.get("role")):
+            if col.get("role") == "numeric":
                 col_name = col["name"]
                 series = df[col_name]
                 

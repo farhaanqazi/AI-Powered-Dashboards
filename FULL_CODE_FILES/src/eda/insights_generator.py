@@ -14,11 +14,6 @@ from src.ml.correlation_engine import analyze_correlations, generate_correlation
 logger = logging.getLogger(__name__)
 
 
-def _is_numeric_role(role: str) -> bool:
-    """Treat extended numeric roles (e.g., numeric_duration) as numeric."""
-    return str(role).startswith("numeric")
-
-
 def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     """
     Determine if a series is likely an identifier based on multiple heuristics.
@@ -91,7 +86,7 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
         }
 
     columns = dataset_profile.get("columns", []) if dataset_profile else []
-    numeric_cols = [col.get("name") for col in columns if _is_numeric_role(col.get("role")) and col.get("name") in df.columns]
+    numeric_cols = [col.get("name") for col in columns if col.get("role") == "numeric" and col.get("name") in df.columns]
     if not numeric_cols:
         # Fall back to dtype-based detection if profile is missing or empty
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
@@ -576,7 +571,7 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
         return []
 
     # 1. High-impact numeric columns (high variance or frequently correlated)
-    numeric_cols = [col['name'] for col in dataset_profile['columns'] if _is_numeric_role(col.get('role'))]
+    numeric_cols = [col['name'] for col in dataset_profile['columns'] if col['role'] == 'numeric']
 
     for col in numeric_cols:
         series = pd.to_numeric(df[col], errors='coerce').dropna()
@@ -737,7 +732,7 @@ def generate_eda_summary(df: pd.DataFrame, dataset_profile: Dict[str, Any], corr
         "summary_statistics": {
             "total_rows": dataset_profile.get("n_rows", len(df)),
             "total_columns": dataset_profile.get("n_cols", len(df.columns)),
-            "numeric_columns": len([c for c in dataset_profile['columns'] if _is_numeric_role(c.get('role'))]),
+            "numeric_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'numeric']),
             "categorical_columns": len([c for c in dataset_profile['columns'] if c['role'] in ['categorical', 'boolean']]),
             "datetime_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'datetime']),
             "text_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'text'])

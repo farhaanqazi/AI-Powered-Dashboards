@@ -15,11 +15,6 @@ import math
 logger = logging.getLogger(__name__)
 
 
-def _is_numeric_role(role: str) -> bool:
-    """Treat extended numeric roles (e.g., numeric_duration) as numeric."""
-    return str(role).startswith("numeric")
-
-
 def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     """
     Determine if a series is likely an identifier based on multiple heuristics.
@@ -199,7 +194,7 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
     # Filter to only numeric columns that are not likely identifiers
     numeric_cols = []
     for col_info in columns:
-        if _is_numeric_role(col_info.get("role")):
+        if col_info.get("role") == "numeric":
             col_name = col_info["name"]
             series = df[col_name]
             
@@ -309,7 +304,7 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
         if _is_likely_identifier(series, col_name):
             continue
             
-        if _is_numeric_role(col_info.get("role")):
+        if col_info.get("role") == "numeric":
             if _has_meaningful_variance(series):
                 numeric_cols.append(col_name)
         elif col_info.get("role") in ["categorical", "text"]:
@@ -503,14 +498,11 @@ def analyze_correlations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
     spurious_correlations = _detect_spurious_correlations(df, columns, meaningful_correlations)
     
     # Create summary statistics
-    n_numeric_cols = len([col for col in columns if _is_numeric_role(col.get("role"))])
-    n_meaningful_numeric = len([
-        col
-        for col in columns
-        if _is_numeric_role(col.get("role"))
-        and not _is_likely_identifier(df[col["name"]], col["name"])
-        and _has_meaningful_variance(df[col["name"]])
-    ])
+    n_numeric_cols = len([col for col in columns if col.get("role") == "numeric"])
+    n_meaningful_numeric = len([col for col in columns 
+                               if col.get("role") == "numeric" and 
+                               not _is_likely_identifier(df[col["name"]], col["name"]) and
+                               _has_meaningful_variance(df[col["name"]])])
     
     # Calculate total possible pairs for numeric columns (n*(n-1)/2)
     total_possible_pairs = (n_meaningful_numeric * (n_meaningful_numeric - 1)) // 2
