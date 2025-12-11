@@ -3,418 +3,395 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI-Powered Dashboard</title>
+    <title>AI-Powered Dashboard Generator</title>
+    <!-- Load Plotly once from CDN for all charts -->
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
-    <style>
-        body {
-            background: radial-gradient(circle at 20% 20%, rgba(147, 197, 253, 0.12), transparent 25%),
-                        radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.12), transparent 30%),
-                        radial-gradient(circle at 40% 80%, rgba(74, 222, 128, 0.15), transparent 30%),
-                        #0b1021;
-            color: #e5e7eb;
-        }
-        .glass-card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
-            backdrop-filter: blur(16px);
-        }
-        .badge-soft {
-            background: rgba(255,255,255,0.06);
-            border: 1px solid rgba(255,255,255,0.08);
-            color: #e5e7eb;
-        }
-        .gradient-title {
-            background: linear-gradient(120deg, #60a5fa, #a78bfa, #34d399);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-    </style>
 </head>
-<body class="min-h-screen">
-    <div class="relative overflow-hidden">
-        <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
-            <div class="absolute -top-10 left-10 h-48 w-48 rounded-full bg-blue-500/10 blur-3xl"></div>
-            <div class="absolute top-20 right-0 h-64 w-64 rounded-full bg-purple-500/10 blur-3xl"></div>
-            <div class="absolute bottom-0 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-500/10 blur-3xl"></div>
+<body class="bg-base-200 min-h-screen">
+    <div class="navbar bg-base-100 shadow-md mb-4">
+        <div class="flex-1 items-center">
+            <a class="btn btn-ghost text-xl">AI Dashboard Generator</a>
+            <!-- Display Dataset Name -->
+            {% if original_filename %}
+                <!-- Extract the name from the filename, removing extension and replacing underscores with spaces -->
+                {% set name_parts = original_filename.split('.') %}
+                {% set name_without_ext = name_parts[0] if name_parts|length > 0 else original_filename %}
+                {% set formatted_name = name_without_ext|replace('_', ' ')|replace('-', ' ')|title %}
+                <div class="badge badge-lg badge-info capitalize ml-4">{{ formatted_name }}</div>
+            {% endif %}
+        </div>
+        <div class="flex-none gap-2">
+            <!-- Back button -->
+            <a href="/" class="btn btn-outline">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current mr-2"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back Home
+            </a>
+            <!-- Upload new dataset button -->
+            <a href="/" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-5 h-5 stroke-current mr-2"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                Upload New Dataset
+            </a>
+        </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-4">
+        <div class="hero bg-base-100 rounded-box shadow-xl mb-6">
+            <div class="hero-content text-center">
+                <div class="max-w-2xl">
+                    <h1 class="text-4xl md:text-5xl font-bold text-primary mb-2">AI-Powered Dashboard Generator</h1>
+                    <p class="text-lg italic text-gray-600">AI Engine for Effortless Dashboards | Automated Intelligence for Every Dataset</p>
+                </div>
+            </div>
         </div>
 
-        <div class="container mx-auto px-4 py-8 relative">
-            <header class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-                <div class="flex items-center gap-3">
-                    <div class="h-11 w-11 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-emerald-400 grid place-items-center text-white font-bold">AI</div>
-                    <div>
-                        <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Dashboard Generator</p>
-                        <h1 class="text-xl font-semibold text-white flex items-center gap-2">
-                            Dataset Insights
-                            {% if original_filename %}
-                                {% set name_parts = original_filename.split('.') %}
-                                {% set name_without_ext = name_parts[0] if name_parts|length > 0 else original_filename %}
-                                {% set formatted_name = name_without_ext|replace('_', ' ')|replace('-', ' ')|title %}
-                                <span class="badge badge-info badge-soft">{{ formatted_name }}</span>
+        <!-- Section Selector Tabs -->
+        <div class="tabs tabs-lifted tabs-lg mb-6">
+            <button class="tab tab-active" onclick="showSection('dashboard')">Dashboard</button>
+            <button class="tab" onclick="showSection('eda')">EDA Analysis</button>
+            <button class="tab" onclick="showSection('visualizations')">Visualizations</button>
+            <button class="tab" onclick="showSection('column_profiling')">Column Profiling</button>
+        </div>
+
+        <div class="flex flex-col lg:flex-row gap-6">
+            <!-- Sidebar -->
+            <div class="lg:w-1/4">
+                <div class="card bg-base-100 shadow-xl mb-4">
+                    <div class="card-body">
+                        <h2 class="card-title">Dataset Summary</h2>
+                        <ul class="space-y-2">
+                            <li class="flex justify-between">
+                                <span><strong>Total Rows:</strong></span>
+                                <span>{{ dataset_profile.n_rows }}</span>
+                            </li>
+                            <li class="flex justify-between">
+                                <span><strong>Total Columns:</strong></span>
+                                <span>{{ dataset_profile.n_cols }}</span>
+                            </li>
+                            {% if dataset_profile.role_counts %}
+                                <li class="flex justify-between">
+                                    <span><strong>Numeric Columns:</strong></span>
+                                    <span class="badge badge-primary">{{ dataset_profile.role_counts.numeric }}</span>
+                                </li>
+                                <li class="flex justify-between">
+                                    <span><strong>Datetime Columns:</strong></span>
+                                    <span class="badge badge-primary">{{ dataset_profile.role_counts.datetime }}</span>
+                                </li>
+                                <li class="flex justify-between">
+                                    <span><strong>Categorical Columns:</strong></span>
+                                    <span class="badge badge-primary">{{ dataset_profile.role_counts.categorical }}</span>
+                                </li>
+                                <li class="flex justify-between">
+                                    <span><strong>Text Columns:</strong></span>
+                                    <span class="badge badge-primary">{{ dataset_profile.role_counts.text }}</span>
+                                </li>
                             {% endif %}
-                        </h1>
+                        </ul>
                     </div>
                 </div>
-                <div class="flex flex-wrap items-center gap-3">
-                    <a href="/" class="btn btn-ghost border border-white/10 text-white">Back Home</a>
-                    <a href="/" class="btn btn-primary">Upload New Dataset</a>
-                </div>
-            </header>
 
-            <div class="glass-card rounded-3xl p-6 mb-8">
-                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    <div class="space-y-2">
-                        <p class="text-xs uppercase tracking-[0.3em] text-slate-400">Auto-generated overview</p>
-                        <h2 class="text-3xl font-bold text-white">Polymer-inspired dashboard for your data</h2>
-                        <p class="text-slate-300 text-sm md:text-base max-w-3xl">We inferred column roles, generated KPIs, surfaced EDA patterns, and curated visualizations so you can explore instantly.</p>
-                    </div>
-                    <div class="flex flex-wrap gap-2 text-sm">
-                        <span class="badge badge-soft">Semantic roles</span>
-                        <span class="badge badge-soft">KPI scoring</span>
-                        <span class="badge badge-soft">EDA insights</span>
-                        <span class="badge badge-soft">Chart gallery</span>
+                <!-- KPIs (clickable pills) -->
+                <div class="card bg-base-100 shadow-xl">
+                    <div class="card-body">
+                        <h2 class="card-title">KPIs</h2>
+                        <div class="space-y-2">
+                            {% if kpis and kpis|length > 0 %}
+                                {% for kpi in kpis %}
+                                    {% set chart_obj = category_charts.get(kpi.label) %}
+                                    <div
+                                        class="badge badge-outline {% if chart_obj %}badge-primary cursor-pointer{% else %}badge-neutral opacity-50{% endif %}"
+                                        data-kpi-column="{{ kpi.label }}"
+                                        data-has-chart="{{ '1' if chart_obj else '0' }}"
+                                        title="{% if chart_obj %}Click to view a chart for this column{% else %}No chart available yet for this KPI{% endif %}"
+                                    >
+                                        <strong>{{ kpi.label }}</strong>: {{ kpi.value }}
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div>No KPIs generated yet.</div>
+                            {% endif %}
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-                <div class="glass-card rounded-2xl p-4">
-                    <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Rows</p>
-                    <p class="text-3xl font-semibold text-white">{{ dataset_profile.n_rows }}</p>
-                </div>
-                <div class="glass-card rounded-2xl p-4">
-                    <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Columns</p>
-                    <p class="text-3xl font-semibold text-white">{{ dataset_profile.n_cols }}</p>
-                </div>
-                {% if dataset_profile.role_counts %}
-                <div class="glass-card rounded-2xl p-4">
-                    <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Numeric</p>
-                    <p class="text-3xl font-semibold text-white">{{ dataset_profile.role_counts.numeric }}</p>
-                </div>
-                <div class="glass-card rounded-2xl p-4">
-                    <p class="text-xs uppercase tracking-[0.25em] text-slate-400">Categorical</p>
-                    <p class="text-3xl font-semibold text-white">{{ dataset_profile.role_counts.categorical }}</p>
-                </div>
-                {% endif %}
-            </div>
-
-            <div class="tabs tabs-boxed bg-transparent mb-6">
-                <button class="tab tab-active" onclick="showSection('overview', event)">Overview</button>
-                <button class="tab" onclick="showSection('eda', event)">EDA Insights</button>
-                <button class="tab" onclick="showSection('visualizations', event)">Visual Gallery</button>
-                <button class="tab" onclick="showSection('column_profiling', event)">Columns</button>
-            </div>
-
-            <div class="space-y-6">
-                <!-- Overview Section -->
-                <section id="overview-section" class="analysis-section">
-                    <div class="glass-card rounded-3xl p-6 mb-6">
-                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                            <div>
-                                <p class="text-xs uppercase tracking-[0.25em] text-slate-400 mb-2">KPIs</p>
-                                <div class="flex flex-wrap gap-2">
-                                    {% if kpis and kpis|length > 0 %}
-                                        {% for kpi in kpis %}
-                                            {% set chart_obj = category_charts.get(kpi.label) %}
-                                            <div
-                                                class="badge badge-outline glass-card px-4 py-3 text-sm {% if chart_obj %}cursor-pointer hover:border-primary hover:text-primary{% else %}opacity-70{% endif %}"
-                                                data-kpi-column="{{ kpi.label }}"
-                                                data-has-chart="{{ '1' if chart_obj else '0' }}"
-                                                title="{% if chart_obj %}Click to highlight the related chart{% else %}No chart available yet for this KPI{% endif %}"
-                                            >
-                                                <strong>{{ kpi.label }}</strong>: {{ kpi.value }}
+            <!-- Main Content -->
+            <div class="lg:w-3/4">
+                <!-- Dashboard Section -->
+                <div id="dashboard-section" class="analysis-section">
+                    <div class="card bg-base-100 shadow-xl">
+                        <div class="card-body">
+                            <h2 class="card-title">Dashboard Visualizations</h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <!-- Category Count Charts -->
+                                {% if category_charts and category_charts|length > 0 %}
+                                    {% for col_name, chart_data in category_charts.items() %}
+                                        {% if primary_chart and chart_data.column != primary_chart.column %}
+                                            <div class="card bg-base-100 shadow-md">
+                                                <div class="card-body p-4">
+                                                    <h4 class="text-md font-medium text-center">{{ chart_data.title or col_name|title + " Distribution" }}</h4>
+                                                    <div class="chart-container h-80" id="chart-{{ col_name|replace(' ', '_')|replace('.', '_') }}"></div>
+                                                </div>
                                             </div>
-                                        {% endfor %}
-                                    {% else %}
-                                        <span class="text-slate-400">No KPIs generated yet.</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="text-right text-sm text-slate-300">
-                                <p class="font-semibold text-white">Quick summary</p>
-                                <p>We prioritized key distributions and metrics to mirror the landing page aesthetic.</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                        {% if primary_chart %}
-                            <div class="lg:col-span-2 glass-card rounded-3xl p-5">
-                                <div class="flex items-center justify-between mb-3">
-                                    <h3 class="text-lg font-semibold text-white">{{ primary_chart.title or primary_chart.column|title }}</h3>
-                                    <span class="badge badge-soft">Featured</span>
-                                </div>
-                                <div class="chart-container h-96" id="chart-{{ primary_chart.column|replace(' ', '_')|replace('.', '_') }}"></div>
-                            </div>
-                        {% endif %}
-
-                        <div class="glass-card rounded-3xl p-5 space-y-4">
-                            <div class="flex items-center justify-between">
-                                <p class="text-sm text-slate-300">Dataset summary</p>
-                                <span class="badge badge-soft">Schema</span>
-                            </div>
-                            <div class="space-y-2 text-sm">
-                                <div class="flex justify-between"><span class="text-slate-400">Rows</span><span class="text-white">{{ dataset_profile.n_rows }}</span></div>
-                                <div class="flex justify-between"><span class="text-slate-400">Columns</span><span class="text-white">{{ dataset_profile.n_cols }}</span></div>
-                                {% if dataset_profile.role_counts %}
-                                    <div class="flex justify-between"><span class="text-slate-400">Datetime</span><span class="text-white">{{ dataset_profile.role_counts.datetime }}</span></div>
-                                    <div class="flex justify-between"><span class="text-slate-400">Text</span><span class="text-white">{{ dataset_profile.role_counts.text }}</span></div>
+                                        {% elif not primary_chart %}
+                                            <div class="card bg-base-100 shadow-md">
+                                                <div class="card-body p-4">
+                                                    <h4 class="text-md font-medium text-center">{{ chart_data.title or col_name|title + " Distribution" }}</h4>
+                                                    <div class="chart-container h-80" id="chart-{{ col_name|replace(' ', '_')|replace('.', '_') }}"></div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
                                 {% endif %}
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-6">
-                        {% if category_charts and category_charts|length > 0 %}
-                            {% for col_name, chart_data in category_charts.items() %}
-                                {% if not primary_chart or chart_data.column != primary_chart.column %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">{{ chart_data.title or col_name|title + " Distribution" }}</h4>
-                                            <span class="badge badge-soft">Category</span>
+                                <!-- Other Chart Types -->
+                                {% if all_charts and all_charts|length > 0 %}
+                                    {% for chart in all_charts %}
+                                        {% if chart is defined and chart.data is defined %}
+                                            <div class="card bg-base-100 shadow-md">
+                                                <div class="card-body p-4">
+                                                    <h4 class="text-md font-medium text-center">{{ chart.title or chart.type|title + " Chart" }}</h4>
+                                                    <div class="chart-container h-80" id="chart_{{ loop.index }}"></div>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+
+                                <!-- Show message if no charts are available -->
+                                {% if not category_charts and not all_charts %}
+                                    <div class="alert alert-warning">
+                                        <div class="flex-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-6 h-6 mx-2 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+                                            <span>No charts available for this dataset yet.</span>
                                         </div>
-                                        <div class="chart-container h-80" id="chart-{{ col_name|replace(' ', '_')|replace('.', '_') }}"></div>
+                                    </div>
+                                {% elif category_charts|length == 0 and all_charts|length == 0 %}
+                                    <div class="alert alert-warning">
+                                        <div class="flex-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-6 h-6 mx-2 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+                                            <span>No charts available for this dataset yet.</span>
+                                        </div>
                                     </div>
                                 {% endif %}
-                            {% endfor %}
-                        {% endif %}
-
-                        {% if all_charts and all_charts|length > 0 %}
-                            {% for chart in all_charts %}
-                                {% if chart is defined and chart.data is defined %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">{{ chart.title or chart.type|title + " Chart" }}</h4>
-                                            <span class="badge badge-soft">{{ chart.type|title }}</span>
-                                        </div>
-                                        <div class="chart-container h-80" id="chart_{{ loop.index }}"></div>
-                                    </div>
-                                {% endif %}
-                            {% endfor %}
-                        {% endif %}
+                            </div>
+                        </div>
                     </div>
+                </div>
 
-                    {% if (not category_charts or category_charts|length == 0) and (not all_charts or all_charts|length == 0) %}
-                        <div class="alert alert-warning glass-card mt-6">
-                            <div class="flex-1 text-slate-200">No charts available for this dataset yet.</div>
-                        </div>
-                    {% endif %}
-                </section>
-
-                <!-- EDA Insights Section -->
-                <section id="eda-section" class="analysis-section hidden">
-                    <div class="glass-card rounded-3xl p-6 space-y-5">
-                        <div class="flex items-center justify-between">
-                            <h2 class="text-2xl font-semibold text-white">Exploratory Insights</h2>
-                            <span class="badge badge-soft">Auto-generated</span>
-                        </div>
-
-                        {% if eda_summary %}
-                            <div class="grid md:grid-cols-2 gap-4">
-                                <div class="glass-card rounded-2xl p-4">
-                                    <h3 class="text-lg font-semibold text-white mb-3">Key Indicators</h3>
-                                    {% if eda_summary.key_indicators %}
-                                        <div class="space-y-2">
-                                            {% for indicator in eda_summary.key_indicators[:10] %}
-                                                <div class="flex items-center justify-between text-sm bg-white/5 rounded-xl px-3 py-2">
-                                                    <div>
-                                                        <p class="font-semibold text-white">{{ indicator.indicator }}</p>
-                                                        <p class="text-xs text-slate-400">{{ indicator.indicator_type }}</p>
+                <!-- EDA Analysis Section -->
+                <div id="eda-section" class="analysis-section hidden">
+                    <div class="card bg-base-100 shadow-xl">
+                        <div class="card-body">
+                            <h2 class="card-title">Exploratory Data Analysis</h2>
+                            
+                            {% if eda_summary %}
+                                <!-- Key Indicators -->
+                                <div class="card bg-base-200 shadow-sm mb-4">
+                                    <div class="card-body p-4">
+                                        <h3 class="text-lg font-semibold mb-2">Key Indicators</h3>
+                                        {% if eda_summary.key_indicators %}
+                                            {% for indicator in eda_summary.key_indicators[:10] %}  <!-- Show top 10 indicators -->
+                                                <div class="badge badge-outline badge-success mb-2">
+                                                    <strong>{{ indicator.indicator }}</strong> ({{ indicator.indicator_type }}) - 
+                                                    Significance: {{ "%.2f"|format(indicator.significance_score) }}
+                                                    <div class="tooltip tooltip-bottom" data-tip="{{ indicator.description }}">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-4 h-4 ml-1 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                                     </div>
-                                                    <span class="badge badge-soft">{{ "%.2f"|format(indicator.significance_score) }}</span>
                                                 </div>
                                             {% endfor %}
-                                        </div>
-                                    {% else %}
-                                        <p class="text-slate-400 text-sm">No key indicators identified.</p>
-                                    {% endif %}
+                                        {% else %}
+                                            <p>No key indicators identified.</p>
+                                        {% endif %}
+                                    </div>
                                 </div>
 
-                                <div class="glass-card rounded-2xl p-4 space-y-3">
-                                    <h3 class="text-lg font-semibold text-white">Potential Use Cases</h3>
-                                    {% if eda_summary.use_cases %}
-                                        {% for use_case in eda_summary.use_cases %}
-                                            <div class="bg-white/5 rounded-xl p-3 text-sm">
-                                                <p class="font-semibold text-white">{{ use_case.use_case }}</p>
-                                                <p class="text-slate-400">{{ use_case.description }}</p>
-                                                <p class="text-xs text-slate-500 mt-1">Inputs: {{ use_case.key_inputs|join(', ') }}</p>
-                                            </div>
-                                        {% endfor %}
-                                    {% else %}
-                                        <p class="text-slate-400 text-sm">No specific use cases detected.</p>
-                                    {% endif %}
+                                <!-- Use Cases -->
+                                <div class="card bg-base-200 shadow-sm mb-4">
+                                    <div class="card-body p-4">
+                                        <h3 class="text-lg font-semibold mb-2">Potential Use Cases</h3>
+                                        {% if eda_summary.use_cases %}
+                                            {% for use_case in eda_summary.use_cases %}
+                                                <div class="alert alert-info mb-3">
+                                                    <div class="flex-1">
+                                                        <strong>{{ use_case.use_case }}</strong><br>
+                                                        <span class="text-sm">{{ use_case.description }}</span><br>
+                                                        <span class="text-xs"><strong>Key Inputs:</strong> {{ use_case.key_inputs|join(', ') }}</span><br>
+                                                        <span class="text-xs"><strong>Key Indicators:</strong> {{ use_case.key_indicators|join(', ') if use_case.key_indicators else 'N/A' }}</span>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <p>No specific use cases detected.</p>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                            </div>
 
-                            <div class="glass-card rounded-2xl p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Patterns & Relationships</h3>
-                                {% if eda_summary.patterns_and_relationships %}
-                                    <div class="grid md:grid-cols-3 gap-4 text-sm">
-                                        <div>
-                                            <p class="text-slate-400 uppercase text-xs tracking-[0.25em] mb-2">Correlations</p>
+                                <!-- Patterns and Relationships -->
+                                <div class="card bg-base-200 shadow-sm mb-4">
+                                    <div class="card-body p-4">
+                                        <h3 class="text-lg font-semibold mb-2">Patterns and Relationships</h3>
+                                        {% if eda_summary.patterns_and_relationships %}
                                             {% if eda_summary.patterns_and_relationships.correlations %}
-                                                <ul class="space-y-2">
-                                                    {% for corr in eda_summary.patterns_and_relationships.correlations[:5] %}
-                                                        <li class="bg-white/5 rounded-xl px-3 py-2">
-                                                            <strong>{{ corr.variable1 }}</strong> ↔ <strong>{{ corr.variable2 }}</strong>: {{ "%.3f"|format(corr.correlation) }} ({{ corr.strength }} {{ corr.type }})
-                                                        </li>
-                                                    {% endfor %}
-                                                </ul>
-                                            {% else %}
-                                                <p class="text-slate-500">No correlations found.</p>
+                                                <div class="mb-3">
+                                                    <h4 class="font-medium">Correlations</h4>
+                                                    <ul class="list-disc pl-5 text-sm">
+                                                        {% for corr in eda_summary.patterns_and_relationships.correlations[:5] %}  <!-- Top 5 correlations -->
+                                                            <li>
+                                                                <strong>{{ corr.variable1 }}</strong> ↔ <strong>{{ corr.variable2 }}</strong>: 
+                                                                {{ "%.3f"|format(corr.correlation) }} ({{ corr.strength }} {{ corr.type }} correlation)
+                                                            </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
                                             {% endif %}
-                                        </div>
-                                        <div>
-                                            <p class="text-slate-400 uppercase text-xs tracking-[0.25em] mb-2">Trends</p>
+                                            
                                             {% if eda_summary.patterns_and_relationships.trends %}
-                                                <ul class="space-y-2">
-                                                    {% for trend in eda_summary.patterns_and_relationships.trends[:5] %}
-                                                        <li class="bg-white/5 rounded-xl px-3 py-2">
-                                                            <strong>{{ trend.datetime_column }}</strong> → <strong>{{ trend.numeric_column }}</strong>: {{ trend.trend_type }} ({{ "%.3f"|format(trend.trend_correlation) }})
-                                                        </li>
-                                                    {% endfor %}
-                                                </ul>
-                                            {% else %}
-                                                <p class="text-slate-500">No trends detected.</p>
+                                                <div class="mb-3">
+                                                    <h4 class="font-medium">Trends</h4>
+                                                    <ul class="list-disc pl-5 text-sm">
+                                                        {% for trend in eda_summary.patterns_and_relationships.trends[:5] %}  <!-- Top 5 trends -->
+                                                            <li>
+                                                                <strong>{{ trend.datetime_column }}</strong> → <strong>{{ trend.numeric_column }}</strong>: 
+                                                                {{ trend.trend_type }} trend (correlation: {{ "%.3f"|format(trend.trend_correlation) }})
+                                                            </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
                                             {% endif %}
-                                        </div>
-                                        <div>
-                                            <p class="text-slate-400 uppercase text-xs tracking-[0.25em] mb-2">Outliers</p>
+                                            
                                             {% if eda_summary.patterns_and_relationships.outliers %}
-                                                <ul class="space-y-2">
-                                                    {% for outlier in eda_summary.patterns_and_relationships.outliers[:5] %}
-                                                        <li class="bg-white/5 rounded-xl px-3 py-2">
-                                                            <strong>{{ outlier.column }}</strong>: {{ outlier.outlier_count }} outliers ({{ "%.2f"|format(outlier.outlier_percentage) }}%)
-                                                        </li>
-                                                    {% endfor %}
-                                                </ul>
-                                            {% else %}
-                                                <p class="text-slate-500">No outliers flagged.</p>
+                                                <div class="mb-3">
+                                                    <h4 class="font-medium">Outliers</h4>
+                                                    <ul class="list-disc pl-5 text-sm">
+                                                        {% for outlier in eda_summary.patterns_and_relationships.outliers[:5] %}  <!-- Top 5 outlier columns -->
+                                                            <li>
+                                                                <strong>{{ outlier.column }}</strong>: {{ outlier.outlier_count }} outliers ({{ "%.2f"|format(outlier.outlier_percentage) }}%)
+                                                            </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </div>
                                             {% endif %}
-                                        </div>
+                                        {% else %}
+                                            <p>No patterns identified.</p>
+                                        {% endif %}
                                     </div>
-                                {% else %}
-                                    <p class="text-slate-400">No patterns identified.</p>
-                                {% endif %}
-                            </div>
+                                </div>
 
-                            <div class="glass-card rounded-2xl p-4">
-                                <h3 class="text-lg font-semibold text-white mb-3">Recommendations</h3>
-                                {% if eda_summary.recommendations %}
-                                    <div class="grid md:grid-cols-2 gap-3">
-                                        {% for rec in eda_summary.recommendations %}
-                                            <div class="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-sm">
-                                                <p class="font-semibold text-white">{{ rec.title }}</p>
-                                                <p class="text-amber-100/80">{{ rec.description }}</p>
-                                            </div>
-                                        {% endfor %}
+                                <!-- Recommendations -->
+                                <div class="card bg-base-200 shadow-sm mb-4">
+                                    <div class="card-body p-4">
+                                        <h3 class="text-lg font-semibold mb-2">Recommendations</h3>
+                                        {% if eda_summary.recommendations %}
+                                            {% for rec in eda_summary.recommendations %}
+                                                <div class="alert alert-warning mb-3">
+                                                    <div class="flex-1">
+                                                        <strong>{{ rec.title }}</strong><br>
+                                                        <span class="text-sm">{{ rec.description }}</span>
+                                                    </div>
+                                                </div>
+                                            {% endfor %}
+                                        {% else %}
+                                            <p>No specific recommendations at this time.</p>
+                                        {% endif %}
                                     </div>
-                                {% else %}
-                                    <p class="text-slate-400">No specific recommendations at this time.</p>
-                                {% endif %}
-                            </div>
-                        {% else %}
-                            <p class="text-slate-400">EDA analysis not available for this dataset.</p>
-                        {% endif %}
+                                </div>
+                            {% else %}
+                                <p>EDA analysis not available for this dataset.</p>
+                            {% endif %}
+                        </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- Visualizations Section -->
-                <section id="visualizations-section" class="analysis-section hidden">
-                    <div class="glass-card rounded-3xl p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-2xl font-semibold text-white">Advanced Visuals</h2>
-                            <span class="badge badge-soft">EDA-driven</span>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {% if eda_summary and eda_summary.patterns_and_relationships %}
-                                {% if eda_summary.patterns_and_relationships.correlations %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">Correlation Heatmap</h4>
-                                            <span class="badge badge-soft">Correlation</span>
+                <div id="visualizations-section" class="analysis-section hidden">
+                    <div class="card bg-base-100 shadow-xl">
+                        <div class="card-body">
+                            <h2 class="card-title">Advanced Visualizations</h2>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {% if eda_summary and eda_summary.patterns_and_relationships %}
+                                    {% if eda_summary.patterns_and_relationships.correlations %}
+                                        <div class="card bg-base-100 shadow-md">
+                                            <div class="card-body p-4">
+                                                <h4 class="text-md font-medium text-center">Correlation Heatmap</h4>
+                                                <div class="chart-container h-80" id="correlation-heatmap"></div>
+                                            </div>
                                         </div>
-                                        <div class="chart-container h-80" id="correlation-heatmap"></div>
+                                    {% endif %}
+                                    
+                                    {% if eda_summary.key_indicators %}
+                                        <div class="card bg-base-100 shadow-md">
+                                            <div class="card-body p-4">
+                                                <h4 class="text-md font-medium text-center">Key Indicators</h4>
+                                                <div class="chart-container h-80" id="key-indicators-chart"></div>
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    {% if eda_summary.patterns_and_relationships.trends %}
+                                        <div class="card bg-base-100 shadow-md">
+                                            <div class="card-body p-4">
+                                                <h4 class="text-md font-medium text-center">Time Series Trends</h4>
+                                                <div class="chart-container h-80" id="trends-chart"></div>
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    {% if eda_summary.patterns_and_relationships.outliers %}
+                                        <div class="card bg-base-100 shadow-md">
+                                            <div class="card-body p-4">
+                                                <h4 class="text-md font-medium text-center">Outlier Detection</h4>
+                                                <div class="chart-container h-80" id="outliers-chart"></div>
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                    
+                                    {% if eda_summary.use_cases %}
+                                        <div class="card bg-base-100 shadow-md">
+                                            <div class="card-body p-4">
+                                                <h4 class="text-md font-medium text-center">Use Cases Overview</h4>
+                                                <div class="chart-container h-80" id="use-cases-chart"></div>
+                                            </div>
+                                        </div>
+                                    {% endif %}
+                                {% endif %}
+                                
+                                {% if not eda_summary or not eda_summary.patterns_and_relationships %}
+                                    <div class="alert alert-warning">
+                                        <div class="flex-1">
+                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="w-6 h-6 mx-2 stroke-current"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z"></path></svg>
+                                            <span>Advanced visualizations not available for this dataset.</span>
+                                        </div>
                                     </div>
                                 {% endif %}
-
-                                {% if eda_summary.key_indicators %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">Key Indicators</h4>
-                                            <span class="badge badge-soft">Signals</span>
-                                        </div>
-                                        <div class="chart-container h-80" id="key-indicators-chart"></div>
-                                    </div>
-                                {% endif %}
-
-                                {% if eda_summary.patterns_and_relationships.trends %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">Time Series Trends</h4>
-                                            <span class="badge badge-soft">Temporal</span>
-                                        </div>
-                                        <div class="chart-container h-80" id="trends-chart"></div>
-                                    </div>
-                                {% endif %}
-
-                                {% if eda_summary.patterns_and_relationships.outliers %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">Outlier Detection</h4>
-                                            <span class="badge badge-soft">Quality</span>
-                                        </div>
-                                        <div class="chart-container h-80" id="outliers-chart"></div>
-                                    </div>
-                                {% endif %}
-
-                                {% if eda_summary.use_cases %}
-                                    <div class="glass-card rounded-2xl p-4">
-                                        <div class="flex items-center justify-between mb-2">
-                                            <h4 class="text-md font-semibold text-white">Use Cases Overview</h4>
-                                            <span class="badge badge-soft">Product</span>
-                                        </div>
-                                        <div class="chart-container h-80" id="use-cases-chart"></div>
-                                    </div>
-                                {% endif %}
-                            {% endif %}
-
-                            {% if not eda_summary or not eda_summary.patterns_and_relationships %}
-                                <div class="alert alert-warning glass-card">
-                                    <div class="flex-1 text-slate-200">Advanced visualizations not available for this dataset.</div>
-                                </div>
-                            {% endif %}
+                            </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- Column Profiling Section -->
-                <section id="column_profiling-section" class="analysis-section hidden">
-                    <div class="glass-card rounded-3xl p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-2xl font-semibold text-white">Column Profiling</h2>
-                            <span class="badge badge-soft">Schema</span>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="table table-zebra text-sm">
-                                <thead class="text-slate-300">
-                                    <tr>
-                                        <th>Column Name</th>
-                                        <th>Data Type</th>
-                                        <th>Missing Values</th>
-                                        <th>Unique Values</th>
-                                        <th>Role</th>
-                                        <th>Min</th>
-                                        <th>Max</th>
-                                        <th>Mean</th>
-                                        <th>Top Categories</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for col in dataset_profile.columns %}
+                <div id="column_profiling-section" class="analysis-section hidden">
+                    <div class="card bg-base-100 shadow-xl">
+                        <div class="card-body">
+                            <h2 class="card-title">Column Profiling</h2>
+                            <div class="overflow-x-auto">
+                                <table class="table table-zebra">
+                                    <thead>
+                                        <tr>
+                                            <th>Column Name</th>
+                                            <th>Data Type</th>
+                                            <th>Missing Values</th>
+                                            <th>Unique Values</th>
+                                            <th>Role</th>
+                                            <th>Min</th>
+                                            <th>Max</th>
+                                            <th>Mean</th>
+                                            <th>Top Categories</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for col in dataset_profile.columns %}
                                         <tr>
                                             <td>{{ col.name }}</td>
                                             <td>{{ col.dtype }}</td>
@@ -445,24 +422,26 @@
                                             <td>
                                                 {% if col.top_categories and col.top_categories|length > 0 %}
                                                     {% for cat in col.top_categories %}
-                                                        {{ cat.value }} ({{ cat.count }}){% if not loop.last %}, {% endif %}
+                                                        {{ cat.value }} ({{ cat.count }})
+                                                        {% if not loop.last %}, {% endif %}
                                                     {% endfor %}
                                                 {% else %}
                                                     -
                                                 {% endif %}
                                             </td>
                                         </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
-                </section>
+                </div>
             </div>
         </div>
     </div>
 
-<script>
+    <script>
         // Precomputed category charts from the backend (data only, no HTML)
         const CATEGORY_CHARTS = {{ category_charts | tojson | safe }};
         const PRIMARY_CHART = {% if primary_chart %}{{ primary_chart | tojson | safe }}{% else %}null{% endif %};
@@ -472,7 +451,7 @@
         // Helper function to get the primary chart column name
         const PRIMARY_CHART_COLUMN = PRIMARY_CHART ? PRIMARY_CHART.column : null;
 
-        function showSection(sectionName, evt) {
+        function showSection(sectionName) {
             // Hide all sections
             document.querySelectorAll('.analysis-section').forEach(section => {
                 section.classList.add('hidden');
@@ -492,10 +471,7 @@
             }
             
             // Add active class to clicked tab
-            const trigger = evt ? evt.currentTarget : null;
-            if (trigger) {
-                trigger.classList.add('tab-active');
-            }
+            event.target.classList.add('tab-active');
             
             // If switching to visualizations section, render the charts
             if (sectionName === 'visualizations' && EDA_SUMMARY) {
