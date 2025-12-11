@@ -6,105 +6,180 @@
     <title>AI-Powered Dashboard Generator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdn.jsdelivr.net/npm/daisyui@4.7.2/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <style>
+        body {
+            background: radial-gradient(circle at 20% 20%, rgba(147, 197, 253, 0.1), transparent 25%),
+                        radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.1), transparent 30%),
+                        radial-gradient(circle at 40% 80%, rgba(74, 222, 128, 0.08), transparent 30%),
+                        #f9fafb; /* Changed to light gray */
+            color: #1f2937; /* Changed to dark gray */
+        }
+        .light-card {
+            background: rgba(255, 255, 255, 0.9); /* Slightly opaque white */
+            border: 1px solid rgba(0, 0, 0, 0.08); /* Light border */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05); /* Softer shadow */
+        }
+        .gradient-text {
+            background: linear-gradient(120deg, #3b82f6, #8b5cf6, #10b981); /* Kept gradient, adjusted for light bg */
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .floating {
+            animation: float 8s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-8px); }
+        }
+    </style>
 </head>
-<body class="bg-base-200 min-h-screen">
-    <div class="container mx-auto px-4 py-8">
-        <div class="hero bg-base-100 rounded-box shadow-xl mb-8">
-            <div class="hero-content text-center">
-                <div class="max-w-2xl">
-                    <h1 class="text-4xl md:text-5xl font-bold text-primary mb-2">AI-Powered Dashboard Generator</h1>
-                    <p class="text-lg italic text-gray-600">AI Engine for Effortless Dashboards | Automated Intelligence for Every Dataset</p>
-                    <p class="py-4">Upload a CSV file to start building a dashboard or choose an option below.</p>
-                </div>
-            </div>
+<body class="min-h-screen">
+    <div class="relative overflow-hidden">
+        <div class="absolute inset-0 pointer-events-none" aria-hidden="true">
+            <div class="absolute -top-10 left-10 h-48 w-48 rounded-full bg-blue-200/30 blur-3xl"></div>
+            <div class="absolute top-20 right-0 h-64 w-64 rounded-full bg-purple-200/30 blur-3xl"></div>
+            <div class="absolute bottom-0 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-emerald-200/30 blur-3xl"></div>
         </div>
 
-        <!-- Display potential error messages passed from backend -->
-        {% if error_message %}
-            <div class="alert alert-error shadow-lg mb-4">
-                <div>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>{{ error_message }}</span>
-                </div>
-            </div>
-        {% endif %}
-
-        {% if success_message %}
-            <div class="alert alert-success shadow-lg mb-4">
-                <div>
-                    <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    <span>{{ success_message }}</span>
-                </div>
-            </div>
-        {% endif %}
-
-        <div class="card bg-base-100 shadow-xl mb-8">
-            <div class="card-body">
-                <h2 class="card-title">Quick Options</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div class="flex items-center">
-                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="upload_option" checked />
-                        <label for="upload_option" class="ml-2">Upload a CSV file to analyze</label>
-                    </div>
-                    <div class="flex items-center">
-                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="url_option" />
-                        <label for="url_option" class="ml-2">Load from a public URL</label>
-                    </div>
-                    <div class="flex items-center">
-                        <input type="radio" name="option" class="radio checked:bg-blue-500" id="kaggle_option" />
-                        <label for="kaggle_option" class="ml-2">Load from a Kaggle dataset</label>
+        <div class="container mx-auto px-4 py-10 md:py-16 relative">
+            <header class="flex items-center justify-between mb-10">
+                <div class="flex items-center space-x-3">
+                    <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-emerald-400 grid place-items-center text-white font-bold">AI</div>
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.3em] text-gray-500">Realtime Analytics</p>
+                        <h1 class="text-xl font-semibold text-gray-900">Dashboard Generator</h1>
                     </div>
                 </div>
+                <div class="hidden md:flex items-center space-x-6 text-sm text-gray-600">
+                    <span class="hover:text-gray-900 transition">Overview</span>
+                    <span class="hover:text-gray-900 transition">Datasets</span>
+                    <span class="hover:text-gray-900 transition">Insights</span>
+                    <button class="btn btn-sm btn-primary">Launch App</button>
+                </div>
+            </header>
+
+            <div class="grid lg:grid-cols-2 gap-8 items-center mb-12">
+                <div class="space-y-6">
+                    <p class="text-xs uppercase tracking-[0.3em] text-gray-500">DESIGNED BY FARBURGH</p>
+                    <h2 class="text-4xl md:text-5xl font-bold leading-tight text-gray-900">Search, explore, and auto-build dashboards <span class="gradient-text">in seconds</span>.</h2>
+                    <p class="text-lg text-gray-600 max-w-2xl">Upload a CSV or point to a URL/Kaggle dataset and instantly get smart column roles, KPIs, correlations, and ready-to-use visuals with zero manual setup.</p>
+                    <div class="flex flex-wrap gap-3 text-sm text-gray-600">
+                        <span class="px-3 py-2 rounded-full light-card text-gray-700">Semantic column roles</span>
+                        <span class="px-3 py-2 rounded-full light-card text-gray-700">Auto KPI scoring</span>
+                        <span class="px-3 py-2 rounded-full light-card text-gray-700">Interactive charts</span>
+                        <span class="px-3 py-2 rounded-full light-card text-gray-700">EDA insights</span>
+                    </div>
+                </div>
+                <div class="light-card rounded-3xl p-6 border border-gray-200 floating">
+                    <div class="flex items-start justify-between mb-4">
+                        <div>
+                            <p class="text-sm text-gray-500">Upload or paste a dataset</p>
+                            <p class="text-lg text-gray-900 font-semibold">One click to generate the dashboard</p>
+                        </div>
+                        <span class="badge badge-primary badge-outline">Live</span>
+                    </div>
+
+                    <div class="grid gap-4">
+                        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                            <h3 class="text-sm text-gray-600 mb-2">Upload CSV</h3>
+                            <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-3">
+                                <label class="block">
+                                    <input type="file" name="dataset" accept=".csv" class="file-input file-input-bordered w-full text-gray-700 bg-white border-gray-300" />
+                                </label>
+                                <button type="submit" class="btn btn-primary w-full">Generate from CSV</button>
+                            </form>
+                        </div>
+
+                        <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4">
+                            <h3 class="text-sm text-gray-600 mb-2">Load from URL or Kaggle</h3>
+                            <form action="/load_external" method="post" class="space-y-3">
+                                <input
+                                    type="text"
+                                    name="external_source"
+                                    placeholder="https://example.com/data.csv   or username/dataset"
+                                    class="input input-bordered w-full text-gray-700 bg-white border-gray-300"
+                                />
+                                <button type="submit" class="btn btn-ghost border border-gray-300 text-gray-700 w-full">Pull &amp; Analyze</button>
+                            </form>
+                        </div>
+                    </div>
+
+                    {% if error_message %}
+                        <div class="alert alert-error shadow-lg mt-4 bg-red-50 text-red-700 border border-red-200">
+                            <div>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <span>{{ error_message }}</span>
+                            </div>
+                        </div>
+                    {% endif %}
+
+                    {% if success_message %}
+                        <div class="alert alert-success shadow-lg mt-4 bg-green-50 text-green-700 border border-green-200">
+                            <div>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                <span>{{ success_message }}</span>
+                            </div>
+                        </div>
+                    {% endif %}
+                </div>
             </div>
-        </div>
 
-        <!-- Existing CSV upload form -->
-        <div class="card bg-base-100 shadow-xl mb-8">
-            <div class="card-body">
-                <h2 class="card-title">Upload CSV File</h2>
-                <form action="/upload" method="post" enctype="multipart/form-data" class="space-y-4">
-                    <div class="form-control w-full">
-                        <label class="label">
-                            <span class="label-text">Select a CSV file</span>
-                        </label>
-                        <input type="file" name="dataset" accept=".csv" class="file-input file-input-bordered w-full max-w-xs" />
-                    </div>
-                    <div class="form-control mt-6">
-                        <button type="submit" class="btn btn-primary">Upload CSV</button>
-                    </div>
-                </form>
+            <div class="grid md:grid-cols-3 gap-4 mb-10">
+                <div class="light-card rounded-2xl p-5 border border-gray-200">
+                    <p class="text-xs uppercase tracking-[0.25em] text-gray-500 mb-2">Step 1</p>
+                    <h3 class="text-lg text-gray-900 font-semibold mb-2">We infer column roles</h3>
+                    <p class="text-gray-600 text-sm">The analyser detects metrics, identifiers, dates, currency, percentages, and text for systemic understanding of the your data.</p>
+                </div>
+                <div class="light-card rounded-2xl p-5 border border-gray-200">
+                    <p class="text-xs uppercase tracking-[0.25em] text-gray-500 mb-2">Step 2</p>
+                    <h3 class="text-lg text-gray-900 font-semibold mb-2">KPIs, insights, correlations</h3>
+                    <p class="text-gray-600 text-sm">KPI scoring, EDA patterns, and correlations run automatically so the dashboard is populated with signal-rich widgets.</p>
+                </div>
+                <div class="light-card rounded-2xl p-5 border border-gray-200">
+                    <p class="text-xs uppercase tracking-[0.25em] text-gray-500 mb-2">Step 3</p>
+                    <h3 class="text-lg text-gray-900 font-semibold mb-2">Curated chart gallery</h3>
+                    <p class="text-gray-600 text-sm">We pick histograms, timeseries, splits, and category charts—always returning something useful even for small datasets.</p>
+                </div>
             </div>
-        </div>
 
-        <div class="divider">OR</div>
-
-        <!-- New: load from external source (URL or Kaggle slug) -->
-        <div class="card bg-base-100 shadow-xl">
-            <div class="card-body">
-                <h2 class="card-title">Load Dataset from External Source</h2>
-                <p class="mb-4">Paste either:</p>
-                <ul class="mb-4 list-disc pl-6">
-                    <li>A direct CSV URL (e.g. a GitHub raw CSV link)</li>
-                    <li>A Kaggle dataset slug (e.g. <code class="bg-base-300 p-1 rounded">umitka/global-youth-unemployment-dataset</code>)</li>
-                </ul>
-
-                <form action="/load_external" method="post" class="space-y-4">
-                    <div class="form-control w-full">
-                        <label class="label">
-                            <span class="label-text">CSV URL or Kaggle slug</span>
-                        </label>
-                        <input
-                            type="text"
-                            name="external_source"
-                            placeholder="Enter URL or Kaggle dataset slug"
-                            class="input input-bordered w-full max-w-md"
-                        />
+            <div class="light-card rounded-3xl p-6 border border-gray-200 mb-12">
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.25em] text-gray-500">Fast starts</p>
+                        <h3 class="text-2xl text-gray-900 font-semibold">Try with a sample dataset</h3>
+                        <p class="text-gray-600 text-sm">Paste one of these URLs into the loader above to see the experience immediately.</p>
                     </div>
-                    <div class="form-control">
-                        <button type="submit" class="btn btn-accent">Load Dataset</button>
+                    <div class="grid sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">NYC Trees</p>
+                                <p class="text-xs text-gray-500">https://raw.githubusercontent.com/plotly/datasets/master/2014_usa_states.csv</p>
+                            </div>
+                        </div>
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">Airline Delays</p>
+                                <p class="text-xs text-gray-500">https://raw.githubusercontent.com/plotly/datasets/master/2015_06_30_precipitation.csv</p>
+                            </div>
+                        </div>
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">Kaggle Example</p>
+                                <p class="text-xs text-gray-500">zynicide/wine-reviews</p>
+                            </div>
+                        </div>
                     </div>
-                </form>
+                </div>
             </div>
+
+            <footer class="flex flex-col md:flex-row md:items-center md:justify-between text-sm text-gray-500 pb-4">
+                <p>Dashboard Generator, powered by a powerful AI engine.</p>
+                <div class="flex items-center space-x-3 mt-3 md:mt-0">
+                    <span class="badge badge-outline text-gray-600 border-gray-300">FastAPI</span>
+                    <span class="badge badge-outline text-gray-600 border-gray-300">Plotly</span>
+                    <span class="badge badge-outline text-gray-600 border-gray-300">Auto EDA</span>
+                </div>
+            </footer>
         </div>
     </div>
 </body>
