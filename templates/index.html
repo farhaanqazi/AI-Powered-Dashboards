@@ -44,7 +44,8 @@
         <div class="container mx-auto px-4 py-10 md:py-16 relative">
             <header class="flex items-center justify-between mb-10">
                 <div class="flex items-center space-x-3">
-                    <div class="h-10 w-10 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-emerald-400 grid place-items-center text-white font-bold">AI</div>
+                    <!-- Made logo bigger -->
+                    <div class="h-12 w-12 rounded-2xl bg-gradient-to-br from-blue-500 via-purple-500 to-emerald-400 grid place-items-center text-white text-xl font-bold">AI</div>
                     <div>
                         <p class="text-xs uppercase tracking-[0.3em] text-gray-500">Realtime Analytics</p>
                         <h1 class="text-xl font-semibold text-gray-900">Dashboard Generator</h1>
@@ -61,7 +62,8 @@
             <div class="grid lg:grid-cols-2 gap-8 items-center mb-12">
                 <div class="space-y-6">
                     <p class="text-xs uppercase tracking-[0.3em] text-gray-500">DESIGNED BY FARBURGH</p>
-                    <h2 class="text-4xl md:text-5xl font-bold leading-tight text-gray-900">Search, explore, and auto-build dashboards <span class="gradient-text">in seconds</span>.</h2>
+                    <!-- Made headline text smaller -->
+                    <h2 class="text-3xl md:text-4xl font-bold leading-tight text-gray-900">Search, explore, and auto-build dashboards <span class="gradient-text">in seconds</span>.</h2>
                     <p class="text-lg text-gray-600 max-w-2xl">Upload a CSV or point to a URL/Kaggle dataset and instantly get smart column roles, KPIs, correlations, and ready-to-use visuals with zero manual setup.</p>
                     <div class="flex flex-wrap gap-3 text-sm text-gray-600">
                         <span class="px-3 py-2 rounded-full light-card text-gray-700">Semantic column roles</span>
@@ -144,7 +146,31 @@
 
             <div class="light-card rounded-3xl p-6 border border-gray-200 mb-12">
                 <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                    
+                    <div>
+                        <p class="text-xs uppercase tracking-[0.25em] text-gray-500">Fast starts</p>
+                        <h3 class="text-2xl text-gray-900 font-semibold">Try with a sample dataset</h3>
+                        <p class="text-gray-600 text-sm">Paste one of these URLs into the loader above to see the experience immediately.</p>
+                    </div>
+                    <div class="grid sm:grid-cols-3 gap-3 w-full lg:w-auto">
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">NYC Trees</p>
+                                <p class="text-xs text-gray-500">https://raw.githubusercontent.com/plotly/datasets/master/2014_usa_states.csv</p>
+                            </div>
+                        </div>
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">Airline Delays</p>
+                                <p class="text-xs text-gray-500">https://raw.githubusercontent.com/plotly/datasets/master/2015_06_30_precipitation.csv</p>
+                            </div>
+                        </div>
+                        <div class="card light-card border border-gray-200 bg-white shadow-sm">
+                            <div class="card-body p-4">
+                                <p class="text-sm text-gray-900 font-semibold">Kaggle Example</p>
+                                <p class="text-xs text-gray-500">zynicide/wine-reviews</p>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
