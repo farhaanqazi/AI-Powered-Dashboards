@@ -6,6 +6,7 @@ from scipy.stats import pearsonr
 from collections import Counter
 import re
 from src.ml.correlation_engine import analyze_correlations, generate_correlation_insights
+from src.utils.identifier_detector import is_likely_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -22,49 +23,8 @@ def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     Returns:
         True if the series is likely an identifier
     """
-    n_total = len(series)
-    if n_total == 0:
-        return False
-
-    n_unique = series.nunique()
-    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
-
-    # Check for high cardinality (potential ID)
-    if unique_ratio > 0.98:
-        # Check if it's numeric (potential sequential ID)
-        if pd.api.types.is_numeric_dtype(series):
-            numeric_vals = pd.to_numeric(series, errors='coerce').dropna()
-            if len(numeric_vals) > 5:  # Need at least 5 values to check sequence
-                sorted_vals = numeric_vals.sort_values()
-                diffs = sorted_vals.diff().dropna()
-                if len(diffs) > 0:
-                    # Check for mostly constant differences (sequential IDs)
-                    unique_diffs = diffs.unique()
-                    if len(unique_diffs) == 1 and abs(unique_diffs[0] - 1) < 0.01:  # Step of 1
-                        return True
-        # Check for UUID patterns in string values
-        if series.dtype == 'object':
-            sample = series.dropna().head(20).astype(str)
-            uuid_matches = 0
-            for val in sample:
-                # Check for UUID v4 pattern (with case insensitivity)
-                if re.match(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', val, re.IGNORECASE):
-                    uuid_matches += 1
-            if uuid_matches / len(sample) > 0.5:  # More than 50% are UUIDs
-                return True
-
-    # Check for ID-like names
-    name_lower = name.lower()
-    id_keywords = [
-        "id", "uuid", "guid", "key", "code", "no", "number", "index",
-        "account", "user", "customer", "product", "item", "order",
-        "transaction", "invoice", "booking", "session", "token", "hash"
-    ]
-
-    if any(keyword in name_lower for keyword in id_keywords):
-        return True
-
-    return False
+    # Use the centralized identifier detector
+    return is_likely_identifier(series, name)
 
 def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, Any]) -> Dict[str, Any]:
     """

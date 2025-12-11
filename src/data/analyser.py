@@ -6,6 +6,7 @@ from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype, is_bool_
 from typing import Dict, List, Any, Optional, Tuple
 from collections import Counter
 import math
+from src.utils.identifier_detector import is_likely_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -245,9 +246,16 @@ def _is_likely_identifier(
             confidence = min(0.9, unique_ratio * pattern_confidence * 1.5)
             return True, confidence
         elif unique_ratio > 0.99:  # Very high uniqueness might indicate ID anyway
-            # Lower confidence if just high uniqueness but no other indicators
-            confidence = min(0.7, unique_ratio)
-            return True, confidence
+            # Check with the centralized identifier detector as well
+            centralized_is_id = is_likely_identifier(series, name=series.name or "")
+            if centralized_is_id:
+                # Lower confidence if just high uniqueness but no other indicators
+                confidence = min(0.8, unique_ratio)
+                return True, confidence
+            else:
+                # Lower confidence if just high uniqueness but no other indicators
+                confidence = min(0.7, unique_ratio)
+                return True, confidence
 
     return False, 0.0
 

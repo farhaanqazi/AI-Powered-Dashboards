@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from plotly.subplots import make_subplots
 import re
 import math
+from src.utils.identifier_detector import is_likely_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -25,48 +26,8 @@ def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     """
     Robust identifier detection that matches the new correlation engine logic.
     """
-    n_total = len(series)
-    if n_total == 0:
-        return False
-
-    n_unique = series.nunique()
-    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
-
-    # High cardinality check
-    if unique_ratio > 0.98:
-        # Numeric sequential pattern check
-        if pd.api.types.is_numeric_dtype(series):
-            numeric_vals = pd.to_numeric(series, errors='coerce').dropna()
-            if len(numeric_vals) > 5:
-                sorted_vals = numeric_vals.sort_values()
-                diffs = sorted_vals.diff().dropna()
-                if len(diffs) > 0:
-                    # If diffs are mostly 1, likely sequential ID
-                    sequential_ratio = (diffs == 1).mean()
-                    if sequential_ratio > 0.8:
-                        return True
-        # UUID pattern check
-        if series.dtype == 'object':
-            sample = series.dropna().head(20).astype(str)
-            uuid_matches = 0
-            for val in sample:
-                if re.match(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', val, re.IGNORECASE):
-                    uuid_matches += 1
-            if uuid_matches / len(sample) > 0.5:  # More than 50% are UUIDs
-                return True
-
-    # Name-based check
-    name_lower = name.lower()
-    id_keywords = [
-        "id", "uuid", "guid", "key", "code", "no", "number", "index",
-        "account", "user", "customer", "product", "item", "order",
-        "transaction", "invoice", "booking", "session", "token", "hash"
-    ]
-
-    if any(keyword in name_lower for keyword in id_keywords):
-        return True
-
-    return False
+    # Use the centralized identifier detector
+    return is_likely_identifier(series, name)
 
 
 def _build_category_count_data(

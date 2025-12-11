@@ -4,6 +4,7 @@ import re
 import logging
 from typing import Dict, List, Any, Tuple, Optional
 from scipy import stats
+from src.utils.identifier_detector import is_likely_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -111,15 +112,11 @@ def _is_likely_identifier(series: pd.Series, uniqueness_threshold: float = 0.95)
     n_unique = series.nunique(dropna=True)
     unique_ratio = n_unique / n_total if n_total > 0 else 0.0
 
-    # Check if column name suggests it's an ID
-    name_lower = (series.name or "").lower()
-    id_name_tokens = [
-        "id", "identifier", "uuid", "guid", "key", "account", "user", "customer",
-        "client", "booking", "transaction", "order", "invoice", "code", "number"
-    ]
-    looks_like_id_name = any(token in name_lower for token in id_name_tokens)
+    # Use the centralized identifier detector for basic checks
+    if is_likely_identifier(series, name=series.name or ""):
+        return True
 
-    # Check for sequential numeric patterns (common in internal IDs)
+    # Additional check for sequential numeric patterns (specific to KPI context)
     if pd.api.types.is_numeric_dtype(series):
         numeric_values = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_values) > 2:
@@ -130,20 +127,16 @@ def _is_likely_identifier(series: pd.Series, uniqueness_threshold: float = 0.95)
             if sequential_ratio > 0.8:
                 return True
 
-    # Check for UUID patterns in string values
-    if series.dtype == 'object':
-        sample_values = series.dropna().head(min(50, len(series))).astype(str)
-        uuid_matches = 0
-        for val in sample_values:
-            if re.match(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', val, re.IGNORECASE):
-                uuid_matches += 1
-        uuid_confidence = uuid_matches / len(sample_values) if len(sample_values) > 0 else 0
-        
-        if uuid_confidence > 0.5:
-            return True
-
     # Use combination of uniqueness and name/context clues
     if unique_ratio > uniqueness_threshold:
+        # Check if column name suggests it's an ID
+        name_lower = (series.name or "").lower()
+        id_name_tokens = [
+            "id", "identifier", "uuid", "guid", "key", "account", "user", "customer",
+            "client", "booking", "transaction", "order", "invoice", "code", "number"
+        ]
+        looks_like_id_name = any(token in name_lower for token in id_name_tokens)
+
         if looks_like_id_name:
             return True
         elif unique_ratio > 0.99:  # Very high uniqueness might indicate ID anyway
