@@ -93,12 +93,12 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                     try:
                         corr, p_value = pearsonr(s1_clean, s2_clean)
 
-                        if not np.isnan(corr):
+                        if not np.isnan(corr) and np.isfinite(corr): # Ensure correlation is a valid number
                             # Only include if correlation is meaningful (>0.1) and both have variance
                             std1 = s1_clean.std()
                             std2 = s2_clean.std()
 
-                            if abs(corr) > 0.1 and std1 > 0.001 and std2 > 0.001:
+                            if abs(corr) > 0.1 and pd.notna(std1) and pd.notna(std2) and std1 > 0.001 and std2 > 0.001:
                                 results["correlations"].append({
                                     "variable1": col1,
                                     "variable2": col2,
@@ -110,27 +110,27 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                                 })
                     except Exception as e:
                         logger.warning(f"Error calculating correlation between {col1} and {col2}: {e}")
-    
+
     # 2. Detect potential trends in time-based data
     datetime_cols = [col['name'] for col in dataset_profile['columns'] if col['role'] == 'datetime']
-    
+
     for dt_col in datetime_cols:
         for num_col in numeric_cols[:3]:  # Limit to first 3 numeric columns
             try:
                 dt_series = pd.to_datetime(df[dt_col], errors='coerce')
                 num_series = pd.to_numeric(df[num_col], errors='coerce')
-                
+
                 # Create a valid data frame
                 temp_df = pd.DataFrame({dt_col: dt_series, num_col: num_series}).dropna()
-                
+
                 if len(temp_df) > 2:
                     # Use the index as a proxy for time and calculate correlation
                     temp_df = temp_df.sort_values(dt_col)
                     temp_df['time_index'] = range(len(temp_df))
-                    
+
                     trend_corr, p_value = pearsonr(temp_df['time_index'], temp_df[num_col])
-                    
-                    if not np.isnan(trend_corr):
+
+                    if not np.isnan(trend_corr) and np.isfinite(trend_corr):
                         trend_type = "increasing" if trend_corr > 0.1 else "decreasing" if trend_corr < -0.1 else "stable"
                         results["trends"].append({
                             "datetime_column": dt_col,
@@ -141,16 +141,16 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                         })
             except Exception as e:
                 logger.warning(f"Error detecting trend for {dt_col} and {num_col}: {e}")
-    
+
     # 3. Identify patterns in categorical data
     categorical_cols = [col['name'] for col in dataset_profile['columns'] if col['role'] in ['categorical', 'boolean']]
-    
+
     for col in categorical_cols:
         try:
             # Most common categories
             value_counts = df[col].value_counts()
             total_count = len(df[col])
-            
+
             # Identify dominant categories (>20% of the data)
             dominant_categories = []
             for cat, count in value_counts.items():
@@ -161,20 +161,20 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                         "count": count,
                         "percentage": ratio * 100
                     })
-            
+
             if dominant_categories:
                 results["patterns"].append({
                     "column": col,
                     "pattern_type": "dominant_categories",
                     "categories": dominant_categories
                 })
-                
+
             # Identify low-variety categories (high concentration)
             unique_count = len(value_counts)
             if unique_count > 1 and total_count > 0:
                 entropy = -sum((count/total_count) * np.log2(count/total_count) for count in value_counts if count > 0)
                 max_entropy = np.log2(unique_count)
-                
+
                 if max_entropy > 0:
                     normalized_entropy = entropy / max_entropy
                     if normalized_entropy < 0.5:  # Low entropy = high concentration
@@ -186,22 +186,22 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                         })
         except Exception as e:
             logger.warning(f"Error detecting patterns for column {col}: {e}")
-    
+
     # 4. Detect outliers in numeric data
     for col in numeric_cols:
         try:
             series = pd.to_numeric(df[col], errors='coerce').dropna()
-            
+
             if len(series) > 4:  # Need at least 5 values to detect outliers meaningfully
                 Q1 = series.quantile(0.25)
                 Q3 = series.quantile(0.75)
                 IQR = Q3 - Q1
-                
+
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
-                
+
                 outliers = series[(series < lower_bound) | (series > upper_bound)]
-                
+
                 if len(outliers) > 0:
                     results["outliers"].append({
                         "column": col,
@@ -211,14 +211,14 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                     })
         except Exception as e:
             logger.warning(f"Error detecting outliers for column {col}: {e}")
-    
+
     # 5. Detect anomalies based on data distribution
     for col in dataset_profile['columns']:
         try:
             if col['role'] in ['categorical', 'text'] and col['unique_count'] > 1:
                 # Detect potential data quality issues
                 value_counts = df[col['name']].value_counts()
-                
+
                 # Check for very low frequency values that might be typos
                 rare_values = value_counts[value_counts < 3]  # Values that appear less than 3 times
                 if len(rare_values) > 0:
@@ -228,7 +228,7 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                         "rare_values_count": len(rare_values),
                         "example_values": rare_values.head(5).index.tolist()
                     })
-                    
+
                 # Check for highly imbalanced distributions
                 if len(value_counts) > 2:
                     total = sum(value_counts)
@@ -242,27 +242,28 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
                         })
         except Exception as e:
             logger.warning(f"Error detecting anomalies for column {col['name']}: {e}")
-    
+
     # 6. Generate distribution insights
     for col in numeric_cols:
         try:
             series = pd.to_numeric(df[col], errors='coerce').dropna()
-            
+
             if len(series) > 2:
-                # Calculate skewness and kurtosis
+                # Calculate skewness and kurtosis, handling potential NaN/inf results
                 skewness = series.skew()
                 kurtosis = series.kurtosis()
-                
-                results["distribution_insights"].append({
-                    "column": col,
-                    "skewness": skewness,
-                    "kurtosis": kurtosis,
-                    "distribution_type": "right_skewed" if skewness > 1 else "left_skewed" if skewness < -1 else "symmetric",
-                    "tail_type": "heavy_tailed" if kurtosis > 0 else "light_tailed"
-                })
+
+                if pd.notna(skewness) and pd.notna(kurtosis) and np.isfinite(skewness) and np.isfinite(kurtosis):
+                     results["distribution_insights"].append({
+                        "column": col,
+                        "skewness": skewness,
+                        "kurtosis": kurtosis,
+                        "distribution_type": "right_skewed" if skewness > 1 else "left_skewed" if skewness < -1 else "symmetric",
+                        "tail_type": "heavy_tailed" if kurtosis > 0 else "light_tailed"
+                    })
         except Exception as e:
             logger.warning(f"Error calculating distribution insights for column {col}: {e}")
-    
+
     return results
 
 
@@ -282,72 +283,72 @@ def extract_use_cases(df: pd.DataFrame, dataset_profile: Dict[str, Any]) -> List
     # Identify potential use cases based on column patterns
     semantic_categories = {
         'sales': {
-            'keywords': ['price', 'cost', 'revenue', 'sales', 'amount', 'profit', 'fee', 'charge', 'payment', 'discount', 'tax', 'margin'],
+            'keywords': ['price', 'cost', 'revenue', 'sales', 'amount', 'profit', 'fee', 'charge', 'payment', 'discount', 'tax', 'margin', 'sale', 'item', 'product'],
             'key_inputs': ['product_id', 'customer_id', 'order_date', 'quantity'],
             'indicators': ['total_revenue', 'profit_margin', 'sales_volume']
         },
         'demographics': {
-            'keywords': ['age', 'gender', 'race', 'ethnicity', 'income', 'education', 'occupation', 'family', 'children', 'marital', 'birth'],
+            'keywords': ['age', 'gender', 'race', 'ethnicity', 'income', 'education', 'occupation', 'family', 'children', 'marital', 'birth', 'demographic'],
             'key_inputs': ['id', 'date_of_birth', 'location', 'survey_date'],
             'indicators': ['avg_income', 'education_level_distribution', 'age_median']
         },
         'location': {
-            'keywords': ['city', 'state', 'country', 'address', 'location', 'region', 'zip', 'postal', 'latitude', 'longitude', 'area'],
+            'keywords': ['city', 'state', 'country', 'address', 'location', 'region', 'zip', 'postal', 'latitude', 'longitude', 'area', 'coord'],
             'key_inputs': ['coordinates', 'administrative_divisions', 'time_zone'],
             'indicators': ['population_density', 'geographic_distribution', 'distance_metrics']
         },
         'time': {
-            'keywords': ['date', 'time', 'day', 'week', 'month', 'year', 'season', 'period', 'duration', 'timestamp', 'hour', 'minute'],
+            'keywords': ['date', 'time', 'day', 'week', 'month', 'year', 'season', 'period', 'duration', 'timestamp', 'hour', 'minute', 'time_'],
             'key_inputs': ['id', 'event_type', 'start_time', 'end_time'],
             'indicators': ['trend_over_time', 'seasonal_patterns', 'frequency']
         },
         'rating': {
-            'keywords': ['rating', 'score', 'grade', 'review', 'feedback', 'satisfaction', 'rating_count', 'stars', 'vote'],
+            'keywords': ['rating', 'score', 'grade', 'review', 'feedback', 'satisfaction', 'rating_count', 'stars', 'vote', 'rating_'],
             'key_inputs': ['reviewer_id', 'item_id', 'review_text', 'review_date'],
             'indicators': ['avg_rating', 'rating_distribution', 'review_sentiment']
         },
         'quantity': {
-            'keywords': ['count', 'quantity', 'number', 'volume', 'size', 'frequency', 'frequency', 'instances', 'cases', 'instances'],
+            'keywords': ['count', 'quantity', 'number', 'volume', 'size', 'frequency', 'instances', 'cases', 'instances', 'qty'],
             'key_inputs': ['item_id', 'category', 'measurement_unit'],
             'indicators': ['total_count', 'avg_quantity', 'distribution']
         },
         'health': {
-            'keywords': ['patient', 'diagnosis', 'treatment', 'symptom', 'medication', 'disease', 'condition', 'blood_pressure', 'pulse', 'temperature'],
+            'keywords': ['patient', 'diagnosis', 'treatment', 'symptom', 'medication', 'disease', 'condition', 'blood_pressure', 'pulse', 'temperature', 'health'],
             'key_inputs': ['patient_id', 'doctor_id', 'diagnosis_date', 'symptom onset'],
             'indicators': ['recovery_rate', 'diagnosis_distribution', 'treatment_success']
         },
         'education': {
-            'keywords': ['student', 'grade', 'score', 'subject', 'school', 'enrollment', 'test', 'exam', 'course', 'gpa', 'attendance'],
+            'keywords': ['student', 'grade', 'score', 'subject', 'school', 'enrollment', 'test', 'exam', 'course', 'gpa', 'attendance', 'education'],
             'key_inputs': ['student_id', 'course_id', 'exam_date', 'instructor'],
             'indicators': ['avg_score', 'pass_rate', 'attendance_rate']
         },
         'finance': {
-            'keywords': ['account', 'balance', 'transaction', 'credit', 'loan', 'interest', 'investment', 'portfolio', 'return', 'equity'],
+            'keywords': ['account', 'balance', 'transaction', 'credit', 'loan', 'interest', 'investment', 'portfolio', 'return', 'equity', 'finance'],
             'key_inputs': ['account_id', 'transaction_date', 'counterparty', 'reference'],
             'indicators': ['cash_flow', 'return_on_investment', 'risk_metrics']
         },
         'technology': {
-            'keywords': ['device', 'os', 'platform', 'software', 'version', 'model', 'type', 'cpu', 'memory', 'resolution', 'bandwidth'],
+            'keywords': ['device', 'os', 'platform', 'software', 'version', 'model', 'type', 'cpu', 'memory', 'resolution', 'bandwidth', 'tech'],
             'key_inputs': ['device_id', 'manufacturer', 'release_date', 'specifications'],
             'indicators': ['usage_patterns', 'performance_metrics', 'adoption_rate']
         },
         'transportation': {
-            'keywords': ['vehicle', 'model', 'year', 'mileage', 'route', 'trip', 'distance', 'speed', 'fuel', 'departure', 'arrival'],
+            'keywords': ['vehicle', 'model', 'year', 'mileage', 'route', 'trip', 'distance', 'speed', 'fuel', 'departure', 'arrival', 'transport'],
             'key_inputs': ['vehicle_id', 'driver_id', 'route_id', 'timestamp'],
             'indicators': ['avg_speed', 'fuel_efficiency', 'on_time_rate']
         },
         'marketing': {
-            'keywords': ['campaign', 'click', 'impression', 'conversion', 'revenue', 'cost', 'cpc', 'cpa', 'roi', 'engagement'],
+            'keywords': ['campaign', 'click', 'impression', 'conversion', 'revenue', 'cost', 'cpc', 'cpa', 'roi', 'engagement', 'marketing'],
             'key_inputs': ['campaign_id', 'ad_group', 'keyword', 'audience'],
             'indicators': ['conversion_rate', 'roi', 'cost_per_conversion']
         },
         'retail': {
-            'keywords': ['product', 'inventory', 'stock', 'sku', 'brand', 'category', 'supplier', 'shelf', 'vendor', 'order'],
+            'keywords': ['product', 'inventory', 'stock', 'sku', 'brand', 'category', 'supplier', 'shelf', 'vendor', 'order', 'retail'],
             'key_inputs': ['product_id', 'store_id', 'supplier_id', 'reorder_date'],
             'indicators': ['inventory_turnover', 'stockout_rate', 'profit_margin']
         },
         'social_media': {
-            'keywords': ['user', 'post', 'like', 'comment', 'share', 'follower', 'engagement', 'reach', 'impression', 'hashtag'],
+            'keywords': ['user', 'post', 'like', 'comment', 'share', 'follower', 'engagement', 'reach', 'impression', 'hashtag', 'social'],
             'key_inputs': ['user_id', 'post_id', 'timestamp', 'content_type'],
             'indicators': ['engagement_rate', 'follower_growth', 'content_popularity']
         }
@@ -537,10 +538,12 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
             mean_val = series.mean()
             std_val = series.std()
 
-            if mean_val != 0:  # Avoid division by zero
-                cv = abs(std_val / mean_val) if std_val is not None else 0
+            if pd.notna(mean_val) and mean_val != 0 and pd.notna(std_val):  # Avoid division by zero and NaN
+                cv = abs(std_val / mean_val)
+            elif pd.notna(std_val):
+                cv = std_val # If mean is 0 or NaN but std is valid, use std as measure
             else:
-                cv = std_val if std_val is not None else 0
+                cv = 0 # If both are NaN, set to 0
 
             # Count how many times this column appears in strong correlations
             correlation_count = sum(1 for corr in correlations
@@ -555,8 +558,10 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
             outliers = len(series[(series < lower_bound) | (series > upper_bound)])
             outlier_ratio = outliers / len(series) if len(series) > 0 else 0
 
-            # Calculate skewness
+            # Calculate skewness, handling potential NaN/inf
             skewness = series.skew()
+            if pd.isna(skewness) or not np.isfinite(skewness):
+                skewness = 0.0
 
             key_indicators.append({
                 "indicator": col,
@@ -565,10 +570,10 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
                 "metric_type": "continuous",
                 "description": f"Numeric column with {correlation_count} strong correlation(s), CV of {cv:.2f}, and {outlier_ratio:.2%} outliers",
                 "statistical_properties": {
-                    "mean": float(mean_val),
-                    "std": float(std_val) if std_val is not None else 0,
-                    "min": float(series.min()),
-                    "max": float(series.max()),
+                    "mean": float(mean_val) if pd.notna(mean_val) else None,
+                    "std": float(std_val) if pd.notna(std_val) else 0,
+                    "min": float(series.min()) if pd.notna(series.min()) else None,
+                    "max": float(series.max()) if pd.notna(series.max()) else None,
                     "coefficient_of_variation": cv,
                     "skewness": skewness,
                     "outlier_ratio": outlier_ratio
@@ -587,7 +592,7 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
             # Calculate entropy to understand distribution diversity
             value_counts = series.value_counts()
             probs = value_counts / total_count
-            entropy = -sum(p * np.log2(p) for p in probs if p > 0)
+            entropy = -sum(p * np.log2(p) for p in probs if p > 0 and p < 1) # Handle p=0 or p=1 cases
             max_entropy = np.log2(unique_count) if unique_count > 0 else 0
 
             normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0
@@ -659,59 +664,80 @@ def generate_eda_summary(df: pd.DataFrame, dataset_profile: Dict[str, Any], corr
     """
     logger.info("Starting EDA analysis for dataset")
 
-    # Perform pattern and relationship analysis
-    patterns = detect_pattern_relationships(df, dataset_profile)
+    try:
+        # Perform pattern and relationship analysis
+        patterns = detect_pattern_relationships(df, dataset_profile)
 
-    # If correlation insights are provided, use them instead of the basic correlations
-    if correlation_insights is not None:
-        patterns['correlation_insights'] = correlation_insights
-    else:
-        # Generate correlation insights using the new correlation engine
-        try:
-            correlation_analysis = analyze_correlations(df, dataset_profile)
-            correlation_insights = generate_correlation_insights(correlation_analysis)
+        # If correlation insights are provided, use them instead of the basic correlations
+        if correlation_insights is not None:
             patterns['correlation_insights'] = correlation_insights
-        except Exception as e:
-            logger.warning(f"Error generating correlation insights: {e}")
-            patterns['correlation_insights'] = []
-            correlation_insights = []
+        else:
+            # Generate correlation insights using the new correlation engine
+            try:
+                correlation_analysis = analyze_correlations(df, dataset_profile)
+                correlation_insights = generate_correlation_insights(correlation_analysis)
+                patterns['correlation_insights'] = correlation_insights
+            except Exception as e:
+                logger.warning(f"Error generating correlation insights: {e}")
+                patterns['correlation_insights'] = []
+                correlation_insights = []
 
-    # Extract potential use cases
-    use_cases = extract_use_cases(df, dataset_profile)
+        # Extract potential use cases
+        use_cases = extract_use_cases(df, dataset_profile)
 
-    # Identify key indicators using the correlation insights
-    meaningful_correlations = patterns.get('meaningful_correlations', [])
-    key_indicators = identify_key_indicators(df, dataset_profile, meaningful_correlations)
+        # Identify key indicators using the correlation insights
+        meaningful_correlations = patterns.get('meaningful_correlations', [])
+        key_indicators = identify_key_indicators(df, dataset_profile, meaningful_correlations)
 
-    # Create the EDA summary object
-    eda_summary = {
-        "summary_statistics": {
-            "total_rows": dataset_profile.get("n_rows", len(df)),
-            "total_columns": dataset_profile.get("n_cols", len(df.columns)),
-            "numeric_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'numeric']),
-            "categorical_columns": len([c for c in dataset_profile['columns'] if c['role'] in ['categorical', 'boolean']]),
-            "datetime_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'datetime']),
-            "text_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'text'])
-        },
-        "patterns_and_relationships": patterns,
-        "use_cases": use_cases,
-        "key_indicators": key_indicators,
-        "correlation_insights": correlation_insights,
-        "recommendations": generate_recommendations(df, dataset_profile, patterns, use_cases, key_indicators)
-    }
+        # Create the EDA summary object
+        eda_summary = {
+            "summary_statistics": {
+                "total_rows": dataset_profile.get("n_rows", len(df)),
+                "total_columns": dataset_profile.get("n_cols", len(df.columns)),
+                "numeric_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'numeric']),
+                "categorical_columns": len([c for c in dataset_profile['columns'] if c['role'] in ['categorical', 'boolean']]),
+                "datetime_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'datetime']),
+                "text_columns": len([c for c in dataset_profile['columns'] if c['role'] == 'text'])
+            },
+            "patterns_and_relationships": patterns,
+            "use_cases": use_cases,
+            "key_indicators": key_indicators,
+            "correlation_insights": correlation_insights,
+            "recommendations": generate_recommendations(df, dataset_profile, patterns, use_cases, key_indicators)
+        }
 
-    logger.info("EDA analysis completed")
-    return eda_summary
+        logger.info("EDA analysis completed")
+        return eda_summary
+    except Exception as e:
+        logger.error(f"Error in generate_eda_summary: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return a minimal summary in case of failure
+        return {
+            "summary_statistics": {
+                "total_rows": len(df),
+                "total_columns": len(df.columns),
+                "numeric_columns": 0,
+                "categorical_columns": 0,
+                "datetime_columns": 0,
+                "text_columns": 0
+            },
+            "patterns_and_relationships": {},
+            "use_cases": [],
+            "key_indicators": [],
+            "correlation_insights": [],
+            "recommendations": [{"type": "error", "title": "Analysis Error", "description": f"An error occurred during EDA: {str(e)}", "details": {}}]
+        }
 
 
-def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any], 
-                           patterns: Dict[str, Any], use_cases: List[Dict[str, Any]], 
+def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
+                           patterns: Dict[str, Any], use_cases: List[Dict[str, Any]],
                            key_indicators: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Generate actionable recommendations based on EDA analysis
     """
     recommendations = []
-    
+
     # Recommendation based on correlations
     strong_correlations = [corr for corr in patterns['correlations'] if corr['strength'] == 'strong']
     if strong_correlations:
@@ -721,7 +747,7 @@ def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "description": f"Detected {len(strong_correlations)} strong correlations. These variables may have causal relationships or shared underlying factors.",
             "details": strong_correlations[:3]  # Limit to top 3 for brevity
         })
-    
+
     # Recommendation based on outliers
     outlier_columns = [out for out in patterns['outliers'] if out['outlier_percentage'] > 5]
     if outlier_columns:
@@ -731,7 +757,7 @@ def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "description": f"Detected outliers in {len(outlier_columns)} columns (>5% of values). These may be data entry errors or genuine extreme values.",
             "details": outlier_columns[:3]  # Limit to top 3 for brevity
         })
-    
+
     # Recommendation based on anomalies
     if patterns['anomalies']:
         recommendations.append({
@@ -740,20 +766,20 @@ def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "description": f"Found {len(patterns['anomalies'])} anomalies in the dataset that may require further investigation.",
             "details": patterns['anomalies'][:3]  # Limit to top 3 for brevity
         })
-    
+
     # Recommendation based on trends
     if patterns['trends']:
         trend_directions = [trend['trend_type'] for trend in patterns['trends']]
         increasing_trends = trend_directions.count('increasing')
         decreasing_trends = trend_directions.count('decreasing')
-        
+
         recommendations.append({
             "type": "trend_analysis",
             "title": "Time-based trends identified",
             "description": f"Found {len(patterns['trends'])} time-based trends ({increasing_trends} increasing, {decreasing_trends} decreasing).",
             "details": patterns['trends'][:3]  # Limit to top 3 for brevity
         })
-    
+
     # Recommendation based on use cases
     if use_cases:
         recommendations.append({
@@ -762,7 +788,7 @@ def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "description": "Based on the content of your dataset, you could focus on these analytical approaches:",
             "details": use_cases[:2]  # Limit to top 2 for brevity
         })
-    
+
     # Recommendation based on key indicators
     if key_indicators:
         top_indicators = key_indicators[:3]  # Top 3 indicators
@@ -772,5 +798,5 @@ def generate_recommendations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "description": "These variables have high significance scores and should be prioritized in your analysis:",
             "details": top_indicators
         })
-    
+
     return recommendations

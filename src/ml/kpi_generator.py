@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import re
 import logging
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from scipy import stats
 from src.utils.identifier_detector import is_likely_identifier
 
@@ -157,8 +157,14 @@ def _calculate_outliers(series: pd.Series, method: str = 'iqr') -> int:
         Q1 = series.quantile(0.25)
         Q3 = series.quantile(0.75)
         IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR if pd.notna(IQR) and IQR != 0 else Q1 - 1.5
-        upper_bound = Q3 + 1.5 * IQR if pd.notna(IQR) and IQR != 0 else Q3 + 1.5
+        # Handle case where IQR is 0 (all values in middle 50% are the same)
+        if pd.isna(IQR) or IQR == 0:
+             lower_bound = Q1 - 1.5
+             upper_bound = Q3 + 1.5
+        else:
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+
         outliers = series[(series < lower_bound) | (series > upper_bound)]
         return len(outliers)
 
@@ -168,7 +174,7 @@ def _calculate_outliers(series: pd.Series, method: str = 'iqr') -> int:
 def _calculate_distribution_metrics(series: pd.Series) -> Tuple[float, float]:
     """
     Calculate distribution metrics: skewness and kurtosis using pandas.
-    Returns (skewness, kurtosis) or (0, 0) if not enough data.
+    Returns (skewness, kurtosis) or (0, 0) if not enough data or calculation fails.
     """
     series = pd.to_numeric(series, errors='coerce').dropna()
     if len(series) < 4:  # Need at least 4 points for meaningful distribution metrics
@@ -177,7 +183,7 @@ def _calculate_distribution_metrics(series: pd.Series) -> Tuple[float, float]:
     try:
         skewness = series.skew()
         kurtosis = series.kurtosis()
-        # Ensure valid values
+        # Ensure valid finite values
         skewness = float(skewness) if pd.notna(skewness) and np.isfinite(skewness) else 0.0
         kurtosis = float(kurtosis) if pd.notna(kurtosis) and np.isfinite(kurtosis) else 0.0
         return skewness, kurtosis
@@ -212,9 +218,10 @@ def _calculate_correlations(df: pd.DataFrame) -> List[Tuple[float, float, str, s
         if unique_ratio > 0.95 and len(series) > 10:
             # Check if these high-cardinality values are mostly integer-like (indicating IDs)
             numeric_values = pd.to_numeric(series, errors='coerce')
-            integer_ratio = (numeric_values == numeric_values.round()).sum() / len(numeric_values) if len(numeric_values) > 0 else 0
-            if integer_ratio > 0.9:
-                continue  # Likely ID field, skip
+            if not numeric_values.isna().all():
+                 integer_ratio = (numeric_values == numeric_values.round()).sum() / len(numeric_values) if len(numeric_values) > 0 else 0
+                 if integer_ratio > 0.9:
+                    continue  # Likely ID field, skip
                 
         meaningful_numeric_cols.append(col)
 
@@ -222,7 +229,17 @@ def _calculate_correlations(df: pd.DataFrame) -> List[Tuple[float, float, str, s
         logger.info(f"Not enough meaningful numeric columns to calculate correlations (found {len(meaningful_numeric_cols)})")
         return []
 
-    corr_matrix = df[meaningful_numeric_cols].corr()
+    # Select only the meaningful columns for correlation calculation
+    subset_df = df[meaningful_numeric_cols]
+    # Ensure all selected columns are numeric for corr()
+    subset_df = subset_df.select_dtypes(include=[np.number])
+    meaningful_numeric_cols = list(subset_df.columns) # Update list after selection
+
+    if len(meaningful_numeric_cols) < 2:
+        logger.info(f"After cleaning, not enough meaningful numeric columns to calculate correlations (found {len(meaningful_numeric_cols)})")
+        return []
+
+    corr_matrix = subset_df.corr()
 
     # Get pairs with highest absolute correlation (excluding self-correlations)
     correlations = []
@@ -268,10 +285,10 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
             std_dev = numeric_series.std()
             mean_val = numeric_series.mean()
             
-            if pd.notna(std_dev) and pd.notna(mean_val) and mean_val != 0:
+            if pd.notna(std_dev) and pd.notna(mean_val) and mean_val != 0 and np.isfinite(std_dev) and np.isfinite(mean_val):
                 cv = abs(std_dev / mean_val)  # Coefficient of variation
                 score += min(0.5, cv)  # Cap at 0.5 to prevent extreme scores
-            elif pd.notna(std_dev):
+            elif pd.notna(std_dev) and np.isfinite(std_dev):
                 score += min(0.5, std_dev / 10)  # If mean is 0, use raw std deviation capped
 
     # Uniqueness score: avoid both too unique (IDs) and too uniform (constants)
@@ -302,9 +319,10 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) >= 4:  # Need enough points for distribution metrics
             skewness, kurtosis = _calculate_distribution_metrics(numeric_series)
-            if abs(skewness) > 1.0:  # Highly skewed - might be important for analysis
+            # Only add score if the metrics are valid numbers
+            if abs(skewness) > 1.0 and np.isfinite(skewness):  # Highly skewed - might be important for analysis
                 score += 0.1
-            if abs(kurtosis) > 1.0:  # Heavy or light-tailed - might be important
+            if abs(kurtosis) > 1.0 and np.isfinite(kurtosis): # Heavy or light-tailed - might be important
                 score += 0.1
 
     # Outlier significance
@@ -338,6 +356,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         min_unique_ratio: Minimum unique ratio for categorical columns
         max_unique_ratio: Maximum unique ratio (to avoid IDs)
         top_k: Number of top KPIs to return
+        eda_summary: Optional EDA summary to incorporate insights
 
     Returns:
         List of KPI dictionaries with significance scores and semantic meaning
@@ -350,7 +369,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                 f"min_unique_ratio={min_unique_ratio}, max_unique_ratio={max_unique_ratio}, top_k={top_k}")
 
     kpis = []
-    columns = dataset_profile["columns"]
+    columns = dataset_profile.get("columns", [])
     n_rows = dataset_profile.get("n_rows", len(df))
 
     if n_rows == 0:
@@ -366,6 +385,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         
         # Skip if series is all NaN
         if series.isna().all():
+            logger.debug(f"Skipping column {col_name} as it contains only NaN values.")
             continue
             
         # Determine if this is likely an identifier
@@ -387,13 +407,28 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         if pd.api.types.is_numeric_dtype(series):
             numeric_series = pd.to_numeric(series, errors='coerce').dropna()
             if len(numeric_series) > 0:
+                # Calculate stats, handling potential NaN/inf results
+                mean_val = numeric_series.mean()
+                std_val = numeric_series.std()
+                min_val = numeric_series.min()
+                max_val = numeric_series.max()
+                median_val = numeric_series.median()
+                q25_val = numeric_series.quantile(0.25)
+                q75_val = numeric_series.quantile(0.75)
+
                 numeric_stats = {
-                    'mean': float(numeric_series.mean()) if len(numeric_series) > 0 else None,
-                    'std': float(numeric_series.std()) if len(numeric_series) > 1 else 0.0,
-                    'min': float(numeric_series.min()) if len(numeric_series) > 0 else None,
-                    'max': float(numeric_series.max()) if len(numeric_series) > 0 else None,
-                    'median': float(numeric_series.median()) if len(numeric_series) > 0 else None,
+                    'mean': float(mean_val) if pd.notna(mean_val) and np.isfinite(mean_val) else None,
+                    'std': float(std_val) if pd.notna(std_val) and np.isfinite(std_val) and len(numeric_series) > 1 else 0.0,
+                    'min': float(min_val) if pd.notna(min_val) and np.isfinite(min_val) else None,
+                    'max': float(max_val) if pd.notna(max_val) and np.isfinite(max_val) else None,
+                    'median': float(median_val) if pd.notna(median_val) and np.isfinite(median_val) else None,
+                    'q25': float(q25_val) if pd.notna(q25_val) and np.isfinite(q25_val) else None,
+                    'q75': float(q75_val) if pd.notna(q75_val) and np.isfinite(q75_val) else None,
+                    'sum': float(numeric_series.sum()) if len(numeric_series) > 0 and all(np.isfinite(numeric_series)) else 0.0,
+                    'variance': float(numeric_series.var()) if len(numeric_series) > 1 and pd.notna(std_val) and np.isfinite(std_val) else 0.0,
+                    'count': int(len(numeric_series))
                 }
+
         
         # Count outliers if numeric
         outlier_count = _calculate_outliers(series) if pd.api.types.is_numeric_dtype(series) else 0
@@ -422,6 +457,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         
         # Skip identifiers as they are not meaningful KPIs
         if analysis['is_identifier']:
+            logger.debug(f"Skipping identifier column {col_name} from KPI generation.")
             continue
             
         # Prepare KPI information
@@ -439,20 +475,27 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         if col_role == 'numeric':
             numeric_stats = analysis['numeric_stats']
             if numeric_stats and numeric_stats.get('mean') is not None:
-                avg_val = numeric_stats['mean']
-                kpi_info["value"] = f"{avg_val:.2f} (±{numeric_stats['std']:.2f})"
+                mean_val = numeric_stats.get('mean')
+                std_val = numeric_stats.get('std', 0.0)
+                if mean_val is not None and np.isfinite(mean_val):
+                    kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
+                else:
+                    kpi_info["value"] = "Invalid numeric value"
             else:
-                # Compute from series directly if stats weren't cached
+                # Compute from series directly if stats weren't cached or were invalid
                 numeric_series = pd.to_numeric(series, errors='coerce').dropna()
                 if len(numeric_series) > 0:
                     mean_val = float(numeric_series.mean())
                     std_val = float(numeric_series.std()) if len(numeric_series) > 1 else 0.0
-                    kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
+                    if np.isfinite(mean_val):
+                         kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
+                    else:
+                         kpi_info["value"] = "Invalid numeric value"
                 else:
                     kpi_info["value"] = "No valid numeric values"
 
-            # Add outlier information
-            if analysis['outlier_count'] > 0:
+            # Add outlier information if numeric and valid mean was calculated
+            if analysis['outlier_count'] > 0 and 'Invalid' not in kpi_info["value"]:
                 kpi_info["value"] += f" [{analysis['outlier_count']} outliers]"
 
         elif col_role in ['categorical', 'text']:
@@ -492,21 +535,26 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             
         kpis.append(kpi_info)
 
-    # Additionally, add some correlation-based KPIs
-    try:
-        correlations = _calculate_correlations(df)
-        for abs_corr, corr_val, col1, col2 in correlations[:3]:  # Top 3 correlations
-            kpis.append({
-                "label": f"Correlation: {col1} ↔ {col2}",
-                "value": f"{corr_val:.3f}",
-                "type": "correlation",
-                "correlation_value": corr_val,
-                "columns": [col1, col2],
-                "significance_score": abs(corr_val),  # Correlation strength as significance
-                "provenance": "correlation_insight"
-            })
-    except Exception as e:
-        logger.warning(f"Error calculating correlations: {e}")
+    # Additionally, add some correlation-based KPIs if EDA summary is available
+    if eda_summary:
+        try:
+            # Try to get correlations from EDA summary first, then fall back to calculating
+            correlations = eda_summary.get('patterns_and_relationships', {}).get('correlations', [])
+            if not correlations:
+                 correlations = _calculate_correlations(df)
+
+            for abs_corr, corr_val, col1, col2 in correlations[:3]:  # Top 3 correlations
+                kpis.append({
+                    "label": f"Correlation: {col1} ↔ {col2}",
+                    "value": f"{corr_val:.3f}",
+                    "type": "correlation",
+                    "correlation_value": corr_val,
+                    "columns": [col1, col2],
+                    "significance_score": abs(corr_val),  # Correlation strength as significance
+                    "provenance": "correlation_insight"
+                })
+        except Exception as e:
+            logger.warning(f"Error calculating or adding correlation-based KPIs: {e}")
 
     logger.info(f"Generated {len(kpis)} enhanced KPIs")
     return kpis

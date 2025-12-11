@@ -4,12 +4,12 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 from datetime import datetime
 import time
-from src.data.parser import load_csv
-from src.data.analyser import basic_profile, build_dataset_profile
+# Corrected import paths based on the modular structure
+from src.data.analyser import build_dataset_profile, basic_profile
 from src.ml.kpi_generator import generate_kpis
 from src.ml.chart_selector import suggest_charts
 from src.viz.plotly_renderer import build_category_count_charts, build_charts_from_specs
-from src.viz.simple_renderer import generate_all_chart_data
+from src.viz.simple_renderer import generate_all_chart_data # Potentially used as fallback or for specific needs
 from src.eda.insights_generator import generate_eda_summary
 from src.ml.correlation_engine import analyze_correlations, generate_correlation_insights
 
@@ -50,6 +50,23 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.error("Input DataFrame is None")
         return None
 
+    if df.empty:
+        logger.warning("Input DataFrame is empty")
+        # Return a minimal state for empty data
+        return DashboardState(
+            df=df,
+            dataset_profile={"n_rows": 0, "n_cols": 0, "role_counts": {}, "columns": []},
+            profile=[],
+            kpis=[],
+            charts=[],
+            primary_chart=None,
+            category_charts={},
+            all_charts=[],
+            eda_summary={"summary_statistics": {"total_rows": 0, "total_columns": 0}},
+            correlation_analysis={"meaningful_correlations": [], "cross_type_relationships": [], "spurious_correlations": [], "summary_stats": {}},
+            original_filename=None
+        )
+
     # Cap rows and columns to prevent expensive processing
     MAX_ROWS = 100000
     if len(df) > MAX_ROWS:
@@ -82,7 +99,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     # 3) Legacy/simple profile (optional)
     profile_start = time.time()
     try:
-        profile = basic_profile(df)
+        profile = basic_profile(df, max_cols=min(10, max_cols)) # Limit basic profile columns for speed
         logger.info(f"Basic profile built for {len(profile)} columns")
     except Exception as e:
         logger.exception("Error building basic profile")
@@ -115,7 +132,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     # 6) KPIs (now using EDA insights for better identification)
     kpi_start = time.time()
     try:
-        kpis = generate_kpis(df, dataset_profile, eda_summary=eda_summary)
+        kpis = generate_kpis(df, dataset_profile, eda_summary=eda_summary, top_k=10) # Limit KPIs for speed
         logger.info(f"Generated {len(kpis)} KPIs")
     except Exception as e:
         logger.exception("Error generating KPIs")
@@ -132,7 +149,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         charts = []
     timing['charts'] = time.time() - chart_start
 
-    # 6) Build multiple category_count charts with semantic awareness and pick a primary one
+    # 8) Build multiple category_count charts with semantic awareness and pick a primary one
     category_start = time.time()
     try:
         category_charts = build_category_count_charts(
@@ -143,14 +160,14 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
             max_charts=max_charts
         )
         logger.info(f"Built {len(category_charts)} category count charts")
-        primary_chart = next(iter(category_charts.values()), None)
+        primary_chart = next(iter(category_charts.values()), None) # Use .values() to get chart data
     except Exception as e:
         logger.exception("Error building category charts")
         category_charts = {}
         primary_chart = None
     timing['category_charts'] = time.time() - category_start
 
-    # 7) Build all charts using the new intelligent renderer with semantic awareness
+    # 9) Build all charts using the new intelligent renderer with semantic awareness
     all_charts_start = time.time()
     try:
         all_charts = build_charts_from_specs(
@@ -171,6 +188,12 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     timing['total'] = total_time
     logger.info(f"Dashboard build completed in {total_time:.2f}s")
     logger.info(f"Timing breakdown: {timing}")
+
+    # Validate the final state before returning
+    # (Basic check - could be expanded)
+    if not isinstance(dataset_profile, dict) or 'columns' not in dataset_profile:
+         logger.error("Generated dataset_profile is invalid.")
+         return None
 
     return DashboardState(
         df=df,
@@ -195,11 +218,17 @@ def build_dashboard_from_file(file_storage, max_cols: Optional[int] = None,
     Orchestrates the full dashboard build from an uploaded file.
     Keeps the old interface for the upload flow.
     """
+    from src.data.parser import load_csv_from_file # Import here to avoid circular dependency if needed elsewhere
     start_time = time.time()
     try:
-        df = load_csv(file_storage)
+        load_result = load_csv_from_file(file_storage)
+        if not load_result.success:
+            logger.error(f"Failed to load CSV from file storage: {load_result.error_code} - {load_result.detail}")
+            return None
+
+        df = load_result.df
         if df is None:
-            logger.error("Failed to load CSV from file storage")
+            logger.error("Failed to load CSV from file storage (result was None)")
             return None
 
         state = build_dashboard_from_df(df, max_cols=max_cols,

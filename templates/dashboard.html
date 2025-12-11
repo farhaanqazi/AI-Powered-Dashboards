@@ -659,24 +659,41 @@
                 return;
             }
 
-            // Filter valid data points with x and y values
-            const validData = chartData.data.filter(d => d.x !== undefined && d.y !== undefined && d.x !== null && d.y !== null);
+            // Filter valid data points with x and y values, and ensure they are not NaN, null, or undefined
+            const validData = chartData.data.filter(d => {
+                // Check for x and y properties
+                if (d.x === undefined || d.y === undefined || d.x === null || d.y === null) {
+                    return false;
+                }
+                // Check for numeric y values that are finite
+                const yVal = parseFloat(d.y);
+                if (isNaN(yVal) || !isFinite(yVal)) {
+                    return false;
+                }
+                // Check for x values that are not NaN or infinite when converted to string (for axis labels)
+                const xVal = d.x;
+                if (typeof xVal === 'number' && (!isFinite(xVal) || isNaN(xVal))) {
+                    return false;
+                }
+                return true;
+            });
+
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points");
+                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined)");
                  return;
             }
 
-            const categories = validData.map(d => d.x.toString());
-            const values = validData.map(d => parseFloat(d.y)); // Ensure numeric
+            const categories = validData.map(d => String(d.x)); // Ensure x is string for axis
+            const values = validData.map(d => parseFloat(d.y)); // Ensure y is numeric
 
             if (categories.length === 0 || values.length === 0) {
-                 renderEmptyChart(containerId, "No categories or values");
+                 renderEmptyChart(containerId, "No categories or values after filtering");
                  return;
             }
 
-            // Check for non-numeric values after parsing
-            if (values.some(v => isNaN(v))) {
-                 renderEmptyChart(containerId, "Non-numeric values found");
+            // Check for non-numeric values after parsing (should be redundant now)
+            if (values.some(v => isNaN(v) || !isFinite(v))) {
+                 renderEmptyChart(containerId, "Non-numeric values found after parsing");
                  return;
             }
 
@@ -761,12 +778,256 @@
             Plotly.react(containerId, [trace], layout);
         }
 
+        // Function to render scatter plots
+        function _renderScatterPlot(chartData, containerId) {
+             if (!chartData.data || chartData.data.length === 0) {
+                renderEmptyChart(containerId, "No data available");
+                return;
+            }
+
+            // Filter valid data points with x and y values, and ensure they are not NaN, null, or undefined, and are finite numbers
+            const validData = chartData.data.filter(d => {
+                if (d.x === undefined || d.y === undefined || d.x === null || d.y === null) {
+                    return false;
+                }
+                const xVal = parseFloat(d.x);
+                const yVal = parseFloat(d.y);
+                if (isNaN(xVal) || isNaN(yVal) || !isFinite(xVal) || !isFinite(yVal)) {
+                    return false;
+                }
+                return true;
+            });
+
+            if (validData.length === 0) {
+                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite)");
+                 return;
+            }
+
+            const xValues = validData.map(d => parseFloat(d.x));
+            const yValues = validData.map(d => parseFloat(d.y));
+
+            const trace = {
+                x: xValues,
+                y: yValues,
+                mode: 'markers',
+                type: 'scatter',
+                marker: {
+                    size: 8,
+                    opacity: 0.6,
+                    color: 'rgba(55, 128, 191, 0.6)' // Light theme blue
+                }
+            };
+
+            const layout = {
+                title: chartData.title || "Scatter Plot",
+                xaxis: {
+                    title: chartData.x_column || "X Values",
+                    automargin: true,
+                    showgrid: true,
+                    gridcolor: 'lightgray'
+                },
+                yaxis: {
+                    title: chartData.y_column || "Y Values",
+                    automargin: true,
+                    showgrid: true,
+                    gridcolor: 'lightgray'
+                },
+                margin: {
+                    t: 60,
+                    b: 80,
+                    l: 60,
+                    r: 40
+                }
+            };
+
+            Plotly.react(containerId, [trace], layout);
+        }
+
+        // Function to render histograms (treated as bar charts)
+        function _renderHistogram(chartData, containerId) {
+             if (!chartData.data || chartData.data.length === 0) {
+                renderEmptyChart(containerId, "No data available");
+                return;
+            }
+
+            // Filter valid data points with x (bin range) and y (count) values, ensuring y is finite
+            const validData = chartData.data.filter(d => {
+                if (d.bin_range === undefined || d.count === undefined || d.bin_range === null || d.count === null) {
+                    return false;
+                }
+                const countVal = parseFloat(d.count);
+                if (isNaN(countVal) || !isFinite(countVal)) {
+                    return false;
+                }
+                return true;
+            });
+
+            if (validData.length === 0) {
+                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite)");
+                 return;
+            }
+
+            const xValues = validData.map(d => String(d.bin_range)); // Bin ranges are strings
+            const yValues = validData.map(d => parseFloat(d.count));
+
+            const trace = {
+                x: xValues,
+                y: yValues,
+                type: 'bar',
+                marker: { color: '#8b5cf6' } // Light theme violet
+            };
+
+            const layout = {
+                title: chartData.title || "Histogram",
+                xaxis: {
+                    title: chartData.column || "Bins",
+                    automargin: true,
+                    tickangle: -45
+                },
+                yaxis: {
+                    title: "Frequency",
+                    automargin: true
+                },
+                margin: {
+                    t: 40,
+                    b: 80, // Increased for angled labels
+                    l: 60,
+                    r: 40
+                }
+            };
+
+            Plotly.react(containerId, [trace], layout);
+        }
+
+        // Function to render pie charts
+        function _renderPieChart(chartData, containerId) {
+             if (!chartData.data || chartData.data.length === 0) {
+                renderEmptyChart(containerId, "No data available");
+                return;
+            }
+
+            // Filter valid data points with label and value, ensuring value is finite
+            const validData = chartData.data.filter(d => {
+                if (d.label === undefined || d.value === undefined || d.label === null || d.value === null) {
+                    return false;
+                }
+                const valueVal = parseFloat(d.value);
+                if (isNaN(valueVal) || !isFinite(valueVal)) {
+                    return false;
+                }
+                return true;
+            });
+
+            if (validData.length === 0) {
+                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite)");
+                 return;
+            }
+
+            const labels = validData.map(d => String(d.label));
+            const values = validData.map(d => parseFloat(d.value));
+
+            const trace = {
+                labels: labels,
+                values: values,
+                type: 'pie',
+                textinfo: 'label+percent',
+                textposition: 'inside',
+                automargin: true,
+                marker: { colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'] } // Light theme color palette
+            };
+
+            const layout = {
+                title: chartData.title || "Pie Chart",
+                margin: {
+                    t: 60,
+                    b: 40,
+                    l: 40,
+                    r: 40
+                }
+            };
+
+            Plotly.react(containerId, [trace], layout);
+        }
+
+        // Function to render box plots
+        function _renderBoxPlot(chartData, containerId) {
+             if (!chartData.data || chartData.data.length === 0) {
+                renderEmptyChart(containerId, "No data available");
+                return;
+            }
+
+            // Filter valid data points ensuring 'category' and 'values' exist, and 'values' is an array of finite numbers
+            const validData = chartData.data.filter(d => {
+                if (d.category === undefined || d.values === undefined || d.category === null || d.values === null || !Array.isArray(d.values)) {
+                    return false;
+                }
+                // Check if all values in the array are finite numbers
+                const allFinite = d.values.every(v => {
+                    const numVal = parseFloat(v);
+                    return !isNaN(numVal) && isFinite(numVal);
+                });
+                if (!allFinite) {
+                    return false;
+                }
+                return true;
+            });
+
+            if (validData.length === 0) {
+                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite, non-array values)");
+                 return;
+            }
+
+            const traces = validData.map(item => {
+                // Ensure values are numeric and finite
+                const numericValues = item.values.map(v => parseFloat(v)).filter(v => isFinite(v) && !isNaN(v));
+                return {
+                    y: numericValues,
+                    type: 'box',
+                    name: String(item.category),
+                    boxpoints: 'outliers' // Show outliers
+                };
+            });
+
+            const layout = {
+                title: chartData.title || "Box Plot",
+                xaxis: { title: chartData.x_column || "Category", automargin: true },
+                yaxis: { title: chartData.y_column || "Value", automargin: true },
+                margin: { t: 60, b: 80, l: 60, r: 40 },
+                showlegend: false
+            };
+
+            Plotly.react(containerId, traces, layout);
+        }
 
         document.addEventListener("DOMContentLoaded", function () {
             try {
                 // Render primary chart if it exists
                 if (PRIMARY_CHART) {
-                     _renderSimpleBarChart(PRIMARY_CHART, 'primary-chart');
+                     // Determine chart type and render accordingly
+                     // This assumes PRIMARY_CHART follows the structure from plotly_renderer.py
+                     // which typically has 'type' field. If not, default to bar.
+                     const chartType = PRIMARY_CHART.type || 'bar';
+                     switch(chartType) {
+                        case 'bar':
+                        case 'category_count':
+                             _renderSimpleBarChart(PRIMARY_CHART, 'primary-chart');
+                             break;
+                        case 'scatter':
+                             _renderScatterPlot(PRIMARY_CHART, 'primary-chart');
+                             break;
+                        case 'histogram':
+                             _renderHistogram(PRIMARY_CHART, 'primary-chart');
+                             break;
+                        case 'pie':
+                             _renderPieChart(PRIMARY_CHART, 'primary-chart');
+                             break;
+                        case 'box_plot':
+                             _renderBoxPlot(PRIMARY_CHART, 'primary-chart');
+                             break;
+                        default:
+                             _renderSimpleBarChart(PRIMARY_CHART, 'primary-chart'); // Fallback
+                             break;
+                     }
                 }
 
                 // Render all category charts
@@ -775,7 +1036,29 @@
                         try {
                             const chartData = CATEGORY_CHARTS[columnName];
                             const containerId = "chart-" + columnName.replace(/[\s.]/g, '_');
-                            _renderSimpleBarChart(chartData, containerId);
+                            // Determine chart type and render accordingly
+                            const chartType = chartData.type || 'bar';
+                            switch(chartType) {
+                                case 'bar':
+                                case 'category_count':
+                                    _renderSimpleBarChart(chartData, containerId);
+                                    break;
+                                case 'scatter':
+                                    _renderScatterPlot(chartData, containerId);
+                                    break;
+                                case 'histogram':
+                                    _renderHistogram(chartData, containerId);
+                                    break;
+                                case 'pie':
+                                    _renderPieChart(chartData, containerId);
+                                    break;
+                                case 'box_plot':
+                                    _renderBoxPlot(chartData, containerId);
+                                    break;
+                                default:
+                                    _renderSimpleBarChart(chartData, containerId); // Fallback
+                                    break;
+                            }
                         } catch (e) {
                             console.error("Error rendering category chart for " + columnName + ":", e);
                         }
@@ -788,8 +1071,28 @@
                         try {
                             const containerId = "chart-" + chartSpec.id;
                             // Determine chart type and render accordingly
-                            // For simplicity, defaulting to bar chart logic here, adjust as needed based on chartSpec.type
-                            _renderSimpleBarChart(chartSpec, containerId);
+                            const chartType = chartSpec.type || 'bar';
+                            switch(chartType) {
+                                case 'bar':
+                                case 'category_count':
+                                    _renderSimpleBarChart(chartSpec, containerId);
+                                    break;
+                                case 'scatter':
+                                    _renderScatterPlot(chartSpec, containerId);
+                                    break;
+                                case 'histogram':
+                                    _renderHistogram(chartSpec, containerId);
+                                    break;
+                                case 'pie':
+                                    _renderPieChart(chartSpec, containerId);
+                                    break;
+                                case 'box_plot':
+                                    _renderBoxPlot(chartSpec, containerId);
+                                    break;
+                                default:
+                                    _renderSimpleBarChart(chartSpec, containerId); // Fallback
+                                    break;
+                            }
                         } catch (e) {
                             console.error("Error rendering chart " + chartSpec.id + ":", e);
                         }

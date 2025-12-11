@@ -51,7 +51,7 @@ def _build_category_count_data(
         if col_profile and col_profile.get('role') == 'identifier':
             logger.info(f"Skipping identifier column '{column}' from category count chart")
             return None
-    
+
     # Also check using our identifier detection function
     if _is_likely_identifier(series, column):
         logger.info(f"Skipping likely identifier column '{column}' from category count chart")
@@ -122,7 +122,7 @@ def _build_histogram_data(
         if col_profile and col_profile.get('role') == 'identifier':
             logger.info(f"Skipping identifier column '{column}' from histogram")
             return None
-    
+
     # Also check using our identifier detection function
     if _is_likely_identifier(series, column):
         logger.info(f"Skipping likely identifier column '{column}' from histogram")
@@ -147,7 +147,7 @@ def _build_histogram_data(
         # Very large dataset - limit to reasonable number of bins
         bins = min(bins, 100)
     else:
-        bins = min(bins, n_samples // 10)  # At most 10 samples per bin
+        bins = min(bins, n_samples // 10) # At most 10 samples per bin
 
     # Check skewness and adjust if needed
     if n_samples > 2 and len(series) > 2:
@@ -160,9 +160,19 @@ def _build_histogram_data(
                     # Divide the data into quantile-based bins for skewed distributions
                     quantiles = pd.qcut(series, bins, duplicates='drop', precision=1)
                     value_counts = quantiles.value_counts(sort=False)
-                    
-                    categories = [f"{interval.left:.2f} - {interval.right:.2f}" for interval in value_counts.index]
-                    values = [int(count) for count in value_counts.values]
+                    # Ensure intervals are valid
+                    valid_counts = value_counts[value_counts.index.map(lambda x: pd.notna(x.left) and pd.notna(x.right))]
+                    if valid_counts.empty:
+                        logger.warning(f"Quantile binning resulted in no valid intervals for {column}")
+                        # Fall back to regular binning
+                        hist, bin_edges = pd.cut(series, bins=bins, retbins=True)
+                        value_counts = hist.value_counts(sort=False)  # Sort by bin order, not by count
+                        valid_indices = [i for i, interval in enumerate(value_counts.index) if pd.notna(interval.left)]
+                        categories = [f"{value_counts.index[i].left:.2f} - {value_counts.index[i].right:.2f}" for i in valid_indices]
+                        values = [int(value_counts.iloc[i]) for i in valid_indices]
+                    else:
+                        categories = [f"{interval.left:.2f} - {interval.right:.2f}" for interval in valid_counts.index]
+                        values = [int(count) for count in valid_counts.values]
                 except Exception:
                     # If quantile binning fails, fall back to regular binning
                     hist, bin_edges = pd.cut(series, bins=bins, retbins=True)
@@ -256,7 +266,7 @@ def _build_category_summary_data(
     # Check if either column is likely an identifier
     x_series = df[x_column]
     y_series = df[y_column]
-    
+
     if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
         logger.info(f"Skipping summary for columns '{x_column}' and '{y_column}' - one is likely identifier")
         return None
@@ -265,7 +275,7 @@ def _build_category_summary_data(
     if dataset_profile:
         x_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == x_column), None)
         y_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == y_column), None)
-        
+
         if x_profile and x_profile.get('role') == 'identifier':
             logger.info(f"Skipping summary - X column '{x_column}' is an identifier")
             return None
@@ -292,58 +302,68 @@ def _build_category_summary_data(
     y_final = valid_data.iloc[:, 1]
 
     # Apply aggregation by group
-    if agg_func == "sum":
-        result = y_final.groupby(x_final).sum()
-    elif agg_func == "mean":
-        result = y_final.groupby(x_final).mean()
-    elif agg_func == "count":
-        result = y_final.groupby(x_final).count()
-    elif agg_func == "min":
-        result = y_final.groupby(x_final).min()
-    elif agg_func == "max":
-        result = y_final.groupby(x_final).max()
-    elif agg_func == "std":
-        result = y_final.groupby(x_final).std()
-    elif agg_func == "median":
-        result = y_final.groupby(x_final).median()
-    else:
-        # Default to mean
-        result = y_final.groupby(x_final).mean()
+    agg_func_lower = agg_func.lower()
+    valid_agg_funcs = {'sum', 'mean', 'count', 'min', 'max', 'std', 'median'}
+    if agg_func_lower not in valid_agg_funcs:
+        logger.warning(f"Invalid aggregation function '{agg_func}', defaulting to 'mean'.")
+        agg_func_lower = 'mean'
 
-    # Check if we have enough categories to visualize meaningfully (not too many for readability)
-    if len(result) > 20:
-        logger.info(f"Too many categories ({len(result)}) for '{x_column}' vs '{y_column}' summary, skipping")
+    try:
+        if agg_func_lower == "sum":
+            result = y_final.groupby(x_final).sum()
+        elif agg_func_lower == "mean":
+            result = y_final.groupby(x_final).mean()
+        elif agg_func_lower == "count":
+            result = y_final.groupby(x_final).count()
+        elif agg_func_lower == "min":
+            result = y_final.groupby(x_final).min()
+        elif agg_func_lower == "max":
+            result = y_final.groupby(x_final).max()
+        elif agg_func_lower == "std":
+            result = y_final.groupby(x_final).std()
+        elif agg_func_lower == "median":
+            result = y_final.groupby(x_final).median()
+        else:
+            # Default to mean
+            result = y_final.groupby(x_final).mean()
+
+        # Check if we have enough categories to visualize meaningfully (not too many for readability)
+        if len(result) > 20:
+            logger.info(f"Too many categories ({len(result)}) for '{x_column}' vs '{y_column}' summary, skipping")
+            return None
+
+        categories = [str(idx) for idx in result.index if idx is not None]
+        values = [float(val) for val in result.values if pd.notna(val)]
+
+        if not categories:
+            logger.warning(f"No valid categories for summary between '{x_column}' and '{y_column}'")
+            return None
+
+        table_data = [
+            {"category": cat, "agg_value": val}
+            for cat, val in zip(categories, values)
+        ]
+
+        # Validate and normalize the chart payload
+        agg_display = agg_func_lower.title()
+        chart_payload = ChartPayload(
+            title=f"{agg_display} of {y_column.replace('_', ' ').title()} by {x_column.replace('_', ' ').title()}",
+            column=f"agg_{agg_func_lower}_{x_column}",
+            data=table_data,
+            type="category_summary"
+        )
+
+        return {
+            "title": chart_payload.title,
+            "x_column": x_column,
+            "y_column": y_column,
+            "data": chart_payload.data,
+            "type": chart_payload.type,
+            "agg_func": agg_func_lower
+        }
+    except Exception as e:
+        logger.error(f"Error in aggregation for {x_column} vs {y_column}: {e}")
         return None
-
-    categories = [str(idx) for idx in result.index if idx is not None]
-    values = [float(val) for val in result.values if pd.notna(val)]
-
-    if not categories:
-        logger.warning(f"No valid categories for summary between '{x_column}' and '{y_column}'")
-        return None
-
-    table_data = [
-        {"category": cat, "agg_value": val}
-        for cat, val in zip(categories, values)
-    ]
-
-    # Validate and normalize the chart payload
-    agg_display = agg_func.title()
-    chart_payload = ChartPayload(
-        title=f"{agg_display} of {y_column.replace('_', ' ').title()} by {x_column.replace('_', ' ').title()}",
-        column=f"agg_{agg_func}_{x_column}",
-        data=table_data,
-        type="category_summary"
-    )
-
-    return {
-        "title": chart_payload.title,
-        "x_column": x_column,
-        "y_column": y_column,
-        "data": chart_payload.data,
-        "type": chart_payload.type,
-        "agg_func": agg_func
-    }
 
 
 def _build_time_series_data(
@@ -377,7 +397,7 @@ def _build_time_series_data(
     if dataset_profile:
         x_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == x_column), None)
         y_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == y_column), None)
-        
+
         if x_profile and x_profile.get('role') == 'identifier':
             logger.info(f"Skipping time series - X column '{x_column}' is an identifier")
             return None
@@ -405,9 +425,19 @@ def _build_time_series_data(
 
     # Group by date if there are duplicate dates
     if x_final.duplicated().any():
-        grouped = y_final.groupby(x_final).agg(agg_func)
-        dates = [dt.isoformat() for dt in grouped.index]
-        values = [float(val) for val in grouped.values]
+        agg_func_lower = agg_func.lower()
+        valid_agg_funcs = {'sum', 'mean', 'count', 'min', 'max', 'std', 'median'}
+        if agg_func_lower not in valid_agg_funcs:
+            logger.warning(f"Invalid aggregation function '{agg_func}' for time series, defaulting to 'mean'.")
+            agg_func_lower = 'mean'
+
+        try:
+            grouped = y_final.groupby(x_final).agg(agg_func_lower)
+            dates = [dt.isoformat() for dt in grouped.index]
+            values = [float(val) for val in grouped.values]
+        except Exception as e:
+            logger.error(f"Error in aggregation for time series {x_column} vs {y_column}: {e}")
+            return None
     else:
         # Sort by date
         sorted_combined = combined.sort_values(x_column)
@@ -457,7 +487,7 @@ def _build_scatter_data(
     # Check if either column is likely an identifier
     x_series = df[x_column]
     y_series = df[y_column]
-    
+
     if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
         logger.info(f"Skipping scatter plot for columns '{x_column}' and '{y_column}' - identifier detected")
         return None
@@ -466,7 +496,7 @@ def _build_scatter_data(
     if dataset_profile:
         x_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == x_column), None)
         y_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == y_column), None)
-        
+
         if x_profile and x_profile.get('role') == 'identifier':
             logger.info(f"Skipping scatter - X column '{x_column}' is an identifier")
             return None
@@ -490,23 +520,23 @@ def _build_scatter_data(
     # Check for minimal variance (constant or near-constant values)
     x_std = x_final.std()
     y_std = y_final.std()
-    
+
     if pd.isna(x_std) or pd.isna(y_std) or x_std < 0.001 or y_std < 0.001:
         logger.info(f"Low variance in columns '{x_column}' or '{y_column}', skipping scatter plot")
         return None
 
     # Prepare data
-    x_values = [float(val) for val in x_final]
-    y_values = [float(val) for val in y_final]
+    x_values = [float(val) for val in x_final if pd.notna(val) and np.isfinite(val)]
+    y_values = [float(val) for val in y_final if pd.notna(val) and np.isfinite(val)]
+
+    if not x_values or not y_values or len(x_values) != len(y_values) or len(x_values) < 3:
+        logger.warning(f"Insufficient or mismatched valid data points for scatter plot between '{x_column}' and '{y_column}' after cleaning for NaN/Inf")
+        return None
 
     table_data = [
         {"x": x_val, "y": y_val}
         for x_val, y_val in zip(x_values, y_values)
     ]
-
-    if not x_values or not y_values or len(x_values) != len(y_values):
-        logger.warning(f"Mismatched array lengths for scatter plot between '{x_column}' and '{y_column}'")
-        return None
 
     # Validate and normalize the chart payload
     chart_payload = ChartPayload(
@@ -603,7 +633,7 @@ def _build_box_plot_data(
     # Check if either column is likely an identifier
     x_series = df[x_column]
     y_series = df[y_column]
-    
+
     if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
         logger.info(f"Skipping box plot for columns '{x_column}' and '{y_column}' - identifier detected")
         return None
@@ -612,7 +642,7 @@ def _build_box_plot_data(
     if dataset_profile:
         x_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == x_column), None)
         y_profile = next((col for col in dataset_profile.get('columns', []) if col['name'] == y_column), None)
-        
+
         if x_profile and x_profile.get('role') == 'identifier':
             logger.info(f"Skipping box plot - X column '{x_column}' is an identifier")
             return None
@@ -645,18 +675,19 @@ def _build_box_plot_data(
 
     # Group the data for box plot
     grouped = y_final.groupby(x_final)
-    
+
     table_data = []
     for category, values in grouped:
-        value_list = [float(v) for v in values if pd.notna(v)]
-        if value_list:  # Only add if there are values
+        # Filter out non-numeric or infinite values for the box plot
+        numeric_values = [float(v) for v in values if pd.notna(v) and np.isfinite(v)]
+        if numeric_values:  # Only add if there are valid numeric values
             table_data.append({
                 "category": str(category),
-                "values": value_list
+                "values": numeric_values
             })
 
     if not table_data:
-        logger.warning(f"No valid data for box plot between '{x_column}' and '{y_column}'")
+        logger.warning(f"No valid data for box plot between '{x_column}' and '{y_column}' after filtering for numeric values")
         return None
 
     # Validate and normalize the chart payload
@@ -693,10 +724,14 @@ def _build_correlation_heatmap_data(
     numeric_cols = []
     for col in dataset_profile.get('columns', []):
         if col.get('role') == 'numeric':
+            col_name = col.get('name')
+            if not col_name or col_name not in df.columns:
+                logger.warning(f"Column {col_name} from profile not found in DataFrame.")
+                continue
             # Check if this column is likely an identifier
-            series = df[col['name']]
-            if not _is_likely_identifier(series, col['name']):
-                numeric_cols.append(col['name'])
+            series = df[col_name]
+            if not _is_likely_identifier(series, col_name):
+                numeric_cols.append(col_name)
 
     if len(numeric_cols) < 2:
         logger.info(f"Not enough meaningful numeric columns for correlation heatmap ({len(numeric_cols)} found)")
@@ -704,14 +739,21 @@ def _build_correlation_heatmap_data(
 
     # Use only the meaningful numeric columns
     numeric_df = df[numeric_cols]
-    
+
     # Convert to numeric values, handling any potential issues
     for col_name in numeric_df.columns:
         numeric_df[col_name] = pd.to_numeric(numeric_df[col_name], errors='coerce')
-    
-    # Drop columns that didn't convert properly (ended up with too many NaNs)
+
+    # Drop columns that didn't convert properly (ended up with too many NaNs) or have no variance
     numeric_df = numeric_df.select_dtypes(include=[np.number])
     numeric_cols = [col for col in numeric_cols if col in numeric_df.columns]
+    # Further filter columns with zero or near-zero variance
+    cols_to_drop = []
+    for col_name in numeric_df.columns:
+        if numeric_df[col_name].std() < 1e-10: # Consider effectively constant
+            cols_to_drop.append(col_name)
+    numeric_df = numeric_df.drop(columns=cols_to_drop)
+    numeric_cols = [col for col in numeric_cols if col not in cols_to_drop]
 
     if len(numeric_cols) < 2:
         logger.info(f"After cleaning, not enough meaningful numeric columns for correlation heatmap ({len(numeric_cols)} found)")
@@ -720,19 +762,19 @@ def _build_correlation_heatmap_data(
     # Calculate correlation matrix
     try:
         corr_matrix = numeric_df.corr()
-        
+
         # Only include correlations that are meaningful (>0.1 absolute value) or if we have correlation insights
         meaningful_corrs = []
         for i in range(len(corr_matrix.columns)):
             for j in range(i+1, len(corr_matrix.columns)):
                 corr_val = corr_matrix.iloc[i, j]
-                if pd.notna(corr_val) and abs(corr_val) > 0.1:  # Only meaningful correlations
+                if pd.notna(corr_val) and abs(corr_val) > 0.1 and np.isfinite(corr_val):  # Only meaningful correlations
                     meaningful_corrs.append({
                         'var1': corr_matrix.columns[i],
                         'var2': corr_matrix.columns[j],
                         'correlation': corr_val
                     })
-        
+
         if not meaningful_corrs:
             logger.info("No meaningful correlations found for heatmap")
             return None
@@ -745,10 +787,10 @@ def _build_correlation_heatmap_data(
     categories = [str(col) for col in corr_matrix.columns]
     values_matrix = corr_matrix.values.tolist()
 
-    # Ensure valid correlation values in the range [-1, 1]
+    # Ensure valid correlation values in the range [-1, 1] and handle NaN
     for row_idx, row in enumerate(values_matrix):
         for col_idx, val in enumerate(row):
-            if pd.isna(val):
+            if pd.isna(val) or not np.isfinite(val):
                 values_matrix[row_idx][col_idx] = 0.0
             else:
                 # Clamp correlation values to acceptable range
@@ -785,7 +827,7 @@ def build_charts_from_specs(
     """
     Intelligent chart suggestion system that considers column roles, semantic tags,
     and meaningful relationships instead of naive heuristics.
-    
+
     Args:
         df: Input DataFrame
         chart_specs: Specifications for what charts to build
@@ -793,7 +835,7 @@ def build_charts_from_specs(
         eda_summary: EDA summary with additional insights
         max_categories: Maximum categories for categorical charts
         max_charts: Maximum number of charts to build
-        
+
     Returns:
         Dictionary mapping chart IDs to chart specifications
     """
@@ -818,7 +860,7 @@ def build_charts_from_specs(
     for spec in chart_specs:
         intent = spec.get('intent')
         chart_id = str(spec.get('id', f'chart_{len(charts)}'))
-        
+
         # Skip if we've reached the maximum charts
         if len(charts) >= max_charts:
             break
@@ -830,8 +872,8 @@ def build_charts_from_specs(
                 col = spec.get('x_field')
                 if col:
                     chart_data = _build_category_count_data(
-                        df, 
-                        column=col, 
+                        df,
+                        column=col,
                         max_categories=max_categories,
                         dataset_profile=dataset_profile
                     )
@@ -840,7 +882,7 @@ def build_charts_from_specs(
                 col = spec.get('x_field')
                 if col:
                     chart_data = _build_histogram_data(
-                        df, 
+                        df,
                         column=col,
                         dataset_profile=dataset_profile
                     )
@@ -851,9 +893,9 @@ def build_charts_from_specs(
                 agg_func = spec.get('agg_func', 'mean')
                 if x_col and y_col:
                     chart_data = _build_category_summary_data(
-                        df, 
-                        x_column=x_col, 
-                        y_column=y_col, 
+                        df,
+                        x_column=x_col,
+                        y_column=y_col,
                         agg_func=agg_func,
                         dataset_profile=dataset_profile
                     )
@@ -864,9 +906,9 @@ def build_charts_from_specs(
                 agg_func = spec.get('agg_func', 'mean')
                 if x_col and y_col:
                     chart_data = _build_time_series_data(
-                        df, 
-                        x_column=x_col, 
-                        y_column=y_col, 
+                        df,
+                        x_column=x_col,
+                        y_column=y_col,
                         agg_func=agg_func,
                         dataset_profile=dataset_profile
                     )
@@ -876,8 +918,8 @@ def build_charts_from_specs(
                 y_col = spec.get('y_field')
                 if x_col and y_col:
                     chart_data = _build_scatter_data(
-                        df, 
-                        x_column=x_col, 
+                        df,
+                        x_column=x_col,
                         y_column=y_col,
                         dataset_profile=dataset_profile
                     )
@@ -886,7 +928,7 @@ def build_charts_from_specs(
                 col = spec.get('x_field')
                 if col:
                     chart_data = _build_pie_data(
-                        df, 
+                        df,
                         column=col,
                         max_categories=max_categories,
                         dataset_profile=dataset_profile
@@ -921,6 +963,8 @@ def build_charts_from_specs(
 
         except Exception as e:
             logger.error(f"Error building chart with intent '{intent}' and ID '{chart_id}': {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
     logger.info(f"Built {len(charts)} valid charts from {len(chart_specs) if chart_specs else 0} specifications")

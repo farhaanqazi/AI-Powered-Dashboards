@@ -1,11 +1,11 @@
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Any, Optional, Tuple
 import logging
-import re
-from typing import Dict, List, Any, Tuple, Optional
-from scipy.stats import pearsonr, spearmanr
+from scipy.stats import pearsonr
+from collections import Counter
 import math
-from src.utils.identifier_detector import is_likely_identifier
+from src.utils.identifier_detector import is_likely_identifier, is_likely_identifier_with_confidence as centralized_is_likely_identifier_with_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +13,17 @@ logger = logging.getLogger(__name__)
 def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     """
     Determine if a series is likely an identifier based on multiple heuristics.
+    This is a simplified version of the identifier detection logic from chart_selector.py.
+
+    Args:
+        series: The pandas Series to analyze
+        name: The column name
+
+    Returns:
+        True if the series is likely an identifier
     """
     # Use the centralized identifier detector
     return is_likely_identifier(series, name)
-
 
 def _has_meaningful_variance(series: pd.Series, threshold: float = 0.001) -> bool:
     """
@@ -109,6 +116,10 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
                 # Additional validation: check for sufficient variance
                 if _has_meaningful_variance(series, min_variance):
                     numeric_cols.append(col_name)
+                else:
+                    logger.debug(f"Column {col_name} has insufficient variance for correlation analysis.")
+            else:
+                logger.debug(f"Skipping identifier column {col_name} from correlation analysis.")
     
     if len(numeric_cols) < 2:
         logger.info(f"Not enough meaningful numeric columns for correlation analysis (found {len(numeric_cols)})")
@@ -132,12 +143,14 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
             aligned_df = pd.concat([clean_s1, clean_s2], axis=1).dropna()
             
             if len(aligned_df) < 3:  # Need at least 3 aligned points
+                logger.debug(f"Insufficient aligned data points for correlation between {col1_name} and {col2_name}.")
                 continue
                 
             s1_aligned = aligned_df.iloc[:, 0]
             s2_aligned = aligned_df.iloc[:, 1]
             
             if len(s1_aligned) == 0 or len(s2_aligned) == 0 or len(s1_aligned) != len(s2_aligned):
+                logger.warning(f"Data alignment issue for correlation between {col1_name} and {col2_name}.")
                 continue
             
             try:
@@ -145,6 +158,7 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
                 correlation, p_value = pearsonr(s1_aligned, s2_aligned)
                 
                 if pd.isna(correlation):
+                    logger.debug(f"Correlation between {col1_name} and {col2_name} is NaN.")
                     continue
                     
                 abs_corr = abs(correlation)
@@ -163,8 +177,19 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
                     # Determine correlation type
                     correlation_type = "positive" if correlation > 0 else "negative"
 
-                    # Get basic statistics for the relationship
-                    slope, intercept = np.polyfit(s1_aligned, s2_aligned, 1) if len(s1_aligned) > 1 else (0, 0)
+                    # Calculate slope and intercept for the linear fit, handle potential errors
+                    slope = float('nan')
+                    intercept = float('nan')
+                    try:
+                        # Check if x values are constant before fitting (would cause error)
+                        if s1_aligned.std() < 1e-10:
+                             logger.debug(f"X values for {col1_name} are nearly constant, skipping slope calculation for {col1_name} vs {col2_name}.")
+                        else:
+                            coefficients = np.polyfit(s1_aligned, s2_aligned, 1) # y = slope * x + intercept
+                            slope = float(coefficients[0])
+                            intercept = float(coefficients[1])
+                    except (np.linalg.LinAlgError, ValueError) as e:
+                        logger.warning(f"Could not calculate slope/intercept for {col1_name} vs {col2_name}: {e}")
 
                     correlations.append({
                         "variable1": col1_name,
@@ -173,10 +198,10 @@ def _identify_meaningful_correlations(df: pd.DataFrame, columns: List[Dict[str, 
                         "abs_correlation": float(abs_corr),
                         "strength": strength,
                         "type": correlation_type,
-                        "p_value": float(p_value),
+                        "p_value": float(p_value) if not pd.isna(p_value) else float('nan'),
                         "sample_size": int(len(aligned_df)),
-                        "slope": float(slope),
-                        "intercept": float(intercept)
+                        "slope": slope,
+                        "intercept": intercept
                     })
                     
             except Exception as e:
@@ -208,14 +233,19 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
         
         # Skip if likely an identifier
         if _is_likely_identifier(series, col_name):
+            logger.debug(f"Skipping identifier column {col_name} from cross-type analysis.")
             continue
             
         if col_info.get("role") == "numeric":
             if _has_meaningful_variance(series):
                 numeric_cols.append(col_name)
+            else:
+                 logger.debug(f"Skipping low-variance numeric column {col_name} from cross-type analysis.")
         elif col_info.get("role") in ["categorical", "text"]:
             if col_info.get("unique_count", 0) <= 50:  # Limit to low-cardinality categorical
                 categorical_cols.append(col_name)
+            else:
+                logger.debug(f"Skipping high-cardinality categorical column {col_name} from cross-type analysis (unique_count: {col_info.get('unique_count', 0)}).")
     
     relationships = []
     
@@ -229,6 +259,7 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
             aligned_df = pd.concat([series_num, series_cat], axis=1).dropna()
             
             if len(aligned_df) < 10:  # Need sufficient data
+                logger.debug(f"Insufficient data for cross-type analysis between {num_col} and {cat_col}.")
                 continue
                 
             aligned_num = aligned_df.iloc[:, 0]
@@ -237,6 +268,7 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
             # Check if categorical has sufficient different values to be meaningful
             n_unique_cats = aligned_cat.nunique()
             if n_unique_cats < 2 or n_unique_cats > 20:  # Not meaningful if too few or too many categories
+                logger.debug(f"Categorical column {cat_col} has {n_unique_cats} unique values, skipping for {num_col}.")
                 continue
                 
             try:
@@ -257,11 +289,14 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
                 
                 # Calculate effect size (eta-squared - variance explained by group membership)
                 total_sum_sq = between_sum_sq + within_sum_sq
-                eta_squared = between_sum_sq / total_sum_sq if total_sum_sq > 0 else 0
+                eta_squared = between_sum_sq / total_sum_sq if total_sum_sq > 0 else 0.0 # Handle case where total SS is 0
                 
                 # Calculate significance using basic approximation (for larger samples)
-                f_stat = (between_sum_sq / (n_unique_cats - 1)) / (within_sum_sq / (len(aligned_num) - n_unique_cats)) if within_sum_sq > 0 and (len(aligned_num) - n_unique_cats) > 0 else 0
-                # This is a simplified approximation; for exact p-values, we'd need scipy.stats.f
+                # F-statistic = (between variance / df1) / (within variance / df2)
+                # df1 = n_groups - 1, df2 = n_total - n_groups
+                df1 = n_unique_cats - 1
+                df2 = len(aligned_num) - n_unique_cats
+                f_stat = ((between_sum_sq / df1) / (within_sum_sq / df2)) if (within_sum_sq > 0 and df2 > 0) else 0.0
                 
                 # Only include if there's meaningful variance explained
                 if eta_squared >= 0.02:  # At least 2% variance explained
@@ -273,7 +308,9 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
                         "group_sizes": {str(cat): int(size) for cat, size in group_sizes.items()},
                         "f_statistic": float(f_stat) if not pd.isna(f_stat) else 0.0,
                         "sample_size": int(len(aligned_num)),
-                        "n_groups": int(n_unique_cats)
+                        "n_groups": int(n_unique_cats),
+                        "df1": int(df1),
+                        "df2": int(df2)
                     })
             except Exception as e:
                 logger.warning(f"Error analyzing relationship between {num_col} and {cat_col}: {e}")
@@ -340,11 +377,12 @@ def _detect_spurious_correlations(df: pd.DataFrame, columns: List[Dict[str, Any]
     
     # Check for correlations with very small sample sizes
     for corr in correlations:
-        if corr.get("sample_size", 0) < 10:
+        sample_size = corr.get("sample_size", 0)
+        if sample_size < 10:
             spurious_correlations.append({
                 "variables": [corr["variable1"], corr["variable2"]],
                 "correlation": corr["correlation"],
-                "reason": "insufficient sample size",
+                "reason": "insufficient_sample_size",
                 "confidence": 0.7
             })
     
@@ -390,7 +428,42 @@ def analyze_correlations(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "summary_stats": {"total_analyzed_pairs": 0, "meaningful_pairs": 0, "spurious_pairs": 0}
         }
     
+    n_rows = dataset_profile.get("n_rows", len(df))
+    if n_rows < 3:
+         logger.warning(f"Insufficient rows ({n_rows}) for correlation analysis.")
+         return {
+            "meaningful_correlations": [],
+            "cross_type_relationships": [],
+            "spurious_correlations": [],
+            "summary_stats": {"total_analyzed_pairs": 0, "meaningful_pairs": 0, "spurious_pairs": 0}
+        }
+
     logger.info(f"Starting correlation analysis for {len(columns)} columns")
+
+    # Filter columns based on profile to get numeric ones
+    profile_numeric_cols = [col for col in columns if col.get("role") == "numeric"]
+    if len(profile_numeric_cols) < 2:
+        logger.info(f"Not enough numeric columns in profile for correlation analysis (found {len(profile_numeric_cols)})")
+        # Still run cross-type analysis
+        cross_type_relationships = _identify_cross_type_relationships(df, columns)
+        spurious_correlations = _detect_spurious_correlations(df, columns, []) # No correlations to check
+
+        summary_stats = {
+            "total_analyzed_pairs": 0,
+            "meaningful_pairs": 0,
+            "spurious_pairs_detected": len(spurious_correlations),
+            "analyzed_numeric_columns": 0,
+            "original_numeric_columns": len(profile_numeric_cols),
+            "min_correlation_threshold": min_correlation,
+            "min_variance_threshold": min_variance
+        }
+
+        return {
+            "meaningful_correlations": [],
+            "cross_type_relationships": cross_type_relationships,
+            "spurious_correlations": spurious_correlations,
+            "summary_stats": summary_stats
+        }
     
     # Perform meaningful correlation analysis
     meaningful_correlations = _identify_meaningful_correlations(

@@ -94,7 +94,7 @@ def _extract_numeric_from_mixed(text_values: pd.Series) -> Tuple[Optional[pd.Ser
             return None
         try:
             return float(nums[0])
-        except Exception:
+        except (ValueError, IndexError):
             return None
 
     for val in sample_values:
@@ -113,7 +113,7 @@ def _extract_numeric_from_mixed(text_values: pd.Series) -> Tuple[Optional[pd.Ser
                 return None
             try:
                 return float(nums[0])
-            except Exception:
+            except (ValueError, IndexError):
                 return None
 
         # Try duration, currency, percentage patterns in that order
@@ -318,8 +318,15 @@ def _infer_role_advanced(
         # Check for potential datetime in numeric format (e.g. years)
         s_nonnull = series.dropna()
         if not s_nonnull.empty:
-            col_min = float(s_nonnull.min())
-            col_max = float(s_nonnull.max())
+            # Use pd.to_numeric to ensure comparison is safe
+            try:
+                s_numeric = pd.to_numeric(s_nonnull)
+                col_min = float(s_numeric.min())
+                col_max = float(s_numeric.max())
+            except (ValueError, TypeError):
+                logger.warning(f"Could not convert column {series.name} to numeric for year check.")
+                col_min = float('inf')
+                col_max = float('-inf')
 
             # Year-like numeric datetime
             if (
@@ -473,8 +480,8 @@ def _infer_role_advanced(
     if series.notna().any():
         try:
             avg_len = series.dropna().astype(str).str.len().mean()
-        except:
-            logger.warning(f"Could not compute average length for series {series.name}")
+        except Exception as e:
+            logger.warning(f"Could not compute average length for series {series.name}: {e}")
             avg_len = 0
     else:
         avg_len = 0
@@ -509,10 +516,18 @@ def _infer_role_advanced(
         }, semantic_tags
 
 
-def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any]:
+def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Optional[int] = None) -> Dict[str, Any]:
     """
     Build a rich dataset profile with confidence scores and semantic tags.
-    Returns a dict with structured profile information.
+    Optionally samples the DataFrame for performance.
+
+    Args:
+        df: Input DataFrame
+        max_cols: Maximum number of columns to profile
+        sample_size: If provided, profile based on a random sample of this size
+
+    Returns:
+        A dict with structured profile information.
     """
     if df.empty:
         logger.warning("DataFrame is empty, returning empty profile")
@@ -523,8 +538,17 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any
             "columns": []
         }
 
-    n_rows = int(len(df))
+    n_rows_original = int(len(df))
     n_cols = int(df.shape[1])
+
+    # Apply sampling if requested
+    if sample_size and sample_size < n_rows_original:
+        logger.info(f"Sampling {sample_size} rows from {n_rows_original} for profiling.")
+        df_to_profile = df.sample(n=sample_size, random_state=42).copy()
+        n_rows = sample_size
+    else:
+        df_to_profile = df
+        n_rows = n_rows_original
 
     # Set limits
     max_cols = min(max_cols, n_cols)
@@ -541,11 +565,11 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any
         "other": 0,
     }
 
-    for i, col in enumerate(df.columns):
+    for i, col in enumerate(df_to_profile.columns):
         if i >= max_cols:
             break
 
-        s = df[col]
+        s = df_to_profile[col]
 
         # Handle edge case where column has all NaN values
         if s.isna().all():
@@ -577,27 +601,31 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any
 
             if len(s_clean) > 0:
                 # Compute all statistics in one pass for efficiency
-                stats = {
-                    "min": float(s_clean.min()) if len(s_clean) > 0 else None,
-                    "max": float(s_clean.max()) if len(s_clean) > 0 else None,
-                    "mean": float(s_clean.mean()) if len(s_clean) > 0 else None,
-                    "std": float(s_clean.std()) if len(s_clean) > 1 else 0.0,
-                    "median": float(s_clean.median()) if len(s_clean) > 0 else None,
-                    "q25": float(s_clean.quantile(0.25)) if len(s_clean) > 0 else None,
-                    "q75": float(s_clean.quantile(0.75)) if len(s_clean) > 0 else None,
-                    "sum": float(s_clean.sum()) if len(s_clean) > 0 else None,
-                    "variance": float(s_clean.var()) if len(s_clean) > 1 else 0.0,
-                    "skewness": float(s_clean.skew()) if len(s_clean) > 2 else 0.0,
-                    "kurtosis": float(s_clean.kurtosis()) if len(s_clean) > 3 else 0.0,
-                    "count": int(len(s_clean))
-                }
+                try:
+                    stats = {
+                        "min": float(s_clean.min()) if len(s_clean) > 0 else None,
+                        "max": float(s_clean.max()) if len(s_clean) > 0 else None,
+                        "mean": float(s_clean.mean()) if len(s_clean) > 0 else None,
+                        "std": float(s_clean.std()) if len(s_clean) > 1 else 0.0,
+                        "median": float(s_clean.median()) if len(s_clean) > 0 else None,
+                        "q25": float(s_clean.quantile(0.25)) if len(s_clean) > 0 else None,
+                        "q75": float(s_clean.quantile(0.75)) if len(s_clean) > 0 else None,
+                        "sum": float(s_clean.sum()) if len(s_clean) > 0 else None,
+                        "variance": float(s_clean.var()) if len(s_clean) > 1 else 0.0,
+                        "skewness": float(s_clean.skew()) if len(s_clean) > 2 else 0.0,
+                        "kurtosis": float(s_clean.kurtosis()) if len(s_clean) > 3 else 0.0,
+                        "count": int(len(s_clean))
+                    }
+                except (TypeError, ValueError) as e:
+                    logger.warning(f"Error calculating statistics for numeric column '{col}': {e}")
+                    stats = None
 
-                # Add specific semantic-based stats
-                if "monetary" in semantic_tags:
+                # Add specific semantic-based stats if stats were calculated successfully
+                if stats and "monetary" in semantic_tags:
                     stats["currency_units"] = float(s_clean.abs().sum())  # Total monetary value
-                elif "percentage" in semantic_tags:
+                elif stats and "percentage" in semantic_tags:
                     stats["average_percentage"] = float(s_clean.mean())
-                elif "duration" in semantic_tags:
+                elif stats and "duration" in semantic_tags:
                     stats["total_duration"] = float(s_clean.sum())
 
         elif role == "datetime":
@@ -671,6 +699,7 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any
 
     logger.info(f"Dataset profile built for {len(columns)} out of {n_cols} total columns")
     logger.info(f"Role counts: {role_counts}")
+    logger.info(f"Profiled on {n_rows} rows (original: {n_rows_original})")
 
     return {
         "n_rows": n_rows,
@@ -683,51 +712,28 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50) -> Dict[str, Any
 def basic_profile(df: pd.DataFrame, max_cols: int = 10) -> List[Dict[str, Any]]:
     """
     Basic profile per column (maintained for API compatibility).
+    Uses the advanced profiling logic internally.
     """
     if df.empty:
         logger.warning("DataFrame is empty, returning empty profile")
         return []
 
-    profile = []
-    max_cols = min(max_cols, len(df.columns))
-
-    for i, col in enumerate(df.columns):
-        if i >= max_cols:
-            break
-
-        series = df[col]
-
-        # Determine role using our advanced function
-        role, confidence, provenance, confidence_factors, semantic_tags = _infer_role_advanced(
-            series, uniqueness_cutoff=UNIQUENESS_CUTOFF, avg_length_cutoff=AVG_LENGTH_CUTOFF
-        )
-
-        # Compute basic stats based on the detected role
-        basic_stats = {}
-
-        if role in ("numeric", "numeric_duration", "numeric_currency", "numeric_percentage", "numeric_mixed"):
-            s_clean = pd.to_numeric(series, errors='coerce')
-            s_clean = s_clean.dropna()
-            if len(s_clean) > 0:
-                basic_stats = {
-                    "min": float(s_clean.min()),
-                    "max": float(s_clean.max()),
-                    "mean": float(s_clean.mean()),
-                    "std": float(s_clean.std()) if len(s_clean) > 1 else 0.0,
-                    "count": int(len(s_clean))
-                }
-
-        profile.append({
-            "column": col,
-            "dtype": str(series.dtype),
-            "missing": int(series.isna().sum()),
-            "unique": int(series.nunique()),
-            "role": role,
-            "confidence": float(confidence),
-            "semantic_tags": semantic_tags,
+    # Use the advanced profile function, then extract basic info
+    advanced_profile = build_dataset_profile(df, max_cols=max_cols, sample_size=None) # Don't sample for basic profile
+    basic_profile_list = []
+    for col_info in advanced_profile.get("columns", []):
+        basic_stats = col_info.get("stats", {}) or {}
+        basic_profile_list.append({
+            "column": col_info["name"],
+            "dtype": col_info["dtype"],
+            "missing": col_info["missing_count"],
+            "unique": col_info["unique_count"],
+            "role": col_info["role"],
+            "confidence": col_info["confidence"],
+            "semantic_tags": col_info["semantic_tags"],
             "stats": basic_stats,
-            "provenance": provenance
+            "provenance": col_info["provenance"]
         })
 
-    logger.info(f"Basic profile generated for {len(profile)} columns")
-    return profile
+    logger.info(f"Basic profile generated for {len(basic_profile_list)} columns")
+    return basic_profile_list

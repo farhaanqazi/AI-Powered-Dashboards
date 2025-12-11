@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
+from typing import Dict, List, Any, Optional, Tuple
 import logging
-from typing import Dict, List, Any, Tuple, Optional
 from scipy.stats import chi2_contingency
 import math
 import re
@@ -45,20 +45,31 @@ def _analyze_column_for_viz(series: pd.Series, role: str, semantic_tags: List[st
     if role == "numeric":
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) > 0:
+            # Calculate stats, handling potential NaN/inf results
+            min_val = numeric_series.min()
+            max_val = numeric_series.max()
+            mean_val = numeric_series.mean()
+            std_val = numeric_series.std()
+            median_val = numeric_series.median()
+            q25_val = numeric_series.quantile(0.25)
+            q75_val = numeric_series.quantile(0.75)
+            skewness_val = numeric_series.skew()
+            kurtosis_val = numeric_series.kurtosis()
+
             analysis["stats"] = {
-                "min": float(numeric_series.min()) if pd.notna(numeric_series.min()) else None,
-                "max": float(numeric_series.max()) if pd.notna(numeric_series.max()) else None,
-                "mean": float(numeric_series.mean()) if pd.notna(numeric_series.mean()) else None,
-                "std": float(numeric_series.std()) if len(numeric_series) > 1 and pd.notna(numeric_series.std()) else 0.0,
-                "median": float(numeric_series.median()) if pd.notna(numeric_series.median()) else None,
-                "q25": float(numeric_series.quantile(0.25)) if len(numeric_series) > 0 and pd.notna(numeric_series.quantile(0.25)) else None,
-                "q75": float(numeric_series.quantile(0.75)) if len(numeric_series) > 0 and pd.notna(numeric_series.quantile(0.75)) else None,
-                "skewness": float(numeric_series.skew()) if len(numeric_series) > 2 and pd.notna(numeric_series.skew()) else 0.0,
-                "kurtosis": float(numeric_series.kurtosis()) if len(numeric_series) > 3 and pd.notna(numeric_series.kurtosis()) else 0.0
+                "min": float(min_val) if pd.notna(min_val) and np.isfinite(min_val) else None,
+                "max": float(max_val) if pd.notna(max_val) and np.isfinite(max_val) else None,
+                "mean": float(mean_val) if pd.notna(mean_val) and np.isfinite(mean_val) else None,
+                "std": float(std_val) if pd.notna(std_val) and np.isfinite(std_val) and len(numeric_series) > 1 else 0.0,
+                "median": float(median_val) if pd.notna(median_val) and np.isfinite(median_val) else None,
+                "q25": float(q25_val) if pd.notna(q25_val) and np.isfinite(q25_val) else None,
+                "q75": float(q75_val) if pd.notna(q75_val) and np.isfinite(q75_val) else None,
+                "skewness": float(skewness_val) if pd.notna(skewness_val) and np.isfinite(skewness_val) and len(numeric_series) > 2 else 0.0,
+                "kurtosis": float(kurtosis_val) if pd.notna(kurtosis_val) and np.isfinite(kurtosis_val) and len(numeric_series) > 3 else 0.0
             }
             # Determine suitable charts for numeric data based on characteristics
-            std_val = analysis["stats"]["std"]
-            if std_val > 0.001:  # Has meaningful variance
+            std_val_calc = analysis["stats"]["std"]
+            if std_val_calc > 0.001:  # Has meaningful variance
                 analysis["suitable_charts"].extend(["histogram", "box_plot", "scatter", "line"])
                 analysis["confidence"] = 0.9  # High confidence for well-behaved numeric data
             else:
@@ -116,14 +127,13 @@ def _is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool
     return is_id, method, confidence
 
 
-
-
 def _is_likely_identifier(s: pd.Series, name: str) -> bool:
     """
     Simplified function to check if a series is likely an identifier.
     Uses the confidence-based function internally but returns only a boolean.
     """
-    return is_likely_identifier(s, name)
+    is_id, _, _ = _is_likely_identifier_with_confidence(s, name)
+    return is_id
 
 
 def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', ';', '|', '/', ' | ']) -> Tuple[bool, str, float]:
@@ -224,8 +234,10 @@ def _is_meaningful_for_correlation(series1: pd.Series, series2: pd.Series,
     try:
         correlation = s1_aligned.corr(s2_aligned)
         # Only consider correlations meaningful if abs(correlation) > 0.1
-        return abs(correlation) > 0.1 if not pd.isna(correlation) else False
-    except Exception:
+        # and correlation is a valid number
+        return abs(correlation) > 0.1 and not pd.isna(correlation) and np.isfinite(correlation)
+    except Exception as e:
+        logger.debug(f"Error calculating correlation between {col1} and {col2}: {e}")
         return False
 
 
@@ -241,8 +253,11 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
         List of chart specifications with appropriate chart types and fields
     """
     charts = []
-    columns = dataset_profile["columns"]
-    
+    columns = dataset_profile.get("columns", []) # Handle case where 'columns' might be missing
+    if not columns:
+        logger.warning("No columns found in dataset profile for chart selection.")
+        return []
+
     # Group columns by their roles for appropriate chart suggestions
     numeric_cols = []
     categorical_cols = []
@@ -251,24 +266,35 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
     text_cols = []
 
     for col in columns:
-        role = col["role"]
+        role = col.get("role", "unknown") # Handle case where 'role' might be missing
         unique_count = col.get("unique_count", 0)
+        col_name = col.get("name", "") # Handle case where 'name' might be missing
         
-        # First check if it looks like an identifier regardless of role
-        series_sample = df[col["name"]].head(100)  # Sample for checking
-        is_id, _, id_conf = _is_likely_identifier_with_confidence(series_sample, col["name"])
+        if not col_name:
+            logger.warning(f"Column found without a name: {col}")
+            continue
 
-        if is_id and id_conf > 0.6:  # Higher threshold to be more conservative
-            identifier_cols.append(col)
-        elif role == "numeric":
+        # First check if it looks like an identifier regardless of role
+        series_sample = df[col_name].head(100) if col_name in df.columns else pd.Series(dtype='object')  # Sample for checking
+        if not series_sample.empty:
+            is_id, _, id_conf = _is_likely_identifier_with_confidence(series_sample, col_name)
+
+            if is_id and id_conf > 0.6:  # Higher threshold to be more conservative
+                identifier_cols.append(col)
+                continue # Skip further processing for identifiers
+        else:
+            logger.warning(f"Column {col_name} not found in DataFrame or is empty.")
+            continue # Skip if column doesn't exist or is empty
+
+        if role == "numeric":
             # Verify that it's truly meaningful numeric data (not an ID disguised as a number)
-            series = df[col["name"]]
+            series = df[col_name]
             unique_ratio = series.nunique() / len(series) if len(series) > 0 else 0
             if unique_ratio < 0.95:  # Exclude columns that are almost all unique (likely IDs)
                 numeric_cols.append(col)
         elif role in ["categorical", "text"]:
             # Check if it's a multi-value text field
-            series = df[col["name"]]
+            series = df[col_name]
             is_multi, delimiter, multi_conf = _is_multi_value_field(series)
             
             if is_multi and multi_conf > 0.3:
@@ -443,7 +469,7 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
             for i in range(len(corr_matrix.columns)):
                 for j in range(i+1, len(corr_matrix.columns)):
                     corr_val = corr_matrix.iloc[i, j]
-                    if pd.notna(corr_val) and abs(corr_val) > 0.1:
+                    if pd.notna(corr_val) and abs(corr_val) > 0.1 and np.isfinite(corr_val):
                         has_meaningful_corrs = True
                         break
                 if has_meaningful_corrs:
