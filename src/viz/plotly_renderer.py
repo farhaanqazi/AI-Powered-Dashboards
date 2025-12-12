@@ -129,7 +129,13 @@ def _build_histogram_data(
         return None
 
     # Ensure the column is numeric
-    series = pd.to_numeric(df[column], errors='coerce')
+    # First check if df[column] is valid
+    if not isinstance(df[column], pd.Series) and not isinstance(df[column], pd.DataFrame):
+        col_series = pd.Series(df[column]) if hasattr(df[column], '__iter__') else pd.Series([df[column]])
+    else:
+        col_series = df[column]
+
+    series = pd.to_numeric(col_series, errors='coerce')
     # Drop NaN values
     series = series.dropna()
     if series.empty:
@@ -309,6 +315,12 @@ def _build_category_summary_data(
         agg_func_lower = 'mean'
 
     try:
+        # Ensure y_final is a Series for groupby operations
+        if not isinstance(y_final, pd.Series):
+            y_final = pd.Series(y_final)
+        if not isinstance(x_final, pd.Series):
+            x_final = pd.Series(x_final)
+
         if agg_func_lower == "sum":
             result = y_final.groupby(x_final).sum()
         elif agg_func_lower == "mean":
@@ -839,9 +851,13 @@ def build_charts_from_specs(
     Returns:
         Dictionary mapping chart IDs to chart specifications
     """
-    if df.empty:
-        logger.warning("DataFrame is empty, returning empty charts")
+    if df is None or df.empty:
+        logger.warning("DataFrame is None or empty, returning empty charts")
         return {}
+
+    # Ensure df is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
 
     n_rows, n_cols = df.shape
     if n_rows == 0 or n_cols == 0:
@@ -858,6 +874,10 @@ def build_charts_from_specs(
 
     # Process each chart specification
     for spec in chart_specs:
+        if not isinstance(spec, dict):
+            logger.warning(f"Invalid chart spec encountered: {spec}")
+            continue
+
         intent = spec.get('intent')
         chart_id = str(spec.get('id', f'chart_{len(charts)}'))
 
@@ -870,7 +890,7 @@ def build_charts_from_specs(
         try:
             if intent == 'category_count':
                 col = spec.get('x_field')
-                if col:
+                if col and col in df.columns:
                     chart_data = _build_category_count_data(
                         df,
                         column=col,
@@ -880,7 +900,7 @@ def build_charts_from_specs(
 
             elif intent == 'histogram':
                 col = spec.get('x_field')
-                if col:
+                if col and col in df.columns:
                     chart_data = _build_histogram_data(
                         df,
                         column=col,
@@ -891,7 +911,7 @@ def build_charts_from_specs(
                 x_col = spec.get('x_field')
                 y_col = spec.get('y_field')
                 agg_func = spec.get('agg_func', 'mean')
-                if x_col and y_col:
+                if x_col and x_col in df.columns and y_col and y_col in df.columns:
                     chart_data = _build_category_summary_data(
                         df,
                         x_column=x_col,
@@ -904,7 +924,7 @@ def build_charts_from_specs(
                 x_col = spec.get('x_field')
                 y_col = spec.get('y_field')
                 agg_func = spec.get('agg_func', 'mean')
-                if x_col and y_col:
+                if x_col and x_col in df.columns and y_col and y_col in df.columns:
                     chart_data = _build_time_series_data(
                         df,
                         x_column=x_col,
@@ -916,7 +936,7 @@ def build_charts_from_specs(
             elif intent == 'scatter':
                 x_col = spec.get('x_field')
                 y_col = spec.get('y_field')
-                if x_col and y_col:
+                if x_col and x_col in df.columns and y_col and y_col in df.columns:
                     chart_data = _build_scatter_data(
                         df,
                         x_column=x_col,
@@ -926,7 +946,7 @@ def build_charts_from_specs(
 
             elif intent == 'category_pie':
                 col = spec.get('x_field')
-                if col:
+                if col and col in df.columns:
                     chart_data = _build_pie_data(
                         df,
                         column=col,
@@ -937,7 +957,7 @@ def build_charts_from_specs(
             elif intent == 'box_plot':
                 x_col = spec.get('x_field')
                 y_col = spec.get('y_field')
-                if x_col and y_col:
+                if x_col and x_col in df.columns and y_col and y_col in df.columns:
                     chart_data = _build_box_plot_data(
                         df,
                         x_column=x_col,
@@ -959,7 +979,13 @@ def build_charts_from_specs(
 
             # Add chart data if valid and not already added
             if chart_data and chart_id not in charts:
-                charts[chart_id] = chart_data
+                # Additional validation for chart data
+                if chart_data.get('data'):
+                    charts[chart_id] = chart_data
+                else:
+                    logger.debug(f"Chart {chart_id} has no data, skipping")
+            else:
+                logger.debug(f"Chart {chart_id} is invalid or already exists, skipping")
 
         except Exception as e:
             logger.error(f"Error building chart with intent '{intent}' and ID '{chart_id}': {e}")
@@ -981,9 +1007,13 @@ def build_category_count_charts(
     """
     Builds multiple category count charts with intelligent filtering and ID exclusion.
     """
-    if df.empty:
-        logger.warning("DataFrame is empty, returning empty category charts")
+    if df is None or df.empty:
+        logger.warning("DataFrame is None or empty, returning empty category charts")
         return {}
+
+    # Ensure df is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
 
     category_charts = {}
 
@@ -992,11 +1022,15 @@ def build_category_count_charts(
         return category_charts
 
     for spec in chart_specs:
+        if not isinstance(spec, dict):
+            logger.warning(f"Invalid chart spec encountered: {spec}")
+            continue
+
         if spec.get("intent") != "category_count":
             continue
 
         col = spec.get("x_field")
-        if not col or col in category_charts:
+        if not col or col not in df.columns or col in category_charts:
             continue
 
         # Check if column is likely an identifier before building chart
@@ -1007,7 +1041,7 @@ def build_category_count_charts(
 
         # Check dataset profile for roles
         if dataset_profile:
-            col_profile = next((c for c in dataset_profile.get('columns', []) if c['name'] == col), None)
+            col_profile = next((c for c in dataset_profile.get('columns', []) if c.get('name') == col), None)
             if col_profile and col_profile.get('role') == 'identifier':
                 logger.info(f"Skipping identifier column '{col}' from category count chart")
                 continue
@@ -1019,7 +1053,7 @@ def build_category_count_charts(
             dataset_profile=dataset_profile
         )
 
-        if chart_obj is not None:
+        if chart_obj is not None and chart_obj.get('data'):
             category_charts[col] = chart_obj
 
         if len(category_charts) >= max_charts:

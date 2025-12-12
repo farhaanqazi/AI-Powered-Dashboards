@@ -272,24 +272,48 @@ def _identify_cross_type_relationships(df: pd.DataFrame, columns: List[Dict[str,
                 continue
                 
             try:
+                # Ensure aligned_num and aligned_cat are pandas Series for groupby operations
+                if not isinstance(aligned_num, pd.Series):
+                    aligned_num = pd.Series(aligned_num)
+                if not isinstance(aligned_cat, pd.Series):
+                    aligned_cat = pd.Series(aligned_cat)
+
                 # Group by category and calculate statistics
                 grouped = aligned_num.groupby(aligned_cat)
                 group_means = grouped.mean()
                 group_sizes = grouped.count()
-                
+
                 # Calculate overall statistics
-                overall_mean = aligned_num.mean()
+                if hasattr(aligned_num, 'mean'):
+                    overall_mean = aligned_num.mean()
+                else:
+                    # Convert to pandas Series if needed
+                    aligned_series = pd.Series(aligned_num) if not isinstance(aligned_num, pd.Series) else aligned_num
+                    overall_mean = aligned_series.mean()
                 
                 # Calculate between-group and within-group variance (ANOVA-like)
                 between_sum_sq = sum(group_sizes * ((group_means - overall_mean) ** 2))
-                within_sum_sq = sum([
-                    ((aligned_num[aligned_cat == cat] - group_means[cat]) ** 2).sum() 
-                    for cat in group_means.index
-                ])
+
+                # Calculate within-group sum of squares properly aligned
+                within_sum_sq = 0.0
+                for cat in group_means.index:
+                    # Get the indices where the category matches
+                    cat_mask = (aligned_cat == cat)
+                    # Get the values for this category
+                    cat_values = aligned_num[cat_mask]
+                    # Get the mean for this category
+                    cat_mean = group_means[cat]
+                    # Calculate squared differences from the category mean
+                    within_sum_sq += ((cat_values - cat_mean) ** 2).sum()
                 
                 # Calculate effect size (eta-squared - variance explained by group membership)
                 total_sum_sq = between_sum_sq + within_sum_sq
-                eta_squared = between_sum_sq / total_sum_sq if total_sum_sq > 0 else 0.0 # Handle case where total SS is 0
+                eta_squared = between_sum_sq / total_sum_sq if total_sum_sq > 0 else 0.0  # Handle case where total SS is 0
+
+                # Calculate F-statistic with proper handling of degrees of freedom
+                df_between = n_unique_cats - 1
+                df_within = len(aligned_num) - n_unique_cats
+                f_stat = (between_sum_sq / df_between) / (within_sum_sq / df_within) if df_between > 0 and df_within > 0 and within_sum_sq > 0 else 0.0
                 
                 # Calculate significance using basic approximation (for larger samples)
                 # F-statistic = (between variance / df1) / (within variance / df2)

@@ -79,16 +79,14 @@
                         <p class="text-xs text-gray-500">Columns</p>
                         <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.n_cols }}</p>
                     </div>
-                    {% if dataset_profile.role_counts %}
-                        <div class="light-card rounded-xl p-3 min-w-[100px] text-center">
-                            <p class="text-xs text-gray-500">Numeric</p>
-                            <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.role_counts.numeric }}</p>
-                        </div>
-                        <div class="light-card rounded-xl p-3 min-w-[100px] text-center">
-                            <p class="text-xs text-gray-500">Categorical</p>
-                            <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.role_counts.categorical }}</p>
-                        </div>
-                    {% endif %}
+                    <div class="light-card rounded-xl p-3 min-w-[100px] text-center">
+                        <p class="text-xs text-gray-500">Numeric</p>
+                        <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.role_counts.numeric if dataset_profile.role_counts else 0 }}</p>
+                    </div>
+                    <div class="light-card rounded-xl p-3 min-w-[100px] text-center">
+                        <p class="text-xs text-gray-500">Categorical</p>
+                        <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.role_counts.categorical if dataset_profile.role_counts else 0 }}</p>
+                    </div>
                 </div>
             </div>
 

@@ -382,18 +382,26 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
     for col in columns:
         col_name = col["name"]
         series = df[col_name]
-        
+
         # Skip if series is all NaN
         if series.isna().all():
             logger.debug(f"Skipping column {col_name} as it contains only NaN values.")
             continue
-            
+
         # Determine if this is likely an identifier
         is_identifier = _is_likely_identifier(series)
-        
+
+        # Get semantic tags from dataset profile, if available
+        semantic_tags = col.get("semantic_tags", [])
+
         # Perform semantic analysis
         semantic_categories = _semantic_column_analysis(df, col_name)
-        
+
+        # Add semantic tags from the profile to semantic categories for broader context
+        for tag in semantic_tags:
+            if tag not in semantic_categories:
+                semantic_categories.append(tag)
+
         # Calculate significance score
         significance_score = _calculate_significance_score(series, semantic_categories)
         
@@ -405,6 +413,11 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         # Calculate basic statistics for numeric fields
         numeric_stats = {}
         if pd.api.types.is_numeric_dtype(series):
+            # Ensure series is a pandas Series and not a dictionary or other type
+            if isinstance(series, (dict, list, tuple)):
+                # Convert to pandas Series if it's another type
+                series = pd.Series(series)
+
             numeric_series = pd.to_numeric(series, errors='coerce').dropna()
             if len(numeric_series) > 0:
                 # Calculate stats, handling potential NaN/inf results

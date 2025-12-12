@@ -50,6 +50,10 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.error("Input DataFrame is None")
         return None
 
+    # Ensure df is a pandas DataFrame
+    if df is not None and not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df) if df else pd.DataFrame()
+
     if df.empty:
         logger.warning("Input DataFrame is empty")
         # Return a minimal state for empty data
@@ -66,6 +70,22 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
             correlation_analysis={"meaningful_correlations": [], "cross_type_relationships": [], "spurious_correlations": [], "summary_stats": {}},
             original_filename=None
         )
+
+    # Validate DataFrame structure
+    if not isinstance(df, pd.DataFrame):
+        logger.error("Input is not a valid DataFrame after conversion")
+        return None
+
+    # Additional validation: make sure columns are valid
+    # Remove any columns with invalid names (None, NaN, etc.)
+    valid_columns = []
+    for col in df.columns:
+        if pd.isna(col) or col is None:
+            logger.warning(f"Found invalid column name: {col}, removing column")
+            continue
+        valid_columns.append(col)
+
+    df = df[valid_columns] if valid_columns else df[[]]  # Handle case where all columns are invalid
 
     # Cap rows and columns to prevent expensive processing
     MAX_ROWS = 100000

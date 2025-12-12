@@ -654,8 +654,9 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
                 # For categorical and ordinal roles, also compute additional stats
                 if role in ("categorical", "ordinal"):
                     stats = {
-                        "unique_count": int(s.nunique()),
-                        "unique_ratio": float(s.nunique() / len(s)) if len(s) > 0 else 0.0,
+                        "unique_count": int(s.nunique()) if hasattr(s, 'nunique') else len(set(s)) if isinstance(s, (list, tuple)) else 0,
+                        "unique_ratio": float(s.nunique() / len(s)) if hasattr(s, 'nunique') and len(s) > 0 else
+                                         float(len(set(s)) / len(s)) if isinstance(s, (list, tuple)) and len(s) > 0 else 0.0,
                         "top_category": str(value_counts.index[0]) if not value_counts.empty else None,
                         "top_category_count": int(value_counts.iloc[0]) if not value_counts.empty else 0,
                         "top_category_percentage": float((value_counts.iloc[0] / len(s)) * 100) if len(s) > 0 and not value_counts.empty else 0.0,
@@ -663,16 +664,19 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
                     }
                 elif role == "identifier":
                     stats = {
-                        "unique_count": int(s.nunique()),
-                        "unique_ratio": float(s.nunique() / len(s)) if len(s) > 0 else 0.0,
-                        "is_unique": bool(s.nunique() == len(s)),
+                        "unique_count": int(s.nunique()) if hasattr(s, 'nunique') else len(set(s)) if isinstance(s, (list, tuple)) else 0,
+                        "unique_ratio": float(s.nunique() / len(s)) if hasattr(s, 'nunique') and len(s) > 0 else
+                                         float(len(set(s)) / len(s)) if isinstance(s, (list, tuple)) and len(s) > 0 else 0.0,
+                        "is_unique": bool(s.nunique() == len(s)) if hasattr(s, 'nunique') else
+                                    bool(len(set(s)) == len(s)) if isinstance(s, (list, tuple)) else False,
                         "count": int(len(s))
                     }
                 elif role == "boolean":
                     stats = {
-                        "true_count": int((s == True).sum()),
-                        "false_count": int((s == False).sum()),
-                        "true_ratio": float((s == True).sum() / len(s)) if len(s) > 0 else 0.0,
+                        "true_count": int((s == True).sum()) if hasattr(s, 'sum') else sum(1 for x in s if x is True or x == 1) if isinstance(s, (list, tuple)) else 0,
+                        "false_count": int((s == False).sum()) if hasattr(s, 'sum') else sum(1 for x in s if x is False or x == 0) if isinstance(s, (list, tuple)) else 0,
+                        "true_ratio": float((s == True).sum() / len(s)) if hasattr(s, 'sum') and len(s) > 0 else
+                                   float(sum(1 for x in s if x is True or x == 1) / len(s)) if isinstance(s, (list, tuple)) and len(s) > 0 else 0.0,
                         "count": int(len(s))
                     }
             except Exception as e:

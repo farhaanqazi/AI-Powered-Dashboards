@@ -249,6 +249,10 @@ def detect_pattern_relationships(df: pd.DataFrame, dataset_profile: Dict[str, An
             series = pd.to_numeric(df[col], errors='coerce').dropna()
 
             if len(series) > 2:
+                # Ensure series is a pandas Series for statistical operations
+                if not isinstance(series, pd.Series):
+                    series = pd.Series(series)
+
                 # Calculate skewness and kurtosis, handling potential NaN/inf results
                 skewness = series.skew()
                 kurtosis = series.kurtosis()
@@ -559,6 +563,8 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
             outlier_ratio = outliers / len(series) if len(series) > 0 else 0
 
             # Calculate skewness, handling potential NaN/inf
+            if not isinstance(series, pd.Series):
+                series = pd.Series(series)
             skewness = series.skew()
             if pd.isna(skewness) or not np.isfinite(skewness):
                 skewness = 0.0

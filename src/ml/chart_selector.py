@@ -43,6 +43,10 @@ def _analyze_column_for_viz(series: pd.Series, role: str, semantic_tags: List[st
     
     # Add role-specific statistics
     if role == "numeric":
+        # Ensure series is a pandas Series before processing
+        if not isinstance(series, pd.Series):
+            series = pd.Series(series)
+
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) > 0:
             # Calculate stats, handling potential NaN/inf results
