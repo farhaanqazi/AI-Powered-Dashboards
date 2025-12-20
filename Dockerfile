@@ -7,30 +7,26 @@ RUN apt-get update && apt-get install -y \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
-RUN useradd --create-home --shell /bin/bash --uid 1001 appuser
-
-# Switch to the non-root user
-USER appuser
-
-# Set home directory for the user
-ENV HOME=/home/appuser
-
-# Set the working directory
-WORKDIR $HOME/app
+# Set working directory
+WORKDIR /app
 
 # Copy requirements first to leverage Docker cache
 COPY ./requirements.txt requirements.txt
 
-# Install dependencies directly into the system site-packages
+# Install dependencies globally (not in user directory) to ensure executables are in PATH
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
 
+# Create a non-root user and switch to it
+RUN useradd --create-home --shell /bin/bash --uid 1001 appuser && \
+    chown -R appuser:appuser /app
+USER appuser
+
 # Expose the port
 EXPOSE 7860
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+# Run the application using python -m uvicorn to ensure it's found
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
