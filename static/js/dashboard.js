@@ -1,9 +1,10 @@
-        // Pass data from backend to frontend JS
-        const CATEGORY_CHARTS = {{ category_charts | tojson }};
-        const ALL_CHARTS = {{ all_charts | tojson }};
-        const EDA_SUMMARY = {{ eda_summary | tojson }};
-        const PRIMARY_CHART = {{ primary_chart | tojson }};
-        const PRIMARY_CHART_COLUMN = PRIMARY_CHART ? PRIMARY_CHART.column : null;
+// Pass data from backend to frontend JS
+        // These variables are now initialized in dashboard.html
+        // const CATEGORY_CHARTS = {{ category_charts | tojson }};
+        // const ALL_CHARTS = {{ all_charts | tojson }};
+        // const EDA_SUMMARY = {{ eda_summary | tojson }};
+        // const PRIMARY_CHART = {{ primary_chart | tojson }};
+        // const PRIMARY_CHART_COLUMN = PRIMARY_CHART ? PRIMARY_CHART.column : null;
 
         function showSection(sectionName, evt) {
             // Hide all sections
@@ -31,13 +32,13 @@
             }
 
             // If switching to visualizations section, render the charts
-            if (sectionName === 'visualizations' && EDA_SUMMARY) {
+            if (sectionName === 'visualizations' && window.EDA_SUMMARY) {
                 setTimeout(renderAdvancedVisualizations, 100); // Delay to ensure DOM is ready
             }
         }
 
         function loadChartForColumn(columnName) {
-            const chart = CATEGORY_CHARTS[columnName];
+            const chart = window.CATEGORY_CHARTS[columnName];
             if (!chart) {
                 // No precomputed chart for this column â€“ silently ignore
                 return;
@@ -59,40 +60,40 @@
 
         // Function to render advanced visualizations based on EDA summary
         function renderAdvancedVisualizations() {
-            if (!EDA_SUMMARY) {
+            if (!window.EDA_SUMMARY) {
                 console.warn("No EDA summary available for visualization");
                 return;
             }
 
             // Render correlation heatmap if correlations exist
-            if (EDA_SUMMARY.patterns_and_relationships && EDA_SUMMARY.patterns_and_relationships.correlations) {
+            if (window.EDA_SUMMARY.patterns_and_relationships && window.EDA_SUMMARY.patterns_and_relationships.correlations) {
                 renderCorrelationHeatmap();
             }
 
             // Render key indicators bar chart if key indicators exist
-            if (EDA_SUMMARY.key_indicators && EDA_SUMMARY.key_indicators.length > 0) {
+            if (window.EDA_SUMMARY.key_indicators && window.EDA_SUMMARY.key_indicators.length > 0) {
                 renderKeyIndicatorsChart();
             }
 
             // Render trends chart if trends exist
-            if (EDA_SUMMARY.patterns_and_relationships && EDA_SUMMARY.patterns_and_relationships.trends) {
+            if (window.EDA_SUMMARY.patterns_and_relationships && window.EDA_SUMMARY.patterns_and_relationships.trends) {
                 renderTrendsChart();
             }
 
             // Render outliers chart if outliers exist
-            if (EDA_SUMMARY.patterns_and_relationships && EDA_SUMMARY.patterns_and_relationships.outliers) {
+            if (window.EDA_SUMMARY.patterns_and_relationships && window.EDA_SUMMARY.patterns_and_relationships.outliers) {
                 renderOutliersChart();
             }
 
             // Render use cases chart if use cases exist
-            if (EDA_SUMMARY.use_cases && EDA_SUMMARY.use_cases.length > 0) {
+            if (window.EDA_SUMMARY.use_cases && window.EDA_SUMMARY.use_cases.length > 0) {
                 renderUseCasesChart();
             }
         }
 
         // Render correlation heatmap
         function renderCorrelationHeatmap() {
-            const correlations = EDA_SUMMARY.patterns_and_relationships.correlations;
+            const correlations = window.EDA_SUMMARY.patterns_and_relationships.correlations;
             if (!correlations || correlations.length === 0) return;
 
             // Extract unique variables
@@ -143,7 +144,7 @@
 
         // Render key indicators chart (simple bar chart)
         function renderKeyIndicatorsChart() {
-            const indicators = EDA_SUMMARY.key_indicators.slice(0, 10); // Top 10
+            const indicators = window.EDA_SUMMARY.key_indicators.slice(0, 10); // Top 10
             if (!indicators || indicators.length === 0) return;
 
             const labels = indicators.map(ind => ind.indicator);
@@ -170,7 +171,7 @@
 
         // Render trends chart (simple bar chart for count of trend types)
         function renderTrendsChart() {
-            const trends = EDA_SUMMARY.patterns_and_relationships.trends;
+            const trends = window.EDA_SUMMARY.patterns_and_relationships.trends;
             if (!trends || trends.length === 0) return;
 
             const typeCounts = {};
@@ -201,7 +202,7 @@
 
         // Render outliers chart (simple bar chart for outlier counts)
         function renderOutliersChart() {
-            const outliers = EDA_SUMMARY.patterns_and_relationships.outliers;
+            const outliers = window.EDA_SUMMARY.patterns_and_relationships.outliers;
             if (!outliers || outliers.length === 0) return;
 
             const labels = outliers.map(o => o.column);
@@ -227,7 +228,7 @@
 
         // Render use cases chart (simple bar chart for key inputs count)
         function renderUseCasesChart() {
-            const useCases = EDA_SUMMARY.use_cases;
+            const useCases = window.EDA_SUMMARY.use_cases;
             if (!useCases || useCases.length === 0) return;
 
             const labels = useCases.map(uc => uc.use_case.substring(0, 20) + (uc.use_case.length > 20 ? '...' : '')); // Truncate for display
@@ -260,7 +261,6 @@
             }
         }
 
-        // Function to render simple bar charts from the new renderer
         function _renderSimpleBarChart(chartData, containerId) {
             // Perform thorough validation before rendering
             if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
@@ -268,7 +268,7 @@
                 return;
             }
 
-            const validData = chartData.data.filter(d => 
+            const validData = chartData.data.filter(d =>
                 d && typeof d === 'object' && 'category' in d && 'count' in d &&
                 d.category !== null && d.category !== undefined &&
                 d.count !== null && d.count !== undefined && isFinite(d.count)
@@ -510,36 +510,36 @@
         document.addEventListener("DOMContentLoaded", function () {
             try {
                 // Render primary chart if it exists
-                if (PRIMARY_CHART) {
-                     const chartType = PRIMARY_CHART.type || 'bar';
+                if (window.PRIMARY_CHART) {
+                     const chartType = window.PRIMARY_CHART.type || 'bar';
                      switch(chartType) {
                         case 'bar':
                         case 'category_count':
-                             _renderSimpleBarChart(PRIMARY_CHART, 'primary-chart');
+                             _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart');
                              break;
                         case 'scatter':
-                             _renderScatterPlot(PRIMARY_CHART, 'primary-chart');
+                             _renderScatterPlot(window.PRIMARY_CHART, 'primary-chart');
                              break;
                         case 'histogram':
-                             _renderHistogram(PRIMARY_CHART, 'primary-chart');
+                             _renderHistogram(window.PRIMARY_CHART, 'primary-chart');
                              break;
                         case 'pie':
-                             _renderPieChart(PRIMARY_CHART, 'primary-chart');
+                             _renderPieChart(window.PRIMARY_CHART, 'primary-chart');
                              break;
                         case 'box_plot':
-                             _renderBoxPlot(PRIMARY_CHART, 'primary-chart');
+                             _renderBoxPlot(window.PRIMARY_CHART, 'primary-chart');
                              break;
                         default:
-                             _renderSimpleBarChart(PRIMARY_CHART, 'primary-chart');
+                             _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart');
                              break;
                      }
                 }
 
                 // Render all category charts
-                if (typeof CATEGORY_CHARTS === 'object' && CATEGORY_CHARTS !== null) {
-                    Object.keys(CATEGORY_CHARTS).forEach(function(columnName) {
+                if (typeof window.CATEGORY_CHARTS === 'object' && window.CATEGORY_CHARTS !== null) {
+                    Object.keys(window.CATEGORY_CHARTS).forEach(function(columnName) {
                         try {
-                            const chartData = CATEGORY_CHARTS[columnName];
+                            const chartData = window.CATEGORY_CHARTS[columnName];
                             const containerId = "chart-" + columnName.replace(/[\s.]/g, '_');
                             const chartType = chartData.type || 'bar';
                             switch(chartType) {
@@ -570,8 +570,8 @@
                 }
 
                 // Render all other charts
-                 if (typeof ALL_CHARTS === 'object' && ALL_CHARTS !== null) {
-                    Object.values(ALL_CHARTS).forEach(function(chartSpec) {
+                 if (typeof window.ALL_CHARTS === 'object' && window.ALL_CHARTS !== null) {
+                    Object.values(window.ALL_CHARTS).forEach(function(chartSpec) {
                         try {
                             if (chartSpec && chartSpec.id) {
                                 const containerId = "chart-" + chartSpec.id;
