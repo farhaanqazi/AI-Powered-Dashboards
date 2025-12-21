@@ -365,9 +365,9 @@
                                         <td>
                                             <span class="badge badge-xs badge-soft text-xs">{{ col.role }}</span>
                                         </td>
-                                        <td>{{ col.stats.min if col.stats and col.stats.min is not none else 'N/A' }}</td>
-                                        <td>{{ col.stats.max if col.stats and col.stats.max is not none else 'N/A' }}</td>
-                                        <td>{{ "%.2f"|format(col.stats.mean) if col.stats and col.stats.mean is not none else 'N/A' }}</td>
+                                        <td>{{ col.stats.min if col.stats and col.stats.get('min') is not none else 'N/A' }}</td>
+                                        <td>{{ col.stats.max if col.stats and col.stats.get('max') is not none else 'N/A' }}</td>
+                                        <td>{{ "%.2f"|format(col.stats.mean) if col.stats and col.stats.get('mean') is not none else 'N/A' }}</td>
                                         <td>
                                             {% if col.top_categories %}
                                                 {% for cat in col.top_categories[:3] %}
