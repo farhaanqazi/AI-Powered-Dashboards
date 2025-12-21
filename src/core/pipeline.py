@@ -58,7 +58,7 @@ def validate_pipeline_contract(df: pd.DataFrame, dataset_profile: dict) -> bool:
     return True
 
 
-def validate_dashboard_state(state: DashboardState) -> List[str]:
+def validate_dashboard_state(state: 'DashboardState') -> List[str]:
     """
     Validate the DashboardState for consistency and potential issues.
     Returns a list of warning messages if any issues are found.
