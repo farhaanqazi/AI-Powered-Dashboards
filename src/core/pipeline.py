@@ -16,6 +16,78 @@ from src import config
 
 logger = logging.getLogger(__name__)
 
+def validate_pipeline_contract(df: pd.DataFrame, dataset_profile: dict) -> bool:
+    """
+    Validate the pipeline contract between DataFrame and dataset_profile.
+    Returns True if validation passes, False otherwise.
+    """
+    if not isinstance(df, pd.DataFrame):
+        logger.error("df is not a pandas DataFrame")
+        return False
+
+    if not isinstance(dataset_profile, dict):
+        logger.error("dataset_profile is not a dictionary")
+        return False
+
+    if 'columns' not in dataset_profile:
+        logger.error("dataset_profile missing 'columns' key")
+        return False
+
+    if 'n_rows' not in dataset_profile or 'n_cols' not in dataset_profile:
+        logger.error("dataset_profile missing 'n_rows' or 'n_cols' keys")
+        return False
+
+    # Check that the column names in profile match the DataFrame columns
+    profile_col_names = {col.get('name') for col in dataset_profile.get('columns', []) if col.get('name')}
+    df_col_names = set(df.columns)
+
+    if profile_col_names != df_col_names:
+        logger.error(f"Mismatch between profile columns {profile_col_names} and DataFrame columns {df_col_names}")
+        return False
+
+    # Check that row counts match
+    if len(df) != dataset_profile.get('n_rows', -1):
+        logger.error(f"Mismatch between DataFrame rows ({len(df)}) and profile rows ({dataset_profile.get('n_rows')})")
+        return False
+
+    # Check that column counts match
+    if len(df.columns) != dataset_profile.get('n_cols', -1):
+        logger.error(f"Mismatch between DataFrame columns ({len(df.columns)}) and profile columns ({dataset_profile.get('n_cols')})")
+        return False
+
+    return True
+
+
+def validate_dashboard_state(state: DashboardState) -> List[str]:
+    """
+    Validate the DashboardState for consistency and potential issues.
+    Returns a list of warning messages if any issues are found.
+    """
+    warnings = []
+
+    # Check that KPIs reference columns that exist in the dataset profile
+    if state.kpis:
+        profile_col_names = {col['name'] for col in state.dataset_profile.get('columns', [])}
+        for kpi in state.kpis:
+            kpi_label = kpi.get('label', '')
+            if kpi_label and kpi_label not in profile_col_names and kpi_label != 'correlation':
+                warnings.append(f"KPI '{kpi_label}' references non-existent column")
+
+    # Check that charts reference columns that exist in the dataset profile
+    if state.charts:
+        profile_col_names = {col['name'] for col in state.dataset_profile.get('columns', [])}
+        for chart in state.charts:
+            x_field = chart.get('x_field')
+            y_field = chart.get('y_field')
+
+            if x_field and x_field not in profile_col_names:
+                warnings.append(f"Chart references non-existent x_field '{x_field}'")
+            if y_field and y_field not in profile_col_names:
+                warnings.append(f"Chart references non-existent y_field '{y_field}'")
+
+    return warnings
+
+
 @dataclass
 class ProcessingResult:
     """Structured result with warnings and errors"""
@@ -41,6 +113,7 @@ class DashboardState:
     original_filename: Optional[str] = None
     critical_aggregates: Optional[Dict[str, float]] = None
     critical_totals: Optional[Dict[str, float]] = None
+    critical_full_dataset_aggregates: Optional[Dict[str, float]] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -173,10 +246,26 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
             critical_totals[f"Total {col.replace('_', ' ').title()}"] = df[col].sum()
     # ---------------------------------
 
+    # --- Calculate critical full-dataset aggregates before sampling ---
+    critical_full_dataset_aggregates = {}
+    # Identify numeric columns likely to represent totals based on semantic_tags in dataset_profile
+    # This would typically be done after profile generation, but since we need it before sampling,
+    # we'll use a heuristic approach based on column names and data types
+    for col_name in df.columns:
+        if pd.api.types.is_numeric_dtype(df[col_name]):
+            col_lower = col_name.lower()
+            # Check for monetary-related keywords
+            if any(keyword in col_lower for keyword in ['amount', 'revenue', 'price', 'cost', 'expense', 'profit', 'fee', 'charge', 'payment', 'income', 'value', 'total']):
+                critical_full_dataset_aggregates[f"total_{col_name}"] = df[col_name].sum()
+            # Check for quantity-related keywords
+            elif any(keyword in col_lower for keyword in ['qty', 'quantity', 'count', 'volume', 'size', 'number']):
+                critical_full_dataset_aggregates[f"total_{col_name}"] = df[col_name].sum()
+    # ---------------------------------
+
     # Cap rows and columns to prevent expensive processing
     if len(df) > config.MAX_ROWS:
         logger.warning(f"DataFrame has {len(df)} rows, sampling to {config.MAX_ROWS} for performance")
-        df = df.sample(n=min(config.MAX_ROWS, len(df)), random_state=42)
+        df = df.sample(n=min(config.MAX_ROWS, len(df)), random_state=42).reset_index(drop=True)
 
     start_time = time.time()
     timing = {}
@@ -199,6 +288,15 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.exception("Error building dataset profile")
         return None
     timing['profile'] = time.time() - profile_start
+
+    # 3) Validate pipeline contract immediately after profile generation
+    try:
+        if not validate_pipeline_contract(df, dataset_profile):
+            logger.error("Pipeline contract validation failed after profile generation")
+            return None
+    except Exception as e:
+        logger.error(f"Error during pipeline contract validation: {e}")
+        return None
 
     # 3) Legacy/simple profile (optional)
     profile_start = time.time()
@@ -299,7 +397,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
          logger.error("Generated dataset_profile is invalid.")
          return None
 
-    return DashboardState(
+    # Create the DashboardState
+    state = DashboardState(
         df=df,
         dataset_profile=dataset_profile,
         profile=profile,
@@ -312,8 +411,20 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         correlation_analysis=correlation_analysis,
         original_filename=None,
         critical_aggregates=critical_aggregates,
-        critical_totals=critical_totals
+        critical_totals=critical_totals,
+        critical_full_dataset_aggregates=critical_full_dataset_aggregates
     )
+
+    # Validate DashboardState for inconsistencies
+    try:
+        state_warnings = validate_dashboard_state(state)
+        if state_warnings:
+            for warning in state_warnings:
+                logger.warning(f"DashboardState validation warning: {warning}")
+    except Exception as e:
+        logger.error(f"Error during DashboardState validation: {e}")
+
+    return state
 
 
 def build_dashboard_from_file(file_storage, max_cols: Optional[int] = None,

@@ -102,9 +102,12 @@ def _semantic_column_analysis(df: pd.DataFrame, column_name: str) -> List[str]:
     return identified_categories
 
 
+# Note: The _is_likely_identifier function is kept for backward compatibility
+# but will not be used in the main KPI generation process to avoid re-analyzing data
 def _is_likely_identifier(series: pd.Series, uniqueness_threshold: float = 0.95) -> bool:
     """
     Robustly detect if a series is likely an identifier based on multiple heuristics.
+    This function is kept for compatibility but not used in the main KPI generation.
     """
     n_total = len(series)
     if n_total == 0:
@@ -349,6 +352,66 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
     return score
 
 
+def _calculate_significance_score_from_profile(col_profile: Dict[str, Any], semantic_categories: List[str]) -> float:
+    """
+    Calculate a significance score for a column based on dataset profile data and semantic meaning.
+    This avoids re-analyzing the raw series data.
+    """
+    score = 0.0
+
+    # Get column information from profile
+    col_role = col_profile.get("role", "unknown")
+    n_unique = col_profile.get("unique_count", 0)
+    n_total = col_profile.get("stats", {}).get("count", 0)
+    missing_count = col_profile.get("missing_count", 0)
+
+    # Check if this is an identifier (should have low significance)
+    if col_role == "identifier":
+        return 0.05  # Very low score for identifiers
+
+    # Check if this is near-constant (only one unique non-null value)
+    n_valid = n_total - missing_count
+    if n_valid > 0:
+        unique_ratio = n_unique / n_valid if n_valid > 0 else 0.0
+
+        # Uniqueness score: avoid both too unique (IDs) and too uniform (constants)
+        # Score peaks at medium uniqueness, penalizes extreme uniqueness (like IDs) or low uniqueness (like constants)
+        if 0.05 <= unique_ratio <= 0.90:  # Good range for meaningful categorical variables
+            uniqueness_bonus = 0.2
+            # Further boost if it's in the sweet spot (not too many, not too few categories)
+            if 2 <= n_unique <= 20:  # Ideal range for categorical KPIs
+                uniqueness_bonus += 0.1
+            score += uniqueness_bonus
+        elif unique_ratio > 0.95:  # Probably an ID, reduce score
+            score -= 0.3
+
+    # Semantic significance boosts
+    for semantic_cat in semantic_categories:
+        if semantic_cat in ['monetary', 'rating', 'quantity']:
+            score += 0.3  # High importance semantic categories
+        elif semantic_cat in ['demographic', 'percentage']:
+            score += 0.2  # Medium importance
+        elif semantic_cat in ['time']:
+            score += 0.15  # Time fields are often important
+
+    # Add statistical significance for numeric columns based on profile stats
+    if col_role == "numeric" and col_profile.get("stats"):
+        stats = col_profile["stats"]
+        std_val = stats.get("std", 0.0)
+        mean_val = stats.get("mean")
+
+        # Variability score: meaningful metrics tend to have variability
+        if mean_val is not None and mean_val != 0 and np.isfinite(std_val) and np.isfinite(mean_val):
+            cv = abs(std_val / mean_val)  # Coefficient of variation
+            score += min(0.5, cv)  # Cap at 0.5 to prevent extreme scores
+        elif np.isfinite(std_val):
+            score += min(0.5, std_val / 10)  # If mean is 0, use raw std deviation capped
+
+    # Ensure score is between 0 and 1
+    score = max(0.0, min(1.0, score))
+    return score
+
+
 def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                  min_variability_threshold: float = config.MIN_VARIABILITY_THRESHOLD,
                  min_unique_ratio: float = config.MIN_UNIQUE_RATIO,
@@ -387,87 +450,62 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         logger.warning("No data rows provided to KPI generator")
         return []
 
-    # Prepare a comprehensive analysis of each column
+    # Prepare a comprehensive analysis of each column using dataset_profile
     column_analyses = []
-    
+
     for col in columns:
         col_name = col["name"]
-        series = df[col_name]
 
-        # Skip if series is all NaN
-        if series.isna().all():
+        # Get semantic tags and role from dataset profile
+        semantic_tags = col.get("semantic_tags", [])
+        col_role = col.get("role", "unknown")
+
+        # Check if this is an identifier based on dataset profile
+        is_identifier = (col_role == "identifier")
+
+        # Check if this is near-constant based on dataset profile
+        n_unique = col.get("unique_count", 0)
+        n_total = col.get("stats", {}).get("count", n_rows if n_rows > 0 else len(df))
+        unique_ratio = n_unique / n_total if n_total > 0 else 0.0
+
+        # Check if this is near-constant (only one unique non-null value)
+        is_near_constant = (n_unique <= 1)
+
+        # Check if column has only NaN values
+        missing_count = col.get("missing_count", 0)
+        is_all_nan = (missing_count == n_total)
+
+        # Skip if all values are NaN
+        if is_all_nan:
             logger.debug(f"Skipping column {col_name} as it contains only NaN values.")
             continue
 
-        # Determine if this is likely an identifier
-        is_identifier = _is_likely_identifier(series)
+        # Skip if it's an identifier or near-constant
+        if is_identifier or is_near_constant:
+            logger.debug(f"Skipping {'identifier' if is_identifier else 'near-constant'} column {col_name} from KPI generation.")
+            continue
 
-        # Get semantic tags from dataset profile, if available
-        semantic_tags = col.get("semantic_tags", [])
+        # Determine semantic categories from profile semantic tags
+        semantic_categories = semantic_tags.copy()  # Use semantic tags from profile
 
-        # Perform semantic analysis
-        semantic_categories = _semantic_column_analysis(df, col_name)
+        # Calculate significance score based on profile data
+        significance_score = _calculate_significance_score_from_profile(col, semantic_categories)
 
-        # Add semantic tags from the profile to semantic categories for broader context
-        for tag in semantic_tags:
-            if tag not in semantic_categories:
-                semantic_categories.append(tag)
+        # Get statistics from profile
+        numeric_stats = col.get("stats", {})
 
-        # Calculate significance score
-        significance_score = _calculate_significance_score(series, semantic_categories)
-        
-        # Additional metrics for KPI characterization
-        n_unique = series.nunique(dropna=True)
-        n_valid = len(series.dropna())
-        unique_ratio = n_unique / n_valid if n_valid > 0 else 0.0
-        
-        # Calculate basic statistics for numeric fields
-        numeric_stats = {}
-        if pd.api.types.is_numeric_dtype(series):
-            # Ensure series is a pandas Series and not a dictionary or other type
-            if isinstance(series, (dict, list, tuple)):
-                # Convert to pandas Series if it's another type
-                series = pd.Series(series)
-
-            numeric_series = pd.to_numeric(series, errors='coerce').dropna()
-            if len(numeric_series) > 0:
-                # Calculate stats, handling potential NaN/inf results
-                mean_val = numeric_series.mean()
-                std_val = numeric_series.std()
-                min_val = numeric_series.min()
-                max_val = numeric_series.max()
-                median_val = numeric_series.median()
-                q25_val = numeric_series.quantile(0.25)
-                q75_val = numeric_series.quantile(0.75)
-
-                numeric_stats = {
-                    'mean': float(mean_val) if pd.notna(mean_val) and np.isfinite(mean_val) else None,
-                    'std': float(std_val) if pd.notna(std_val) and np.isfinite(std_val) and len(numeric_series) > 1 else 0.0,
-                    'min': float(min_val) if pd.notna(min_val) and np.isfinite(min_val) else None,
-                    'max': float(max_val) if pd.notna(max_val) and np.isfinite(max_val) else None,
-                    'median': float(median_val) if pd.notna(median_val) and np.isfinite(median_val) else None,
-                    'q25': float(q25_val) if pd.notna(q25_val) and np.isfinite(q25_val) else None,
-                    'q75': float(q75_val) if pd.notna(q75_val) and np.isfinite(q75_val) else None,
-                    'sum': float(numeric_series.sum()) if len(numeric_series) > 0 and all(np.isfinite(numeric_series)) else 0.0,
-                    'variance': float(numeric_series.var()) if len(numeric_series) > 1 and pd.notna(std_val) and np.isfinite(std_val) else 0.0,
-                    'count': int(len(numeric_series))
-                }
-
-        
-        # Count outliers if numeric
-        outlier_count = _calculate_outliers(series) if pd.api.types.is_numeric_dtype(series) else 0
-        
         column_analyses.append({
             'name': col_name,
-            'role': col.get('role', 'unknown'),
+            'role': col_role,
             'semantic_categories': semantic_categories,
             'is_identifier': is_identifier,
+            'is_near_constant': is_near_constant,
             'significance_score': significance_score,
             'n_unique': n_unique,
-            'n_valid': n_valid,
+            'n_valid': n_total - missing_count,
             'unique_ratio': unique_ratio,
             'numeric_stats': numeric_stats,
-            'outlier_count': outlier_count
+            'missing_count': missing_count
         })
 
     # Sort by significance score to identify the most important columns
@@ -478,12 +516,12 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
         col_name = analysis['name']
         col_role = analysis['role']
         significance_score = analysis['significance_score']
-        
-        # Skip identifiers as they are not meaningful KPIs
-        if analysis['is_identifier']:
-            logger.debug(f"Skipping identifier column {col_name} from KPI generation.")
+
+        # Skip identifiers or near-constant fields as they are not meaningful KPIs
+        if analysis['is_identifier'] or analysis['is_near_constant']:
+            logger.debug(f"Skipping {'identifier' if analysis['is_identifier'] else 'near-constant'} column {col_name} from KPI generation.")
             continue
-            
+
         # Prepare KPI information
         kpi_info = {
             "label": col_name,
@@ -492,10 +530,10 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
             "semantic_categories": analysis['semantic_categories'],
             "provenance": "enhanced_analysis"
         }
-        
+
         # Add specific metrics based on the column's role and semantic categories
         series = df[col_name]
-        
+
         if col_role == 'numeric':
             numeric_stats = analysis['numeric_stats']
             if numeric_stats and numeric_stats.get('mean') is not None:
@@ -506,11 +544,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                 else:
                     kpi_info["value"] = "Invalid numeric value"
             else:
-                # Compute from series directly if stats weren't cached or were invalid
-                # Ensure series is a pandas Series before processing
-                if not isinstance(series, pd.Series):
-                    series = pd.Series(series)
-
+                # Fallback: compute from series directly if stats weren't available in profile
                 numeric_series = pd.to_numeric(series, errors='coerce').dropna()
                 if len(numeric_series) > 0:
                     mean_val = float(numeric_series.mean())
@@ -522,46 +556,68 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                 else:
                     kpi_info["value"] = "No valid numeric values"
 
-            # Add outlier information if numeric and valid mean was calculated
-            if analysis['outlier_count'] > 0 and 'Invalid' not in kpi_info["value"]:
-                kpi_info["value"] += f" [{analysis['outlier_count']} outliers]"
+            # Add outlier information if available in profile
+            outlier_count = numeric_stats.get('outlier_count', 0) if numeric_stats else 0
+            if outlier_count > 0 and 'Invalid' not in kpi_info["value"]:
+                kpi_info["value"] += f" [{outlier_count} outliers]"
 
         elif col_role in ['categorical', 'text']:
             # For categorical/text, show top value and distribution
-            top_value_counts = series.value_counts(dropna=True).head(3)
-            if len(top_value_counts) > 0:
-                top_val = top_value_counts.index[0]
-                top_count = top_value_counts.iloc[0]
+            top_categories = col.get("top_categories", [])
+            if top_categories:
+                top_val = top_categories[0]["value"]
+                top_count = top_categories[0]["count"]
                 total_valid = analysis['n_valid']
                 pct_top = (top_count / total_valid) * 100 if total_valid > 0 else 0
                 kpi_info["value"] = f"Top: '{top_val}' ({top_count}, {pct_top:.1f}%)"
             else:
                 kpi_info["value"] = "No valid values"
-                
+
         elif col_role == 'datetime':
-            # For datetime, show time range
-            try:
-                datetime_series = pd.to_datetime(series, errors='coerce').dropna()
-                if len(datetime_series) > 0:
-                    min_date = datetime_series.min().strftime('%Y-%m-%d')
-                    max_date = datetime_series.max().strftime('%Y-%m-%d')
-                    kpi_info["value"] = f"Range: {min_date} to {max_date}"
-                else:
-                    kpi_info["value"] = "No valid dates"
-            except Exception as e:
-                logger.warning(f"Error processing datetime column {col_name}: {e}")
-                kpi_info["value"] = "Invalid datetime format"
-                
+            # For datetime, show time range from profile
+            stats = analysis.get('numeric_stats', {})
+            if stats and stats.get('min') and stats.get('max'):
+                kpi_info["value"] = f"Range: {stats['min']} to {stats['max']}"
+            else:
+                # Fallback to series if not in profile
+                try:
+                    datetime_series = pd.to_datetime(series, errors='coerce').dropna()
+                    if len(datetime_series) > 0:
+                        min_date = datetime_series.min().strftime('%Y-%m-%d')
+                        max_date = datetime_series.max().strftime('%Y-%m-%d')
+                        kpi_info["value"] = f"Range: {min_date} to {max_date}"
+                    else:
+                        kpi_info["value"] = "No valid dates"
+                except Exception as e:
+                    logger.warning(f"Error processing datetime column {col_name}: {e}")
+                    kpi_info["value"] = "Invalid datetime format"
+
         else:
             # For other roles, show basic statistics
-            kpi_info["value"] = f"Unique: {analysis['n_unique']}, Missing: {series.isna().sum()}"
-        
+            kpi_info["value"] = f"Unique: {analysis['n_unique']}, Missing: {analysis['missing_count']}"
+
         # Add semantic context to the value description if relevant
         if analysis['semantic_categories']:
             semantic_info = ", ".join(analysis['semantic_categories'])
             kpi_info["value"] += f" [{semantic_info}]"
-            
+
         kpis.append(kpi_info)
+
+    # Validation step: check for invalid KPIs and filter them out
+    validated_kpis = []
+    for kpi in kpis:
+        # Check for invalid values
+        if kpi.get('value') and kpi['value'] not in ['Invalid numeric value', 'No valid values', 'No valid numeric values', 'Invalid datetime format']:
+            # Check significance score is valid
+            sig_score = kpi.get('significance_score')
+            if sig_score is not None and not (isinstance(sig_score, float) and np.isnan(sig_score)):
+                validated_kpis.append(kpi)
+            else:
+                logger.warning(f"Filtered out KPI '{kpi.get('label')}' due to invalid significance score: {sig_score}")
+        else:
+            logger.warning(f"Filtered out KPI '{kpi.get('label')}' due to invalid value: {kpi.get('value')}")
+
+    kpis = validated_kpis
 
     # Additionally, add some correlation-based KPIs if EDA summary is available
     if eda_summary:
@@ -572,7 +628,7 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                  correlations = _calculate_correlations(df)
 
             for abs_corr, corr_val, col1, col2 in correlations[:3]:  # Top 3 correlations
-                kpis.append({
+                correlation_kpi = {
                     "label": f"Correlation: {col1} ↔ {col2}",
                     "value": f"{corr_val:.3f}",
                     "type": "correlation",
@@ -580,7 +636,11 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                     "columns": [col1, col2],
                     "significance_score": abs(corr_val),  # Correlation strength as significance
                     "provenance": "correlation_insight"
-                })
+                }
+
+                # Add correlation KPI if it's valid
+                if correlation_kpi['value'] and not (isinstance(correlation_kpi.get('significance_score'), float) and np.isnan(correlation_kpi.get('significance_score'))):
+                    kpis.append(correlation_kpi)
         except Exception as e:
             logger.warning(f"Error calculating or adding correlation-based KPIs: {e}")
 

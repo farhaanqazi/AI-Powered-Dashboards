@@ -287,6 +287,67 @@ def _is_likely_identifier(
     return False, 0.0
 
 
+def _is_likely_identifier_local(
+    series: pd.Series,
+    uniqueness_threshold: float = 0.95
+) -> Tuple[bool, float]:
+    """
+    Local identifier detection that only uses basic heuristics without external checks.
+    This prevents conflicts with the main profile's role assignment logic.
+
+    Detect if a series is likely an identifier based on various heuristics.
+
+    We combine:
+      - high uniqueness
+      - ID-like patterns
+      - column name hints
+    """
+    n_total = len(series)
+    if n_total == 0:
+        return False, 0.0
+
+    n_unique = series.nunique(dropna=True)
+    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
+
+    # Check if column name suggests it's an ID
+    name_lower = (series.name or "").lower()
+    id_name_tokens = [
+        "id", "identifier", "uuid", "guid", "key", "account", "user", "customer",
+        "client", "booking", "transaction", "order", "invoice", "code", "number"
+    ]
+    looks_like_id_name = any(token in name_lower for token in id_name_tokens)
+
+    # Check for ID-like patterns in the values
+    sample_values = series.dropna().head(min(100, len(series))).astype(str)
+    id_pattern_matches = 0
+
+    for val in sample_values:
+        for pattern in ID_PATTERNS:
+            if re.fullmatch(pattern, val.strip(), re.IGNORECASE):
+                id_pattern_matches += 1
+                break
+
+    pattern_confidence = id_pattern_matches / len(sample_values) if len(sample_values) > 0 else 0.0
+
+    # High uniqueness is necessary for ID classification, but not sufficient on its own
+    # Only classify as ID if either name looks like ID or strong pattern matching occurs
+    if unique_ratio > uniqueness_threshold:
+        if looks_like_id_name:
+            # Strong confidence if both high uniqueness and name suggests ID
+            confidence = min(1.0, unique_ratio * 1.2)  # Boost for name match
+            return True, confidence
+        elif pattern_confidence > 0.5:
+            # Moderate confidence if high uniqueness and strong pattern match
+            confidence = min(0.9, unique_ratio * pattern_confidence * 1.5)
+            return True, confidence
+        elif unique_ratio > 0.99:  # Very high uniqueness might indicate ID anyway
+            # Lower confidence if just high uniqueness but no other indicators
+            confidence = min(0.8, unique_ratio)
+            return True, confidence
+
+    return False, 0.0
+
+
 def _infer_role_advanced(
     series: pd.Series,
     uniqueness_cutoff: float = 0.5,
@@ -294,6 +355,7 @@ def _infer_role_advanced(
 ) -> Tuple[str, float, str, Dict[str, float], List[str]]:
     """
     Advanced role inference with confidence scoring and semantic tags.
+    Relies on basic heuristics only, without conflicting external checks.
 
     Returns:
         role: core role ("numeric", "categorical", "datetime", "text", "boolean", "identifier", "ordinal")
@@ -308,11 +370,26 @@ def _infer_role_advanced(
 
     semantic_tags = []
 
+    # Handle edge cases first
     if series.empty:
         return "text", 0.5, "empty_series", {"data_consistency": 0.0}, semantic_tags
 
+    # Check if all values are NaN/None
+    if series.isna().all():
+        return "text", 0.3, "all_nan", {"data_consistency": 0.0}, semantic_tags
+
+    # Check if series has only one unique non-null value (near-constant)
+    n_unique_non_null = series.dropna().nunique()
+    if n_unique_non_null <= 1:
+        # Check if it's a numeric constant
+        if pd.api.types.is_numeric_dtype(series):
+            return "numeric", 0.4, "near_constant_numeric", {"data_consistency": 0.4}, semantic_tags
+        else:
+            return "text", 0.4, "near_constant_text", {"data_consistency": 0.4}, semantic_tags
+
     # 0) Identifier detection (uses name + uniqueness + patterns)
-    is_id, id_confidence = _is_likely_identifier(series)
+    # Use only local heuristics, not external checks that might conflict
+    is_id, id_confidence = _is_likely_identifier_local(series)
     if is_id and id_confidence > 0.7:
         return "identifier", id_confidence, f"identifier_detection_{id_confidence:.2f}", {
             "pattern_match": id_confidence,
@@ -643,18 +720,50 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
             if len(s_clean) > 0:
                 # Compute all statistics in one pass for efficiency
                 try:
+                    # Calculate basic statistics
+                    min_val = float(s_clean.min()) if len(s_clean) > 0 else None
+                    max_val = float(s_clean.max()) if len(s_clean) > 0 else None
+                    mean_val = float(s_clean.mean()) if len(s_clean) > 0 else None
+                    std_val = float(s_clean.std()) if len(s_clean) > 1 else 0.0
+                    median_val = float(s_clean.median()) if len(s_clean) > 0 else None
+                    q25_val = float(s_clean.quantile(0.25)) if len(s_clean) > 0 else None
+                    q75_val = float(s_clean.quantile(0.75)) if len(s_clean) > 0 else None
+                    sum_val = float(s_clean.sum()) if len(s_clean) > 0 else None
+                    variance_val = float(s_clean.var()) if len(s_clean) > 1 else 0.0
+
+                    # Calculate skewness and kurtosis with proper error handling
+                    if len(s_clean) > 2:
+                        try:
+                            skewness_val = float(s_clean.skew())
+                            if pd.isna(skewness_val) or not np.isfinite(skewness_val):
+                                skewness_val = 0.0
+                        except (TypeError, ValueError, RuntimeWarning):
+                            skewness_val = 0.0
+                    else:
+                        skewness_val = 0.0
+
+                    if len(s_clean) > 3:
+                        try:
+                            kurtosis_val = float(s_clean.kurtosis())
+                            if pd.isna(kurtosis_val) or not np.isfinite(kurtosis_val):
+                                kurtosis_val = 0.0
+                        except (TypeError, ValueError, RuntimeWarning):
+                            kurtosis_val = 0.0
+                    else:
+                        kurtosis_val = 0.0
+
                     stats = {
-                        "min": float(s_clean.min()) if len(s_clean) > 0 else None,
-                        "max": float(s_clean.max()) if len(s_clean) > 0 else None,
-                        "mean": float(s_clean.mean()) if len(s_clean) > 0 else None,
-                        "std": float(s_clean.std()) if len(s_clean) > 1 else 0.0,
-                        "median": float(s_clean.median()) if len(s_clean) > 0 else None,
-                        "q25": float(s_clean.quantile(0.25)) if len(s_clean) > 0 else None,
-                        "q75": float(s_clean.quantile(0.75)) if len(s_clean) > 0 else None,
-                        "sum": float(s_clean.sum()) if len(s_clean) > 0 else None,
-                        "variance": float(s_clean.var()) if len(s_clean) > 1 else 0.0,
-                        "skewness": float(s_clean.skew()) if len(s_clean) > 2 else 0.0,
-                        "kurtosis": float(s_clean.kurtosis()) if len(s_clean) > 3 else 0.0,
+                        "min": min_val,
+                        "max": max_val,
+                        "mean": mean_val,
+                        "std": std_val,
+                        "median": median_val,
+                        "q25": q25_val,
+                        "q75": q75_val,
+                        "sum": sum_val,
+                        "variance": variance_val,
+                        "skewness": skewness_val,
+                        "kurtosis": kurtosis_val,
                         "count": int(len(s_clean))
                     }
                 except (TypeError, ValueError) as e:
@@ -662,16 +771,25 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
                     stats = None
 
                 # Add specific semantic-based stats if stats were calculated successfully
-                if stats and "monetary" in semantic_tags:
-                    stats["currency_units"] = float(s_clean.abs().sum())  # Total monetary value
-                elif stats and "percentage" in semantic_tags:
-                    # Make sure s_clean is still a Series before calculating mean again
-                    if isinstance(s_clean, pd.Series):
-                        stats["average_percentage"] = float(s_clean.mean()) if s_clean.empty is False else 0.0
-                    else:
-                        stats["average_percentage"] = 0.0
-                elif stats and "duration" in semantic_tags:
-                    stats["total_duration"] = float(s_clean.sum())
+                if stats and "monetary" in semantic_tags and len(s_clean) > 0:
+                    try:
+                        stats["currency_units"] = float(s_clean.abs().sum())  # Total monetary value
+                    except (TypeError, ValueError):
+                        logger.warning(f"Could not calculate currency units for column '{col}'")
+                elif stats and "percentage" in semantic_tags and len(s_clean) > 0:
+                    try:
+                        # Make sure s_clean is still a Series before calculating mean again
+                        if isinstance(s_clean, pd.Series):
+                            stats["average_percentage"] = float(s_clean.mean()) if s_clean.empty is False else 0.0
+                        else:
+                            stats["average_percentage"] = 0.0
+                    except (TypeError, ValueError):
+                        logger.warning(f"Could not calculate average percentage for column '{col}'")
+                elif stats and "duration" in semantic_tags and len(s_clean) > 0:
+                    try:
+                        stats["total_duration"] = float(s_clean.sum())
+                    except (TypeError, ValueError):
+                        logger.warning(f"Could not calculate total duration for column '{col}'")
 
         elif role == "datetime":
             try:

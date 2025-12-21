@@ -657,19 +657,179 @@
                     });
                 });
 
-                // Make charts responsive to window resize
-                window.addEventListener('resize', function() {
-                    // Use Plotly's built-in relayout for responsiveness
-                    setTimeout(function() {
-                        // Get all chart containers and update their size
-                        const chartContainers = document.querySelectorAll('.chart-container');
-                        chartContainers.forEach(container => {
-                            if (container.id) {
-                                // Update the chart's layout to be responsive
-                                Plotly.Plots.resize(container.id);
+                // Chart Manager for lifecycle-aware rendering
+                const ChartManager = {
+                    charts: new Map(),  // Store chart renderers by ID
+
+                    // Register a chart with its renderer function
+                    registerChart: function(id, renderFn) {
+                        this.charts.set(id, renderFn);
+                    },
+
+                    // Unregister a chart when no longer needed
+                    unregisterChart: function(id) {
+                        this.charts.delete(id);
+                    },
+
+                    // Render a specific chart
+                    renderChart: function(id) {
+                        const renderFn = this.charts.get(id);
+                        if (renderFn && typeof renderFn === 'function') {
+                            try {
+                                renderFn();
+                                return true;
+                            } catch (error) {
+                                console.error(`Error rendering chart ${id}:`, error);
+                                return false;
+                            }
+                        }
+                        return false;
+                    },
+
+                    // Render all registered charts
+                    renderAll: function() {
+                        let successCount = 0;
+                        let errorCount = 0;
+
+                        this.charts.forEach((renderFn, id) => {
+                            if (this.renderChart(id)) {
+                                successCount++;
+                            } else {
+                                errorCount++;
                             }
                         });
-                    }, 100); // Small delay to allow for layout changes
+
+                        console.log(`ChartManager: Rendered ${successCount} charts, ${errorCount} errors`);
+                    },
+
+                    // Resize all registered charts - critical for visibility changes
+                    resizeAll: function() {
+                        // Use a slight delay to ensure DOM is fully updated
+                        setTimeout(() => {
+                            this.charts.forEach((renderFn, id) => {
+                                const element = document.getElementById(id);
+                                if (element && element.offsetWidth > 0 && element.offsetHeight > 0) {
+                                    try {
+                                        if (window.Plotly) {
+                                            Plotly.Plots.resize(id);
+                                        }
+                                    } catch (error) {
+                                        console.debug(`Could not resize chart ${id}:`, error);
+                                    }
+                                }
+                            });
+                        }, 100);  // Small delay to allow DOM updates
+                    }
+                };
+
+                // Initialize chart manager after DOM loads
+                // Register initial charts if they exist
+                if (window.PRIMARY_CHART) {
+                    ChartManager.registerChart('primary-chart', () => {
+                        // Render primary chart using the appropriate renderer
+                        const chartType = window.PRIMARY_CHART.type || 'bar';
+                        switch(chartType) {
+                            case 'bar':
+                            case 'category_count':
+                                _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart');
+                                break;
+                            case 'scatter':
+                                _renderScatterPlot(window.PRIMARY_CHART, 'primary-chart');
+                                break;
+                            case 'histogram':
+                                _renderHistogram(window.PRIMARY_CHART, 'primary-chart');
+                                break;
+                            case 'pie':
+                                _renderPieChart(window.PRIMARY_CHART, 'primary-chart');
+                                break;
+                            case 'box_plot':
+                                _renderBoxPlot(window.PRIMARY_CHART, 'primary-chart');
+                                break;
+                            default:
+                                _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart'); // Fallback
+                                break;
+                        }
+                    });
+                }
+
+                // Register category charts
+                if (window.CATEGORY_CHARTS) {
+                    Object.keys(window.CATEGORY_CHARTS).forEach(columnName => {
+                        const chartData = window.CATEGORY_CHARTS[columnName];
+                        const containerId = `chart-${columnName.replace(/[\s.]/g, '_')}`;
+
+                        ChartManager.registerChart(containerId, () => {
+                            const chartType = chartData.type || 'bar';
+                            switch(chartType) {
+                                case 'bar':
+                                case 'category_count':
+                                    _renderSimpleBarChart({...chartData, column: columnName}, containerId);
+                                    break;
+                                case 'scatter':
+                                    _renderScatterPlot({...chartData, column: columnName}, containerId);
+                                    break;
+                                case 'histogram':
+                                    _renderHistogram({...chartData, column: columnName}, containerId);
+                                    break;
+                                case 'pie':
+                                    _renderPieChart({...chartData, column: columnName}, containerId);
+                                    break;
+                                case 'box_plot':
+                                    _renderBoxPlot({...chartData, column: columnName}, containerId);
+                                    break;
+                                default:
+                                    _renderSimpleBarChart({...chartData, column: columnName}, containerId); // Fallback
+                                    break;
+                            }
+                        });
+                    });
+                }
+
+                // Register all other charts
+                if (window.ALL_CHARTS) {
+                    window.ALL_CHARTS.forEach(chartSpec => {
+                        if (chartSpec && chartSpec.id) {
+                            const containerId = `chart-${chartSpec.id}`;
+
+                            ChartManager.registerChart(containerId, () => {
+                                const chartType = chartSpec.type || 'bar';
+                                switch(chartType) {
+                                    case 'bar':
+                                    case 'category_count':
+                                    case 'category_summary':
+                                        _renderSimpleBarChart(chartSpec, containerId);
+                                        break;
+                                    case 'scatter':
+                                        _renderScatterPlot(chartSpec, containerId);
+                                        break;
+                                    case 'histogram':
+                                        _renderHistogram(chartSpec, containerId);
+                                        break;
+                                    case 'pie':
+                                        _renderPieChart(chartSpec, containerId);
+                                        break;
+                                    case 'box_plot':
+                                        _renderBoxPlot(chartSpec, containerId);
+                                        break;
+                                    default:
+                                        _renderSimpleBarChart(chartSpec, containerId); // Fallback
+                                        break;
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Render all initially registered charts
+                ChartManager.renderAll();
+
+                // Handle window resize events
+                window.addEventListener('resize', function() {
+                    // Use debounce to avoid excessive calls during resize
+                    clearTimeout(window.resizeTimer);
+                    window.resizeTimer = setTimeout(() => {
+                        ChartManager.resizeAll();
+                    }, 150);  // Wait 150ms after resize stops
                 });
             } catch (error) {
                 console.error("Error in DOMContentLoaded:", error);

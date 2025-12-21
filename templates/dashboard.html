@@ -140,6 +140,28 @@
         </div>
         {% endif %}
 
+        <!-- Critical Full Dataset Aggregates Section -->
+        {% if critical_full_dataset_aggregates and critical_full_dataset_aggregates|length > 0 %}
+        <div class="light-card rounded-3xl p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Critical Full Dataset Aggregates</h2>
+                <span class="badge badge-soft">Pre-sampling</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {% for key, value in critical_full_dataset_aggregates.items() %}
+                    <div class="light-card rounded-2xl p-4 text-center">
+                        <p class="text-sm text-gray-600">{{ key.replace('total_', 'Total ').replace('_', ' ')|title }}</p>
+                        {% if 'amount' in key.lower() or 'revenue' in key.lower() or 'cost' in key.lower() or 'expense' in key.lower() or 'profit' in key.lower() or 'fee' in key.lower() or 'charge' in key.lower() or 'payment' in key.lower() or 'income' in key.lower() or 'value' in key.lower() %}
+                            <p class="text-xl font-bold text-green-600">${{ "%.2f"|format(value) }}</p>
+                        {% else %}
+                            <p class="text-xl font-bold text-blue-600">{{ value|round(2) }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Visible Tabs -->
         <div class="tabs tabs-boxed bg-gray-100 mb-6">
             <button class="tab tab-active" onclick="showSection('overview', event)">Overview</button>
@@ -166,7 +188,7 @@
                                         </div>
                                     {% endfor %}
                                 {% else %}
-                                    <p class="text-gray-500 text-sm">No KPIs generated.</p>
+                                    <p class="text-gray-500 text-sm">No meaningful KPIs could be generated for this dataset.</p>
                                 {% endif %}
                             </div>
                         </div>
@@ -178,30 +200,36 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                    {% if primary_chart %}
-                        <div class="lg:col-span-2 light-card rounded-3xl p-5">
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-lg font-semibold text-gray-900">{{ primary_chart.get('title', primary_chart.get('column', 'Primary Chart')|title) }}</h3>
-                                <span class="badge badge-soft">Featured</span>
-                            </div>
-                            <div class="chart-container h-80" id="primary-chart"></div>
-                        </div>
-                    {% endif %}
-
-                    <div class="lg:col-span-1 space-y-4">
-                        {% if category_charts %}
-                            {% for column, chart_data in category_charts.items() %}
-                                <div class="light-card rounded-2xl p-4">
-                                    <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart_data.get('title', column|title) }}</h4>
-                                    <div class="chart-container h-48" id="chart-{{ column|replace(' ', '_')|replace('.', '_') }}"></div>
+                    {% if primary_chart or (category_charts and category_charts|length > 0) %}
+                        {% if primary_chart %}
+                            <div class="lg:col-span-2 light-card rounded-3xl p-5">
+                                <div class="flex items-center justify-between mb-3">
+                                    <h3 class="text-lg font-semibold text-gray-900">{{ primary_chart.get('title', primary_chart.get('column', 'Primary Chart')|title) }}</h3>
+                                    <span class="badge badge-soft">Featured</span>
                                 </div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="light-card rounded-2xl p-4 text-center text-gray-500 italic">
-                                No categorical charts generated.
+                                <div class="chart-container h-80" id="primary-chart"></div>
                             </div>
                         {% endif %}
-                    </div>
+
+                        <div class="lg:col-span-1 space-y-4">
+                            {% if category_charts %}
+                                {% for column, chart_data in category_charts.items() %}
+                                    <div class="light-card rounded-2xl p-4">
+                                        <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart_data.get('title', column|title) }}</h4>
+                                        <div class="chart-container h-48" id="chart-{{ column|replace(' ', '_')|replace('.', '_') }}"></div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="light-card rounded-2xl p-4 text-center text-gray-500 italic">
+                                    No categorical charts generated.
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% else %}
+                        <div class="col-span-full light-card rounded-2xl p-4 text-center text-gray-500 italic">
+                            No valid charts could be generated for the main categorical variables.
+                        </div>
+                    {% endif %}
                 </div>
 
                 <div class="light-card rounded-3xl p-6 mt-6">
