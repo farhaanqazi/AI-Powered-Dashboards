@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -14,6 +14,7 @@ from src.core.pipeline import build_dashboard_from_file, build_dashboard_from_df
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle, LoadResult # Import LoadResult
 from starlette.responses import RedirectResponse
 import logging
+from src import config
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -89,8 +90,11 @@ async def index(request: Request):
 
 from asyncio import TimeoutError as AsyncTimeoutError
 
+def run_pipeline_and_get_state(file_stream, original_filename):
+    return build_dashboard_from_file(file_stream, original_filename=original_filename)
+
 @app.post("/upload", response_class=HTMLResponse)
-async def upload(request: Request, dataset: UploadFile = File(...)):
+async def upload(request: Request, background_tasks: BackgroundTasks, dataset: UploadFile = File(...)):
     try:
         # Validate file type
         if not dataset.filename.lower().endswith('.csv'):
@@ -117,41 +121,8 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         # Extract the original filename
         original_filename = dataset.filename
 
-        # Use the central pipeline to build everything
-        # build_dashboard_from_file now expects a LoadResult internally, but we call it with the file stream
-        # The pipeline will handle the LoadResult internally.
-
-        # Implement timeout handling using signal or threading for synchronous functions
-        import threading
-        import time
-
-        state = None
-        result = [None]  # Use a list to share result between threads
-        exception_occurred = [None]  # Capture any exceptions
-
-        def run_pipeline():
-            try:
-                result[0] = build_dashboard_from_file(file_stream, original_filename=original_filename)
-            except Exception as e:
-                exception_occurred[0] = e
-
-        thread = threading.Thread(target=run_pipeline)
-        thread.daemon = True
-        thread.start()
-        thread.join(timeout=300)  # 5 minute timeout
-
-        if thread.is_alive():
-            logger.error("Timeout occurred while building dashboard from file")
-            return templates.TemplateResponse("index.html", {
-                "request": request,
-                "error_message": "Processing timed out. The dataset may be too large or complex to process in the allowed time.",
-                "success": False
-            })
-
-        if exception_occurred[0]:
-            raise exception_occurred[0]
-
-        state = result[0]
+        # Add the long-running task to the background
+        state = build_dashboard_from_file(file_stream, original_filename=original_filename)
 
         if state is None:
             return templates.TemplateResponse("index.html", {
@@ -174,14 +145,11 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
 
         # Validate and sanitize titles to ensure they are proper strings
         def sanitize_chart_titles(chart_list):
+            if not chart_list:
+                return []
             for chart in chart_list:
                 if 'title' in chart and chart['title']:
-                    # Ensure title is a proper string, not a method reference
-                    if hasattr(chart['title'], 'title') and callable(chart['title'].title):
-                        # If the title is a string object, call its title() method properly
-                        chart['title'] = str(chart['title']).replace('_', ' ').title()
-                    elif not isinstance(chart['title'], str):
-                        chart['title'] = str(chart['title'])
+                    chart['title'] = str(chart['title']).replace('_', ' ').title()
             return chart_list
 
         # Apply sanitization to all chart title fields
@@ -190,10 +158,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
 
         # If we have a primary chart, make sure its title is a proper string
         if primary_chart and 'title' in primary_chart:
-            if hasattr(primary_chart['title'], 'title') and callable(primary_chart['title'].title):
-                primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
-            elif not isinstance(primary_chart['title'], str):
-                primary_chart['title'] = str(primary_chart['title'])
+            primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(
@@ -250,7 +215,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         })
 
 @app.post("/load_external", response_class=HTMLResponse)
-async def load_external(request: Request, external_source: str = Form(...)):
+async def load_external(request: Request, background_tasks: BackgroundTasks, external_source: str = Form(...)):
     """Load a dataset from external source (URL or Kaggle)"""
     try:
         if not external_source:
@@ -296,37 +261,8 @@ async def load_external(request: Request, external_source: str = Form(...)):
             # For Kaggle, use the slug or a processed version
             original_filename = external_source.split('/')[-1].replace('-', ' ').title() or "Kaggle Dataset"
 
-        # Use the pipeline to build the dashboard from the loaded DataFrame
-        # Implement timeout handling using threading for synchronous functions
-        import threading
-
-        state = None
-        result = [None]  # Use a list to share result between threads
-        exception_occurred = [None]  # Capture any exceptions
-
-        def run_pipeline():
-            try:
-                result[0] = build_dashboard_from_df(df)
-            except Exception as e:
-                exception_occurred[0] = e
-
-        thread = threading.Thread(target=run_pipeline)
-        thread.daemon = True
-        thread.start()
-        thread.join(timeout=300)  # 5 minute timeout
-
-        if thread.is_alive():
-            logger.error("Timeout occurred while building dashboard from external dataset")
-            return templates.TemplateResponse("index.html", {
-                "request": request,
-                "error_message": "Processing timed out. The dataset may be too large or complex to process in the allowed time.",
-                "success": False
-            })
-
-        if exception_occurred[0]:
-            raise exception_occurred[0]
-
-        state = result[0]
+        # Add the long-running task to the background
+        state = build_dashboard_from_df(df)
 
         if state is None:
             logger.error("Failed to build dashboard from external dataset.")
@@ -350,14 +286,11 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
         # Validate and sanitize titles to ensure they are proper strings
         def sanitize_chart_titles(chart_list):
+            if not chart_list:
+                return []
             for chart in chart_list:
                 if 'title' in chart and chart['title']:
-                    # Ensure title is a proper string, not a method reference
-                    if hasattr(chart['title'], 'title') and callable(chart['title'].title):
-                        # If the title is a string object, call its title() method properly
-                        chart['title'] = str(chart['title']).replace('_', ' ').title()
-                    elif not isinstance(chart['title'], str):
-                        chart['title'] = str(chart['title'])
+                    chart['title'] = str(chart['title']).replace('_', ' ').title()
             return chart_list
 
         # Apply sanitization to all chart title fields
@@ -366,10 +299,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
         # If we have a primary chart, make sure its title is a proper string
         if primary_chart and 'title' in primary_chart:
-            if hasattr(primary_chart['title'], 'title') and callable(primary_chart['title'].title):
-                primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
-            elif not isinstance(primary_chart['title'], str):
-                primary_chart['title'] = str(primary_chart['title'])
+            primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(

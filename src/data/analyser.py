@@ -7,14 +7,15 @@ from typing import Dict, List, Any, Optional, Tuple
 from collections import Counter
 import math
 from src.utils.identifier_detector import is_likely_identifier
+from src import config
 
 logger = logging.getLogger(__name__)
 
 # Configuration parameters with defaults
-UNIQUENESS_CUTOFF = 0.5  # Ratio where text vs categorical is determined
-AVG_LENGTH_CUTOFF = 30   # Character length where text vs categorical is determined
-MIN_DATE = 1900
-MAX_DATE = 2100
+UNIQUENESS_CUTOFF = config.UNIQUENESS_CUTOFF
+AVG_LENGTH_CUTOFF = config.AVG_LENGTH_CUTOFF
+MIN_DATE = config.MIN_DATE
+MAX_DATE = config.MAX_DATE
 
 # Regex patterns for identifying different field types
 ID_PATTERNS = [
@@ -162,7 +163,11 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
     """
     # Ensure series is a pandas Series
     if not isinstance(series, pd.Series):
-        series = pd.Series(series) if hasattr(series, '__iter__') and not isinstance(series, str) else pd.Series([series])
+        try:
+            series = pd.Series(series) if hasattr(series, '__iter__') and not isinstance(series, str) else pd.Series([series])
+        except Exception as e:
+            logger.warning(f"Could not convert input to a pandas Series in _is_multi_value_field: {e}")
+            return False, "", 0.0
 
     if series.dtype != 'object' and not str(series.dtype).startswith('string'):
         return False, "", 0.0
@@ -202,8 +207,8 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
                 avg_split_count = sample_to_check.astype(str).str.count(best_delimiter)
 
                 # Ensure avg_split_count is a pandas Series before calling .mean()
-                if not hasattr(avg_split_count, 'mean'):
-                    avg_split_count = pd.Series(avg_split_count) if not isinstance(avg_split_count, pd.Series) else avg_split_count
+                if not isinstance(avg_split_count, pd.Series):
+                    avg_split_count = pd.Series(avg_split_count)
                 avg_splits = avg_split_count.mean() + 1
 
                 # If on average there are more than 2 values per field, it's likely multi-value
@@ -505,6 +510,8 @@ def _infer_role_advanced(
 
     if series.notna().any():
         try:
+            if not isinstance(series, pd.Series):
+                series = pd.Series(series)
             avg_len = series.dropna().astype(str).str.len().mean()
         except Exception as e:
             logger.warning(f"Could not compute average length for series {series.name}: {e}")
@@ -660,7 +667,7 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
                 elif stats and "percentage" in semantic_tags:
                     # Make sure s_clean is still a Series before calculating mean again
                     if isinstance(s_clean, pd.Series):
-                        stats["average_percentage"] = float(s_clean.mean())
+                        stats["average_percentage"] = float(s_clean.mean()) if s_clean.empty is False else 0.0
                     else:
                         stats["average_percentage"] = 0.0
                 elif stats and "duration" in semantic_tags:

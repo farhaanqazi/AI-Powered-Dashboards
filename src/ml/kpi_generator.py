@@ -5,6 +5,7 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple
 from scipy import stats
 from src.utils.identifier_detector import is_likely_identifier
+from src import config
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +265,12 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
     Calculate a significance score for a column based on statistical properties and semantic meaning.
     Higher scores indicate more important KPIs.
     """
+    if not isinstance(series, pd.Series):
+        try:
+            series = pd.Series(series)
+        except Exception:
+            return 0.0
+
     if series.empty or series.isna().all():
         return 0.0
 
@@ -343,10 +350,10 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
 
 
 def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
-                 min_variability_threshold: float = 0.01,
-                 min_unique_ratio: float = 0.01,
-                 max_unique_ratio: float = 0.9,
-                 top_k: int = 10,
+                 min_variability_threshold: float = config.MIN_VARIABILITY_THRESHOLD,
+                 min_unique_ratio: float = config.MIN_UNIQUE_RATIO,
+                 max_unique_ratio: float = config.MAX_UNIQUE_RATIO,
+                 top_k: int = config.KPI_TOP_K,
                  eda_summary: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Enhanced KPIs with robust statistical metrics and semantic understanding.

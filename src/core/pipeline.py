@@ -12,6 +12,7 @@ from src.viz.plotly_renderer import build_category_count_charts, build_charts_fr
 from src.viz.simple_renderer import generate_all_chart_data # Potentially used as fallback or for specific needs
 from src.eda.insights_generator import generate_eda_summary
 from src.ml.correlation_engine import analyze_correlations, generate_correlation_insights
+from src import config
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class DashboardState:
     eda_summary: Optional[Dict[str, Any]] = None
     correlation_analysis: Optional[Dict[str, Any]] = None
     original_filename: Optional[str] = None
+    critical_aggregates: Optional[Dict[str, float]] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -68,7 +70,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
             all_charts=[],
             eda_summary={"summary_statistics": {"total_rows": 0, "total_columns": 0}},
             correlation_analysis={"meaningful_correlations": [], "cross_type_relationships": [], "spurious_correlations": [], "summary_stats": {}},
-            original_filename=None
+            original_filename=None,
+            critical_aggregates={}
         )
 
     # Validate DataFrame structure
@@ -88,9 +91,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.info(f"Estimated DataFrame memory usage: {df_memory_usage:.2f} MB")
 
         # Memory limit check (e.g., 500 MB)
-        MEMORY_LIMIT_MB = 500
-        if df_memory_usage > MEMORY_LIMIT_MB:
-            logger.warning(f"DataFrame memory usage ({df_memory_usage:.2f} MB) exceeds limit ({MEMORY_LIMIT_MB} MB), sampling to reduce memory usage")
+        if df_memory_usage > config.MEMORY_LIMIT_MB:
+            logger.warning(f"DataFrame memory usage ({df_memory_usage:.2f} MB) exceeds limit ({config.MEMORY_LIMIT_MB} MB), sampling to reduce memory usage")
             # Sample to reduce memory usage - sample about 10% or 50,000 rows, whichever is smaller
             target_rows = min(int(len(df) * 0.1), 50000, len(df))
             df = df.sample(n=target_rows, random_state=42).reset_index(drop=True)
@@ -109,7 +111,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
             continue
         valid_columns.append(col)
 
-    df = df[valid_columns] if valid_columns else df[[]]  # Handle case where all columns are invalid
+    df = df[valid_columns] if valid_columns else df[[]]
 
     # Handle potentially problematic column names that could cause issues downstream
     original_columns = df.columns.tolist()
@@ -145,19 +147,25 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.warning(f"Error cleaning column names: {e}, using original names")
         pass  # Continue with original names if cleaning fails
 
+    # --- Pre-sampling aggregation ---
+    critical_aggregates = {}
+    if 'revenue' in df.columns and pd.api.types.is_numeric_dtype(df['revenue']):
+        critical_aggregates['total_revenue'] = df['revenue'].sum()
+    if 'sales' in df.columns and pd.api.types.is_numeric_dtype(df['sales']):
+        critical_aggregates['total_sales'] = df['sales'].sum()
+    # ---------------------------------
+
     # Cap rows and columns to prevent expensive processing
-    MAX_ROWS = 100000
-    if len(df) > MAX_ROWS:
-        logger.warning(f"DataFrame has {len(df)} rows, sampling to {MAX_ROWS} for performance")
-        df = df.sample(n=min(MAX_ROWS, len(df)), random_state=42)
+    if len(df) > config.MAX_ROWS:
+        logger.warning(f"DataFrame has {len(df)} rows, sampling to {config.MAX_ROWS} for performance")
+        df = df.sample(n=min(config.MAX_ROWS, len(df)), random_state=42)
 
     start_time = time.time()
     timing = {}
 
     # 1) Determine max columns
     if max_cols is None:
-        MAX_COLS = 50
-        max_cols = min(df.shape[1], MAX_COLS)
+        max_cols = min(df.shape[1], config.MAX_COLS)
 
     logger.info(f"Building dashboard for DataFrame with {df.shape[0]} rows and {df.shape[1]} columns (using up to {max_cols})")
 
@@ -284,7 +292,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         all_charts=all_charts,
         eda_summary=eda_summary,
         correlation_analysis=correlation_analysis,
-        original_filename=None
+        original_filename=None,
+        critical_aggregates=critical_aggregates
     )
 
 

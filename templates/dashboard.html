@@ -131,7 +131,7 @@
                     {% if primary_chart %}
                         <div class="lg:col-span-2 light-card rounded-3xl p-5">
                             <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-lg font-semibold text-gray-900">{{ primary_chart.title or primary_chart.column|title }}</h3>
+                                <h3 class="text-lg font-semibold text-gray-900">{{ primary_chart.get('title', primary_chart.get('column', 'Primary Chart')|title) }}</h3>
                                 <span class="badge badge-soft">Featured</span>
                             </div>
                             <div class="chart-container h-80" id="primary-chart"></div>
@@ -142,7 +142,7 @@
                         {% if category_charts %}
                             {% for column, chart_data in category_charts.items() %}
                                 <div class="light-card rounded-2xl p-4">
-                                    <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart_data.title or column|title }}</h4>
+                                    <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart_data.get('title', column|title) }}</h4>
                                     <div class="chart-container h-48" id="chart-{{ column|replace(' ', '_')|replace('.', '_') }}"></div>
                                 </div>
                             {% endfor %}
@@ -163,7 +163,7 @@
                         {% if all_charts %}
                             {% for chart in all_charts %}
                                 <div class="light-card rounded-2xl p-4">
-                                    <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart.title or chart.id|title }}</h4>
+                                    <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart.get('title', chart.get('id', 'Chart')|title) }}</h4>
                                     <div class="chart-container h-64" id="chart-{{ chart.id }}"></div>
                                 </div>
                             {% endfor %}
@@ -650,92 +650,29 @@
             }
         }
 
-        // Function to render simple bar charts from the new renderer
         function _renderSimpleBarChart(chartData, containerId) {
             // Perform thorough validation before rendering
-            if (!chartData) {
+            if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
                 renderEmptyChart(containerId, "No chart data provided");
                 return;
             }
 
-            if (!chartData.data) {
-                renderEmptyChart(containerId, "No data array in chartData");
-                return;
-            }
-
-            if (!Array.isArray(chartData.data)) {
-                renderEmptyChart(containerId, "chartData.data is not an array");
-                return;
-            }
-
-            if (chartData.data.length === 0) {
-                renderEmptyChart(containerId, "Empty data array");
-                return;
-            }
-
-            // Filter valid data points with x and y values, and ensure they are not NaN, null, or undefined
-            const validData = chartData.data.filter(d => {
-                // Ensure d is an object
-                if (typeof d !== 'object' || d === null) {
-                    return false;
-                }
-
-                // Check for x and y properties
-                if (!(('x' in d) && ('y' in d)) || d.x === null || d.y === null) {
-                    return false;
-                }
-
-                // Check for numeric y values that are finite
-                const yVal = parseFloat(d.y);
-                if (isNaN(yVal) || !isFinite(yVal)) {
-                    return false;
-                }
-
-                // Check for x values that are not NaN or infinite when converted to string (for axis labels)
-                const xVal = d.x;
-                if (typeof xVal === 'number' && (!isFinite(xVal) || isNaN(xVal))) {
-                    return false;
-                }
-
-                // Additional check: ensure x value is not a function or object
-                if (typeof xVal === 'function' || typeof xVal === 'object') {
-                    console.error("Invalid x value in chart data (is function or object):", xVal);
-                    return false;
-                }
-
-                return true;
-            });
+            const validData = chartData.data.filter(d => 
+                d && typeof d === 'object' && 'category' in d && 'count' in d &&
+                d.category !== null && d.category !== undefined &&
+                d.count !== null && d.count !== undefined && isFinite(d.count)
+            );
 
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, or invalid data types)");
+                 renderEmptyChart(containerId, "No valid data points");
                  return;
             }
 
-            const categories = validData.map(d => {
-                // Ensure category is a proper string
-                if (d.x === undefined || d.x === null) {
-                    return "Unknown";
-                }
-                // Handle case where the x value might be a method or other object
-                if (typeof d.x === 'string' && d.x.includes('method')) {
-                    console.error("Invalid string detected in x value:", d.x);
-                    return "Invalid Category";
-                }
-                return String(d.x);
-            }); // Ensure x is string for axis
-            const values = validData.map(d => {
-                const yVal = parseFloat(d.y);
-                return isNaN(yVal) || !isFinite(yVal) ? 0 : yVal;
-            }); // Ensure y is numeric
+            const categories = validData.map(d => String(d.category));
+            const values = validData.map(d => Number(d.count));
 
             if (categories.length === 0 || values.length === 0) {
                  renderEmptyChart(containerId, "No valid categories or values after filtering");
-                 return;
-            }
-
-            // Check for non-numeric values after parsing (should be redundant now)
-            if (values.some(v => isNaN(v) || !isFinite(v))) {
-                 renderEmptyChart(containerId, "Non-numeric values found after parsing");
                  return;
             }
 
@@ -745,29 +682,7 @@
             const longLabels = avgLabelLen > 12;
             const useHorizontal = manyCategories || longLabels;
 
-            // Safely extract title, ensuring it's a proper string
-            let title = `Chart for ${chartData.column || "Unknown Column"}`;
-            if (chartData.title) {
-                if (typeof chartData.title === 'string') {
-                    title = chartData.title;
-                } else if (typeof chartData.title === 'object' && chartData.title !== null && chartData.title.toString) {
-                    // If it's an object that has a toString method, try to use it carefully
-                    try {
-                        const tempTitle = chartData.title.toString();
-                        if (tempTitle.includes('method') || tempTitle.includes('object')) {
-                            // If the toString result is not a meaningful string, use a default
-                            title = `Chart for ${chartData.column || "Unknown Column"}`;
-                        } else {
-                            title = tempTitle;
-                        }
-                    } catch (e) {
-                        console.error("Error getting title from chartData:", e);
-                        title = `Chart for ${chartData.column || "Unknown Column"}`;
-                    }
-                } else {
-                    title = `Chart for ${chartData.column || "Unknown Column"}`;
-                }
-            }
+            let title = chartData.title || `Chart for ${chartData.column || "Unknown Column"}`;
 
             let trace, layout;
             if (useHorizontal) {
@@ -778,31 +693,14 @@
                     orientation: "h",
                     text: values,
                     textposition: "outside",
-                    marker: { color: '#3b82f6' } // Light theme blue
+                    marker: { color: '#3b82f6' }
                 };
                 layout = {
-                    xaxis: {
-                        title: "Value",
-                        tickformat: ",d",
-                        exponentformat: "none",
-                        rangemode: "tozero",
-                        range: [0, maxVal * 1.15 || 1],
-                        automargin: true
-                    },
-                    yaxis: {
-                        title: chartData.column || "Category",
-                        categoryorder: "array",
-                        categoryarray: categories,
-                        automargin: true
-                    },
-                    margin: {
-                        t: 20,
-                        b: 60,
-                        l: 100, // Increased left margin for longer y-axis labels
-                        r: 20
-                    },
+                    xaxis: { title: "Value", tickformat: ",d", exponentformat: "none", rangemode: "tozero", range: [0, maxVal * 1.15 || 1], automargin: true },
+                    yaxis: { title: chartData.column || "Category", categoryorder: "array", categoryarray: categories, automargin: true },
+                    margin: { t: 20, b: 60, l: 100, r: 20 },
                     height: 320,
-                    title: { text: title, x: 0.05 } // Add title inside plot area
+                    title: { text: title, x: 0.05 }
                 };
             } else {
                 trace = {
@@ -811,32 +709,14 @@
                     y: values,
                     text: values,
                     textposition: "outside",
-                    marker: { color: '#3b82f6' } // Light theme blue
+                    marker: { color: '#3b82f6' }
                 };
                 layout = {
-                    xaxis: {
-                        title: chartData.column || "Category",
-                        categoryorder: "array",
-                        categoryarray: categories,
-                        automargin: true,
-                        tickangle: 45
-                    },
-                    yaxis: {
-                        title: "Value",
-                        tickformat: ",d",
-                        exponentformat: "none",
-                        rangemode: "tozero",
-                        range: [0, maxVal * 1.15 || 1],
-                        automargin: true
-                    },
-                    margin: {
-                        t: 40, // Increased top margin for title
-                        b: 100, // Increased bottom margin for x-axis labels
-                        l: 60,
-                        r: 20
-                    },
+                    xaxis: { title: chartData.column || "Category", categoryorder: "array", categoryarray: categories, automargin: true, tickangle: 45 },
+                    yaxis: { title: "Value", tickformat: ",d", exponentformat: "none", rangemode: "tozero", range: [0, maxVal * 1.15 || 1], automargin: true },
+                    margin: { t: 40, b: 100, l: 60, r: 20 },
                     height: 320,
-                     title: { text: title, x: 0.05 } // Add title inside plot area
+                    title: { text: title, x: 0.05 }
                 };
             }
 
@@ -850,122 +730,37 @@
 
         // Function to render scatter plots
         function _renderScatterPlot(chartData, containerId) {
-            // Perform thorough validation before rendering
-            if (!chartData) {
+            if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
                 renderEmptyChart(containerId, "No chart data provided");
                 return;
             }
 
-            if (!chartData.data) {
-                renderEmptyChart(containerId, "No data array in chartData");
-                return;
-            }
-
-            if (!Array.isArray(chartData.data)) {
-                renderEmptyChart(containerId, "chartData.data is not an array");
-                return;
-            }
-
-            if (chartData.data.length === 0) {
-                renderEmptyChart(containerId, "Empty data array");
-                return;
-            }
-
-            // Filter valid data points with x and y values, and ensure they are not NaN, null, or undefined, and are finite numbers
-            const validData = chartData.data.filter(d => {
-                // Ensure d is an object
-                if (typeof d !== 'object' || d === null) {
-                    return false;
-                }
-
-                if (!(('x' in d) && ('y' in d)) || d.x === null || d.y === null) {
-                    return false;
-                }
-
-                const xVal = parseFloat(d.x);
-                const yVal = parseFloat(d.y);
-
-                if (isNaN(xVal) || isNaN(yVal) || !isFinite(xVal) || !isFinite(yVal)) {
-                    return false;
-                }
-
-                // Additional check: ensure x and y values are not functions or objects
-                if (typeof d.x === 'function' || typeof d.y === 'function') {
-                    console.error("Invalid data point function detected:", d);
-                    return false;
-                }
-
-                return true;
-            });
+            const validData = chartData.data.filter(d =>
+                d && typeof d === 'object' && 'x' in d && 'y' in d &&
+                d.x !== null && d.y !== null && isFinite(d.x) && isFinite(d.y)
+            );
 
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite, or invalid data types)");
+                 renderEmptyChart(containerId, "No valid data points");
                  return;
             }
 
-            const xValues = validData.map(d => {
-                const xVal = parseFloat(d.x);
-                return isNaN(xVal) || !isFinite(xVal) ? 0 : xVal;
-            });
-            const yValues = validData.map(d => {
-                const yVal = parseFloat(d.y);
-                return isNaN(yVal) || !isFinite(yVal) ? 0 : yVal;
-            });
+            const xValues = validData.map(d => Number(d.x));
+            const yValues = validData.map(d => Number(d.y));
 
             const trace = {
                 x: xValues,
                 y: yValues,
                 mode: 'markers',
                 type: 'scatter',
-                marker: {
-                    size: 8,
-                    opacity: 0.6,
-                    color: 'rgba(55, 128, 191, 0.6)' // Light theme blue
-                }
+                marker: { size: 8, opacity: 0.6, color: 'rgba(55, 128, 191, 0.6)' }
             };
 
-            // Safely extract title
-            let title = "Scatter Plot";
-            if (chartData.title) {
-                if (typeof chartData.title === 'string') {
-                    title = chartData.title;
-                } else if (typeof chartData.title === 'object' && chartData.title !== null && chartData.title.toString) {
-                    try {
-                        const tempTitle = chartData.title.toString();
-                        if (tempTitle.includes('method') || tempTitle.includes('object')) {
-                            title = "Scatter Plot";
-                        } else {
-                            title = tempTitle;
-                        }
-                    } catch (e) {
-                        console.error("Error getting title from chartData:", e);
-                        title = "Scatter Plot";
-                    }
-                } else {
-                    title = "Scatter Plot";
-                }
-            }
-
             const layout = {
-                title: title,
-                xaxis: {
-                    title: chartData.x_column || "X Values",
-                    automargin: true,
-                    showgrid: true,
-                    gridcolor: 'lightgray'
-                },
-                yaxis: {
-                    title: chartData.y_column || "Y Values",
-                    automargin: true,
-                    showgrid: true,
-                    gridcolor: 'lightgray'
-                },
-                margin: {
-                    t: 60,
-                    b: 80,
-                    l: 60,
-                    r: 40
-                }
+                title: chartData.title || "Scatter Plot",
+                xaxis: { title: chartData.x_column || "X Values", automargin: true, showgrid: true, gridcolor: 'lightgray' },
+                yaxis: { title: chartData.y_column || "Y Values", automargin: true, showgrid: true, gridcolor: 'lightgray' },
+                margin: { t: 60, b: 80, l: 60, r: 40 }
             };
 
             try {
@@ -978,119 +773,36 @@
 
         // Function to render histograms (treated as bar charts)
         function _renderHistogram(chartData, containerId) {
-            // Perform thorough validation before rendering
-            if (!chartData) {
+            if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
                 renderEmptyChart(containerId, "No chart data provided");
                 return;
             }
 
-            if (!chartData.data) {
-                renderEmptyChart(containerId, "No data array in chartData");
-                return;
-            }
-
-            if (!Array.isArray(chartData.data)) {
-                renderEmptyChart(containerId, "chartData.data is not an array");
-                return;
-            }
-
-            if (chartData.data.length === 0) {
-                renderEmptyChart(containerId, "Empty data array");
-                return;
-            }
-
-            // Filter valid data points with x (bin range) and y (count) values, ensuring y is finite
-            const validData = chartData.data.filter(d => {
-                // Ensure d is an object
-                if (typeof d !== 'object' || d === null) {
-                    return false;
-                }
-
-                if (!(('bin_range' in d) && ('count' in d)) || d.bin_range === null || d.count === null) {
-                    return false;
-                }
-
-                const countVal = parseFloat(d.count);
-                if (isNaN(countVal) || !isFinite(countVal)) {
-                    return false;
-                }
-
-                // Additional check: ensure bin_range is not a function or object
-                if (typeof d.bin_range === 'function') {
-                    console.error("Invalid bin_range function detected:", d.bin_range);
-                    return false;
-                }
-
-                return true;
-            });
+            const validData = chartData.data.filter(d =>
+                d && typeof d === 'object' && 'bin_range' in d && 'count' in d &&
+                d.bin_range !== null && d.count !== null && isFinite(d.count)
+            );
 
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite, or invalid data types)");
+                 renderEmptyChart(containerId, "No valid data points");
                  return;
             }
 
-            const xValues = validData.map(d => {
-                if (d.bin_range === undefined || d.bin_range === null) {
-                    return "Unknown";
-                }
-                // Handle case where bin_range might be a method or other object
-                if (typeof d.bin_range === 'string' && d.bin_range.includes('method')) {
-                    console.error("Invalid string detected in bin_range:", d.bin_range);
-                    return "Invalid Range";
-                }
-                return String(d.bin_range);
-            }); // Bin ranges are strings
-            const yValues = validData.map(d => {
-                const countVal = parseFloat(d.count);
-                return isNaN(countVal) || !isFinite(countVal) ? 0 : countVal;
-            });
+            const xValues = validData.map(d => String(d.bin_range));
+            const yValues = validData.map(d => Number(d.count));
 
             const trace = {
                 x: xValues,
                 y: yValues,
                 type: 'bar',
-                marker: { color: '#8b5cf6' } // Light theme violet
+                marker: { color: '#8b5cf6' }
             };
 
-            // Safely extract title
-            let title = "Histogram";
-            if (chartData.title) {
-                if (typeof chartData.title === 'string') {
-                    title = chartData.title;
-                } else if (typeof chartData.title === 'object' && chartData.title !== null && chartData.title.toString) {
-                    try {
-                        const tempTitle = chartData.title.toString();
-                        if (tempTitle.includes('method') || tempTitle.includes('object')) {
-                            title = "Histogram";
-                        } else {
-                            title = tempTitle;
-                        }
-                    } catch (e) {
-                        console.error("Error getting title from chartData:", e);
-                        title = "Histogram";
-                    }
-                } else {
-                    title = "Histogram";
-                }
-            }
-
             const layout = {
-                title: title,
-                xaxis: {
-                    title: chartData.column || "Bins",
-                    automargin: true,
-                    tickangle: -45
-                },
-                yaxis: {
-                    title: "Frequency",
-                    automargin: true
-                },
-                margin: {
-                    t: 40,
-                    b: 80, // Increased for angled labels
-                    l: 60,
-                    r: 40
-                }
+                title: chartData.title || "Histogram",
+                xaxis: { title: chartData.column || "Bins", automargin: true, tickangle: -45 },
+                yaxis: { title: "Frequency", automargin: true },
+                margin: { t: 40, b: 80, l: 60, r: 40 }
             };
 
             try {
@@ -1103,72 +815,23 @@
 
         // Function to render pie charts
         function _renderPieChart(chartData, containerId) {
-            // Perform thorough validation before rendering
-            if (!chartData) {
+            if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
                 renderEmptyChart(containerId, "No chart data provided");
                 return;
             }
 
-            if (!chartData.data) {
-                renderEmptyChart(containerId, "No data array in chartData");
-                return;
-            }
-
-            if (!Array.isArray(chartData.data)) {
-                renderEmptyChart(containerId, "chartData.data is not an array");
-                return;
-            }
-
-            if (chartData.data.length === 0) {
-                renderEmptyChart(containerId, "Empty data array");
-                return;
-            }
-
-            // Filter valid data points with label and value, ensuring value is finite
-            const validData = chartData.data.filter(d => {
-                // Ensure d is an object
-                if (typeof d !== 'object' || d === null) {
-                    return false;
-                }
-
-                if (!(('label' in d) && ('value' in d)) || d.label === null || d.value === null) {
-                    return false;
-                }
-
-                const valueVal = parseFloat(d.value);
-                if (isNaN(valueVal) || !isFinite(valueVal)) {
-                    return false;
-                }
-
-                // Additional check: ensure label is not a function
-                if (typeof d.label === 'function') {
-                    console.error("Invalid label function detected:", d.label);
-                    return false;
-                }
-
-                return true;
-            });
+            const validData = chartData.data.filter(d =>
+                d && typeof d === 'object' && 'label' in d && 'value' in d &&
+                d.label !== null && d.value !== null && isFinite(d.value)
+            );
 
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite, or invalid data types)");
+                 renderEmptyChart(containerId, "No valid data points");
                  return;
             }
 
-            const labels = validData.map(d => {
-                if (d.label === undefined || d.label === null) {
-                    return "Unknown";
-                }
-                // Handle case where label might be a method or other object
-                if (typeof d.label === 'string' && d.label.includes('method')) {
-                    console.error("Invalid string detected in label:", d.label);
-                    return "Invalid Label";
-                }
-                return String(d.label);
-            });
-            const values = validData.map(d => {
-                const valueVal = parseFloat(d.value);
-                return isNaN(valueVal) || !isFinite(valueVal) ? 0 : valueVal;
-            });
+            const labels = validData.map(d => String(d.label));
+            const values = validData.map(d => Number(d.value));
 
             const trace = {
                 labels: labels,
@@ -1177,39 +840,12 @@
                 textinfo: 'label+percent',
                 textposition: 'inside',
                 automargin: true,
-                marker: { colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'] } // Light theme color palette
+                marker: { colors: ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'] }
             };
 
-            // Safely extract title
-            let title = "Pie Chart";
-            if (chartData.title) {
-                if (typeof chartData.title === 'string') {
-                    title = chartData.title;
-                } else if (typeof chartData.title === 'object' && chartData.title !== null && chartData.title.toString) {
-                    try {
-                        const tempTitle = chartData.title.toString();
-                        if (tempTitle.includes('method') || tempTitle.includes('object')) {
-                            title = "Pie Chart";
-                        } else {
-                            title = tempTitle;
-                        }
-                    } catch (e) {
-                        console.error("Error getting title from chartData:", e);
-                        title = "Pie Chart";
-                    }
-                } else {
-                    title = "Pie Chart";
-                }
-            }
-
             const layout = {
-                title: title,
-                margin: {
-                    t: 60,
-                    b: 40,
-                    l: 40,
-                    r: 40
-                }
+                title: chartData.title || "Pie Chart",
+                margin: { t: 60, b: 40, l: 40, r: 40 }
             };
 
             try {
@@ -1222,107 +858,30 @@
 
         // Function to render box plots
         function _renderBoxPlot(chartData, containerId) {
-            // Perform thorough validation before rendering
-            if (!chartData) {
+            if (!chartData || !chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) {
                 renderEmptyChart(containerId, "No chart data provided");
                 return;
             }
 
-            if (!chartData.data) {
-                renderEmptyChart(containerId, "No data array in chartData");
-                return;
-            }
-
-            if (!Array.isArray(chartData.data)) {
-                renderEmptyChart(containerId, "chartData.data is not an array");
-                return;
-            }
-
-            if (chartData.data.length === 0) {
-                renderEmptyChart(containerId, "Empty data array");
-                return;
-            }
-
-            // Filter valid data points ensuring 'category' and 'values' exist, and 'values' is an array of finite numbers
-            const validData = chartData.data.filter(d => {
-                // Ensure d is an object
-                if (typeof d !== 'object' || d === null) {
-                    return false;
-                }
-
-                if (!(('category' in d) && ('values' in d)) || d.category === null || d.values === null || !Array.isArray(d.values)) {
-                    return false;
-                }
-
-                // Check if all values in the array are finite numbers
-                const allFinite = d.values.every(v => {
-                    const numVal = parseFloat(v);
-                    return !isNaN(numVal) && isFinite(numVal);
-                });
-                if (!allFinite) {
-                    return false;
-                }
-
-                // Additional check: ensure category is not a function
-                if (typeof d.category === 'function') {
-                    console.error("Invalid category function detected:", d.category);
-                    return false;
-                }
-
-                return true;
-            });
+            const validData = chartData.data.filter(d =>
+                d && typeof d === 'object' && 'category' in d && 'values' in d &&
+                d.category !== null && Array.isArray(d.values) && d.values.every(v => v !== null && isFinite(v))
+            );
 
             if (validData.length === 0) {
-                 renderEmptyChart(containerId, "No valid data points (NaN, null, undefined, infinite, non-array values, or invalid data types)");
+                 renderEmptyChart(containerId, "No valid data points");
                  return;
             }
 
-            const traces = validData.map(item => {
-                // Ensure values are numeric and finite
-                const numericValues = item.values.map(v => {
-                    const numVal = parseFloat(v);
-                    return !isNaN(numVal) && isFinite(numVal) ? numVal : 0;
-                }).filter(v => isFinite(v) && !isNaN(v));
-
-                // Ensure category is a proper string
-                let categoryName = String(item.category);
-                if (typeof item.category === 'string' && item.category.includes('method')) {
-                    console.error("Invalid string detected in category:", item.category);
-                    categoryName = "Invalid Category";
-                }
-
-                return {
-                    y: numericValues,
-                    type: 'box',
-                    name: categoryName,
-                    boxpoints: 'outliers' // Show outliers
-                };
-            });
-
-            // Safely extract title
-            let title = "Box Plot";
-            if (chartData.title) {
-                if (typeof chartData.title === 'string') {
-                    title = chartData.title;
-                } else if (typeof chartData.title === 'object' && chartData.title !== null && chartData.title.toString) {
-                    try {
-                        const tempTitle = chartData.title.toString();
-                        if (tempTitle.includes('method') || tempTitle.includes('object')) {
-                            title = "Box Plot";
-                        } else {
-                            title = tempTitle;
-                        }
-                    } catch (e) {
-                        console.error("Error getting title from chartData:", e);
-                        title = "Box Plot";
-                    }
-                } else {
-                    title = "Box Plot";
-                }
-            }
+            const traces = validData.map(item => ({
+                y: item.values.map(v => Number(v)),
+                type: 'box',
+                name: String(item.category),
+                boxpoints: 'outliers'
+            }));
 
             const layout = {
-                title: title,
+                title: chartData.title || "Box Plot",
                 xaxis: { title: chartData.x_column || "Category", automargin: true },
                 yaxis: { title: chartData.y_column || "Value", automargin: true },
                 margin: { t: 60, b: 80, l: 60, r: 40 },
