@@ -280,11 +280,15 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
 
     # Variability score: meaningful metrics tend to have variability
     if pd.api.types.is_numeric_dtype(series):
+        # Ensure series is a pandas Series before processing
+        if not isinstance(series, pd.Series):
+            series = pd.Series(series)
+
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) > 1:
             std_dev = numeric_series.std()
             mean_val = numeric_series.mean()
-            
+
             if pd.notna(std_dev) and pd.notna(mean_val) and mean_val != 0 and np.isfinite(std_dev) and np.isfinite(mean_val):
                 cv = abs(std_dev / mean_val)  # Coefficient of variation
                 score += min(0.5, cv)  # Cap at 0.5 to prevent extreme scores
@@ -496,6 +500,10 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                     kpi_info["value"] = "Invalid numeric value"
             else:
                 # Compute from series directly if stats weren't cached or were invalid
+                # Ensure series is a pandas Series before processing
+                if not isinstance(series, pd.Series):
+                    series = pd.Series(series)
+
                 numeric_series = pd.to_numeric(series, errors='coerce').dropna()
                 if len(numeric_series) > 0:
                     mean_val = float(numeric_series.mean())

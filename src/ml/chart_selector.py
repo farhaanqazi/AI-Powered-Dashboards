@@ -49,6 +49,10 @@ def _analyze_column_for_viz(series: pd.Series, role: str, semantic_tags: List[st
 
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) > 0:
+            # Ensure numeric_series is a pandas Series before calling .mean()
+            if not isinstance(numeric_series, pd.Series):
+                numeric_series = pd.Series(numeric_series)
+
             # Calculate stats, handling potential NaN/inf results
             min_val = numeric_series.min()
             max_val = numeric_series.max()
@@ -180,7 +184,15 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
         if best_ratio > 0.1:  # At least 10% of values contain the delimiter
             sample_with_delim = sample_values[sample_values.str.contains(best_delimiter, na=False, regex=False)]
             if len(sample_with_delim) > 0:
-                avg_parts = sample_with_delim.str.split(best_delimiter).apply(len).mean()
+                split_result = sample_with_delim.str.split(best_delimiter).apply(len)
+                # Ensure split_result is a pandas Series before calling .mean()
+                if hasattr(split_result, 'mean'):
+                    avg_parts = split_result.mean()
+                else:
+                    # Convert to Series if needed
+                    split_series = pd.Series(split_result) if not isinstance(split_result, pd.Series) else split_result
+                    avg_parts = split_series.mean()
+
                 if avg_parts > 1.5:  # On average more than 1 part after splitting
                     # Confidence is based on both ratio and average number of parts
                     confidence = min(1.0, best_ratio * avg_parts * 0.7)

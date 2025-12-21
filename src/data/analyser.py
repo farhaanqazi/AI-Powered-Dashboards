@@ -596,6 +596,9 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
         # Compute column statistics based on role
         if role in ("numeric", "numeric_duration", "numeric_currency", "numeric_percentage", "numeric_mixed"):
             # Process as numeric
+            # Ensure s is a pandas Series before processing
+            if not isinstance(s, pd.Series):
+                s = pd.Series(s) if hasattr(s, '__iter__') and not isinstance(s, str) else pd.Series([s])
             s_clean = pd.to_numeric(s, errors='coerce')
             s_clean = s_clean.dropna()
 
@@ -624,12 +627,20 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
                 if stats and "monetary" in semantic_tags:
                     stats["currency_units"] = float(s_clean.abs().sum())  # Total monetary value
                 elif stats and "percentage" in semantic_tags:
-                    stats["average_percentage"] = float(s_clean.mean())
+                    # Make sure s_clean is still a Series before calculating mean again
+                    if isinstance(s_clean, pd.Series):
+                        stats["average_percentage"] = float(s_clean.mean())
+                    else:
+                        stats["average_percentage"] = 0.0
                 elif stats and "duration" in semantic_tags:
                     stats["total_duration"] = float(s_clean.sum())
 
         elif role == "datetime":
             try:
+                # Ensure s is a pandas Series before processing
+                if not isinstance(s, pd.Series):
+                    s = pd.Series(s) if hasattr(s, '__iter__') and not isinstance(s, str) else pd.Series([s])
+
                 s_dt = pd.to_datetime(s, errors="coerce")
                 s_dt_clean = s_dt.dropna()
                 if len(s_dt_clean) > 0:
@@ -645,6 +656,10 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
 
         elif role in ("categorical", "ordinal", "identifier", "boolean", "text"):
             try:
+                # Ensure s is a pandas Series before processing
+                if not isinstance(s, pd.Series):
+                    s = pd.Series(s) if hasattr(s, '__iter__') and not isinstance(s, str) else pd.Series([s])
+
                 value_counts = s.value_counts(dropna=True)
                 top_categories = [
                     {"value": str(idx), "count": int(cnt), "percentage": f"{(cnt/len(s))*100:.2f}%"}
@@ -718,9 +733,13 @@ def basic_profile(df: pd.DataFrame, max_cols: int = 10) -> List[Dict[str, Any]]:
     Basic profile per column (maintained for API compatibility).
     Uses the advanced profiling logic internally.
     """
-    if df.empty:
-        logger.warning("DataFrame is empty, returning empty profile")
+    if df is None or df.empty:
+        logger.warning("DataFrame is None or empty, returning empty profile")
         return []
+
+    # Ensure df is a pandas DataFrame
+    if not isinstance(df, pd.DataFrame):
+        df = pd.DataFrame(df)
 
     # Use the advanced profile function, then extract basic info
     advanced_profile = build_dataset_profile(df, max_cols=max_cols, sample_size=None) # Don't sample for basic profile

@@ -537,6 +537,10 @@ def identify_key_indicators(df: pd.DataFrame, dataset_profile: Dict[str, Any], c
     for col in numeric_cols:
         series = pd.to_numeric(df[col], errors='coerce').dropna()
 
+        # Ensure series is a pandas Series before calling .mean()
+        if not isinstance(series, pd.Series):
+            series = pd.Series(series)
+
         if len(series) > 0:
             # Calculate the coefficient of variation (std/mean) - high values indicate high variability
             mean_val = series.mean()

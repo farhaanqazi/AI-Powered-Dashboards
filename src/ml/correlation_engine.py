@@ -41,7 +41,14 @@ def _has_meaningful_variance(series: pd.Series, threshold: float = 0.001) -> boo
         return False
 
     std_val = clean_series.std()
-    mean_val = clean_series.mean()
+
+    # Ensure clean_series is a pandas Series before calling .mean()
+    if hasattr(clean_series, 'mean'):
+        mean_val = clean_series.mean()
+    else:
+        # Convert to Series if needed
+        clean_series_as_series = pd.Series(clean_series) if not isinstance(clean_series, pd.Series) else clean_series
+        mean_val = clean_series_as_series.mean()
 
     if pd.isna(std_val) or std_val < threshold:
         return False  # Very low variance
