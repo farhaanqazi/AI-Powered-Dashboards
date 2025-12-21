@@ -20,13 +20,14 @@ class LoadResult(NamedTuple):
     error_code: Optional[str] = None
     detail: Optional[str] = None
 
-def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> LoadResult:
+def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_rows: int = 50000) -> LoadResult:
     """
     Load a CSV file from Flask file storage with validation and error handling.
 
     Args:
         file_storage: the uploaded file object from Flask (request.files["dataset"])
         max_file_size: maximum allowed file size in bytes (enforcement recommended in main.py)
+        max_rows: maximum number of rows to load (will sample if dataset is larger)
 
     Returns: LoadResult containing success status, DataFrame, and error details.
     """
@@ -66,6 +67,13 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> Load
             df.columns = new_columns
 
             logger.info(f"Successfully loaded CSV with {len(df)} rows and {len(df.columns)} columns")
+
+            # Perform sampling if dataframe is too large
+            if len(df) > max_rows:
+                logger.info(f"Dataset has {len(df)} rows, sampling to {max_rows} rows for processing")
+                df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+                logger.info(f"Sampled dataset now has {len(df)} rows")
+
             return LoadResult(success=True, df=df)
         except UnicodeDecodeError as e:
             logger.warning(f"Unicode error with UTF-8, retrying with latin1: {e}")
@@ -94,6 +102,13 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> Load
             df.columns = new_columns
 
             logger.info(f"Successfully loaded CSV with latin1 encoding")
+
+            # Perform sampling if dataframe is too large
+            if len(df) > max_rows:
+                logger.info(f"Dataset has {len(df)} rows, sampling to {max_rows} rows for processing")
+                df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+                logger.info(f"Sampled dataset now has {len(df)} rows")
+
             return LoadResult(success=True, df=df)
         except pd.errors.EmptyDataError:
             logger.error("CSV file is empty")
@@ -110,7 +125,7 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> Load
         return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}")
 
 
-def load_csv_from_url(url: str, timeout: int = 30) -> LoadResult:
+def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 50000) -> LoadResult:
     """
     Load a CSV directly from a URL (e.g. GitHub raw link).
     Includes validation, timeout, and error handling.
@@ -160,6 +175,13 @@ def load_csv_from_url(url: str, timeout: int = 30) -> LoadResult:
         import io
         df = pd.read_csv(io.StringIO(response.text))
         logger.info(f"Successfully loaded CSV from URL with {len(df)} rows and {len(df.columns)} columns")
+
+        # Perform sampling if dataframe is too large
+        if len(df) > max_rows:
+            logger.info(f"Dataset has {len(df)} rows, sampling to {max_rows} rows for processing")
+            df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+            logger.info(f"Sampled dataset now has {len(df)} rows")
+
         return LoadResult(success=True, df=df)
     except pd.errors.EmptyDataError:
         logger.error(f"CSV from URL is empty: {url}")
@@ -185,7 +207,7 @@ def load_csv_from_url(url: str, timeout: int = 30) -> LoadResult:
         return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}")
 
 
-def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60) -> LoadResult:
+def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60, max_rows: int = 50000) -> LoadResult:
     """
     Load a CSV from a Kaggle dataset using kagglehub with validation and error handling.
 
@@ -223,6 +245,13 @@ def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int
                 return LoadResult(success=False, error_code="CSV_NOT_FOUND", detail=f"Specific CSV file '{csv_name}' not found in the dataset.")
             df = pd.read_csv(target)
             logger.info(f"Successfully loaded specific CSV file from Kaggle dataset: {csv_name}")
+
+            # Perform sampling if dataframe is too large
+            if len(df) > max_rows:
+                logger.info(f"Dataset has {len(df)} rows, sampling to {max_rows} rows for processing")
+                df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+                logger.info(f"Sampled dataset now has {len(df)} rows")
+
             return LoadResult(success=True, df=df)
 
         # Otherwise, pick the first .csv file in the folder
@@ -235,6 +264,13 @@ def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int
         logger.info(f"Loading first CSV file from Kaggle dataset: {files[0]}")
         df = pd.read_csv(first_csv)
         logger.info(f"Successfully loaded CSV from Kaggle dataset with {len(df)} rows and {len(df.columns)} columns")
+
+        # Perform sampling if dataframe is too large
+        if len(df) > max_rows:
+            logger.info(f"Dataset has {len(df)} rows, sampling to {max_rows} rows for processing")
+            df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
+            logger.info(f"Sampled dataset now has {len(df)} rows")
+
         return LoadResult(success=True, df=df)
 
     except requests.exceptions.HTTPError as e:

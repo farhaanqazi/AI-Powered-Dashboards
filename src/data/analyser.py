@@ -151,6 +151,7 @@ def _extract_numeric_from_mixed(text_values: pd.Series) -> Tuple[Optional[pd.Ser
 def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', ';', '|', '/']) -> Tuple[bool, str, float]:
     """
     Detect if a field contains multiple values separated by delimiters.
+    Optimized for large text columns to prevent memory overload.
 
     Args:
         series: The pandas Series to analyze
@@ -166,6 +167,7 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
     if series.dtype != 'object' and not str(series.dtype).startswith('string'):
         return False, "", 0.0
 
+    # Limit the sample size to prevent memory issues with very large series
     sample_size = min(100, len(series))
     sample_values = series.dropna().head(sample_size)
 
@@ -175,28 +177,40 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
     delimiter_scores = {}
 
     for delim in delimiter_chars:
-        splits = sample_values.astype(str).str.contains(delim, na=False)
-        if splits.any():
-            split_ratio = splits.sum() / len(sample_values)
-            # Consider it multi-value if at least 20% of values contain the delimiter
-            if split_ratio >= 0.2:
-                delimiter_scores[delim] = split_ratio
+        # Check if the delimiter exists in the sample values before counting
+        try:
+            splits = sample_values.astype(str).str.contains(delim, na=False)
+            if splits.any():
+                split_ratio = splits.sum() / len(sample_values)
+                # Consider it multi-value if at least 20% of values contain the delimiter
+                if split_ratio >= 0.2:
+                    delimiter_scores[delim] = split_ratio
+        except Exception as e:
+            logger.warning(f"Error checking delimiter '{delim}' in series: {e}")
+            continue  # Skip this delimiter if it causes issues
 
     if delimiter_scores:
         best_delimiter = max(delimiter_scores, key=delimiter_scores.get)
         confidence = delimiter_scores[best_delimiter]
 
         # Additional validation: check if the splits seem meaningful
-        sample_with_delim = sample_values[sample_values.astype(str).str.contains(best_delimiter, na=False)]
-        if len(sample_with_delim) > 0:
-            avg_split_count = sample_with_delim.astype(str).str.count(best_delimiter)
-            # Ensure avg_split_count is a pandas Series before calling .mean()
-            if not hasattr(avg_split_count, 'mean'):
-                avg_split_count = pd.Series(avg_split_count)
-            avg_splits = avg_split_count.mean() + 1
-            # If on average there are more than 2 values per field, it's likely multi-value
-            if avg_splits >= 2:
-                return True, best_delimiter, confidence
+        try:
+            sample_with_delim = sample_values[sample_values.astype(str).str.contains(best_delimiter, na=False)]
+            if len(sample_with_delim) > 0:
+                # For text optimization: only calculate count on a subset if the sample is large
+                sample_to_check = sample_with_delim.head(20) if len(sample_with_delim) > 20 else sample_with_delim
+                avg_split_count = sample_to_check.astype(str).str.count(best_delimiter)
+
+                # Ensure avg_split_count is a pandas Series before calling .mean()
+                if not hasattr(avg_split_count, 'mean'):
+                    avg_split_count = pd.Series(avg_split_count) if not isinstance(avg_split_count, pd.Series) else avg_split_count
+                avg_splits = avg_split_count.mean() + 1
+
+                # If on average there are more than 2 values per field, it's likely multi-value
+                if avg_splits >= 2:
+                    return True, best_delimiter, confidence
+        except Exception as e:
+            logger.warning(f"Error validating multi-value field with delimiter '{best_delimiter}': {e}")
 
     return False, "", 0.0
 

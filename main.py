@@ -87,6 +87,8 @@ async def index(request: Request):
         "request": request,
     })
 
+from asyncio import TimeoutError as AsyncTimeoutError
+
 @app.post("/upload", response_class=HTMLResponse)
 async def upload(request: Request, dataset: UploadFile = File(...)):
     try:
@@ -118,7 +120,38 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         # Use the central pipeline to build everything
         # build_dashboard_from_file now expects a LoadResult internally, but we call it with the file stream
         # The pipeline will handle the LoadResult internally.
-        state = build_dashboard_from_file(file_stream, original_filename=original_filename)
+
+        # Implement timeout handling using signal or threading for synchronous functions
+        import threading
+        import time
+
+        state = None
+        result = [None]  # Use a list to share result between threads
+        exception_occurred = [None]  # Capture any exceptions
+
+        def run_pipeline():
+            try:
+                result[0] = build_dashboard_from_file(file_stream, original_filename=original_filename)
+            except Exception as e:
+                exception_occurred[0] = e
+
+        thread = threading.Thread(target=run_pipeline)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=300)  # 5 minute timeout
+
+        if thread.is_alive():
+            logger.error("Timeout occurred while building dashboard from file")
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error_message": "Processing timed out. The dataset may be too large or complex to process in the allowed time.",
+                "success": False
+            })
+
+        if exception_occurred[0]:
+            raise exception_occurred[0]
+
+        state = result[0]
 
         if state is None:
             return templates.TemplateResponse("index.html", {
@@ -264,7 +297,36 @@ async def load_external(request: Request, external_source: str = Form(...)):
             original_filename = external_source.split('/')[-1].replace('-', ' ').title() or "Kaggle Dataset"
 
         # Use the pipeline to build the dashboard from the loaded DataFrame
-        state = build_dashboard_from_df(df)
+        # Implement timeout handling using threading for synchronous functions
+        import threading
+
+        state = None
+        result = [None]  # Use a list to share result between threads
+        exception_occurred = [None]  # Capture any exceptions
+
+        def run_pipeline():
+            try:
+                result[0] = build_dashboard_from_df(df)
+            except Exception as e:
+                exception_occurred[0] = e
+
+        thread = threading.Thread(target=run_pipeline)
+        thread.daemon = True
+        thread.start()
+        thread.join(timeout=300)  # 5 minute timeout
+
+        if thread.is_alive():
+            logger.error("Timeout occurred while building dashboard from external dataset")
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error_message": "Processing timed out. The dataset may be too large or complex to process in the allowed time.",
+                "success": False
+            })
+
+        if exception_occurred[0]:
+            raise exception_occurred[0]
+
+        state = result[0]
 
         if state is None:
             logger.error("Failed to build dashboard from external dataset.")

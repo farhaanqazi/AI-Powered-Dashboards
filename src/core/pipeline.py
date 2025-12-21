@@ -76,6 +76,30 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.error("Input is not a valid DataFrame after conversion")
         return None
 
+    # Memory usage monitoring
+    try:
+        import psutil
+        process = psutil.Process()
+        initial_memory = process.memory_info().rss / 1024 / 1024  # Memory in MB
+        logger.info(f"Initial memory usage: {initial_memory:.2f} MB")
+
+        # Calculate estimated memory usage of DataFrame
+        df_memory_usage = df.memory_usage(deep=True).sum() / 1024 / 1024  # Memory in MB
+        logger.info(f"Estimated DataFrame memory usage: {df_memory_usage:.2f} MB")
+
+        # Memory limit check (e.g., 500 MB)
+        MEMORY_LIMIT_MB = 500
+        if df_memory_usage > MEMORY_LIMIT_MB:
+            logger.warning(f"DataFrame memory usage ({df_memory_usage:.2f} MB) exceeds limit ({MEMORY_LIMIT_MB} MB), sampling to reduce memory usage")
+            # Sample to reduce memory usage - sample about 10% or 50,000 rows, whichever is smaller
+            target_rows = min(int(len(df) * 0.1), 50000, len(df))
+            df = df.sample(n=target_rows, random_state=42).reset_index(drop=True)
+            logger.info(f"Sampled DataFrame to {len(df)} rows to reduce memory usage")
+    except ImportError:
+        logger.warning("psutil not available for memory monitoring")
+    except Exception as e:
+        logger.warning(f"Memory monitoring error: {e}")
+
     # Additional validation: make sure columns are valid
     # Remove any columns with invalid names (None, NaN, etc.)
     valid_columns = []
