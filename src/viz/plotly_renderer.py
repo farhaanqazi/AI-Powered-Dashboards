@@ -39,8 +39,8 @@ def _build_category_count_data(
     """
     Builds category count data with intelligent truncation and ID exclusion.
     """
-    if column not in df.columns:
-        logger.warning(f"Column '{column}' not found in dataframe")
+    if df is None or column not in df.columns:
+        logger.warning(f"DataFrame is None or column '{column}' not found in dataframe")
         return None
 
     # Check if this is likely an identifier column
@@ -57,8 +57,24 @@ def _build_category_count_data(
         logger.info(f"Skipping likely identifier column '{column}' from category count chart")
         return None
 
+    # Get value counts, but first ensure the series is clean of problematic values
+    # Drop NaN values and ensure we're working with a proper pandas series
+    if not isinstance(series, pd.Series):
+        series = pd.Series(series)
+
+    series_clean = series.dropna()
+
+    # For string-like values, convert to string representation but handle problematic values
+    series_clean = series_clean.astype(str)
+
+    # Remove '<NA>' or other string representations of nulls that might remain
+    series_clean = series_clean[series_clean != '<NA>']
+    series_clean = series_clean[series_clean != 'nan']
+    series_clean = series_clean[series_clean != 'NaN']
+    series_clean = series_clean[series_clean != 'None']
+
     # Get value counts
-    counts = df[column].value_counts(dropna=True)
+    counts = series_clean.value_counts()
 
     # Handle high cardinality: truncate and add "Others" category
     if len(counts) > max_categories:
@@ -72,8 +88,21 @@ def _build_category_count_data(
         logger.info(f"Truncated categories for '{column}' from {len(counts)} to {len(top_counts)} with 'Others' bucket")
         counts = top_counts
 
-    categories = [str(idx) for idx in counts.index if idx is not None]
-    values = [int(v) for v in counts.values if not pd.isna(v)]
+    # Create categories and values, ensuring they're valid Python types
+    categories = []
+    values = []
+
+    for idx, v in counts.items():
+        # Ensure we have valid values
+        if idx is not None and pd.notna(idx):
+            cat_str = str(idx)
+            # Check that cat_str is not a method reference (like the <built-in method title> issue)
+            if not callable(idx) and not hasattr(idx, '__func__'):
+                categories.append(cat_str)
+                if pd.notna(v) and np.isfinite(v):
+                    values.append(int(v))
+                else:
+                    values.append(0)  # Default to 0 if count is invalid
 
     if not categories:
         logger.warning(f"No valid categories found for column '{column}' after filtering")
@@ -82,11 +111,22 @@ def _build_category_count_data(
     table_data = [
         {"category": cat, "count": val}
         for cat, val in zip(categories, values)
+        if cat and val >= 0  # Filter out any invalid entries
     ]
 
+    if not table_data:
+        logger.warning(f"No valid data entries after processing column '{column}'")
+        return None
+
     # Validate and normalize the chart payload
+    title = f"Count of {column.replace('_', ' ')}"
+    if hasattr(title, 'title'):  # If title is a string, call its title method
+        title = title.title()
+    else:
+        title = str(title)
+
     chart_payload = ChartPayload(
-        title=f"Count of {column.replace('_', ' ').title()}",
+        title=title,
         column=column,
         data=table_data,
         type="category_count"
@@ -110,8 +150,8 @@ def _build_histogram_data(
     """
     Builds histogram data with adaptive binning and identifier exclusion.
     """
-    if column not in df.columns:
-        logger.warning(f"Column '{column}' not found in dataframe")
+    if df is None or column not in df.columns:
+        logger.warning(f"DataFrame is None or column '{column}' not found in dataframe")
         return None
 
     # Check if this is likely an identifier column
@@ -135,9 +175,14 @@ def _build_histogram_data(
     else:
         col_series = df[column]
 
+    # Clean the series by converting to numeric and handling NaN/None values
     series = pd.to_numeric(col_series, errors='coerce')
     # Drop NaN values
     series = series.dropna()
+
+    # Filter out infinite values
+    series = series[np.isfinite(series)]
+
     if series.empty:
         logger.warning(f"Column '{column}' has no valid numeric values after cleaning")
         return None
@@ -224,10 +269,14 @@ def _build_histogram_data(
             except Exception as e:
                 logger.warning(f"Error adjusting bins for {column}: {e}")
 
-    if not categories:
+    # Final validation - ensure all categories and values are valid
+    categories = [str(cat) for cat in categories if cat is not None and not pd.isna(cat)]
+    values = [int(val) for val in values if val is not None and pd.notna(val) and np.isfinite(val)]
+
+    if not categories or len(categories) != len(values):
         if not series.empty:
-            # If we have data but couldn't create bins, just use the single value
-            single_value = series.iloc[0]
+            # If we have data but couldn't create proper bins, just use the single value
+            single_value = series.iloc[0] if len(series) > 0 else 0
             categories = [str(single_value)]
             values = [len(series)]
         else:
@@ -237,11 +286,22 @@ def _build_histogram_data(
     table_data = [
         {"bin_range": cat, "count": val}
         for cat, val in zip(categories, values)
+        if cat and isinstance(val, (int, float)) and np.isfinite(val)  # Filter out any invalid entries
     ]
 
+    if not table_data:
+        logger.warning(f"No valid data entries after processing histogram for column '{column}'")
+        return None
+
     # Validate and normalize the chart payload
+    title = f"Distribution of {column.replace('_', ' ')}"
+    if hasattr(title, 'title'):  # If title is a string, call its title method
+        title = title.title()
+    else:
+        title = str(title)
+
     chart_payload = ChartPayload(
-        title=f"Distribution of {column.replace('_', ' ').title()}",
+        title=title,
         column=column,
         data=table_data,
         type="histogram"

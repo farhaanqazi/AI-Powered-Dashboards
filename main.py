@@ -70,10 +70,12 @@ async def http_exception_handler(request: Request, exc: HTTPException):
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unexpected error occurred: {exc}")
-    # Return to the index page with a generic error message
+    # More detailed error message
+    error_msg = f"An unexpected error occurred: {type(exc).__name__} - {str(exc)}"
+    # Return to the index page with a detailed error message
     return templates.TemplateResponse("index.html", {
         "request": request,
-        "error_message": "An unexpected error occurred. Please try again.",
+        "error_message": error_msg,
         "success": False
     })
 
@@ -90,9 +92,21 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
     try:
         # Validate file type
         if not dataset.filename.lower().endswith('.csv'):
-            raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error_message": "Only CSV files are allowed.",
+                "success": False
+            })
 
         contents = await dataset.read()
+
+        # Check if file is empty
+        if not contents:
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error_message": "Uploaded file is empty.",
+                "success": False
+            })
 
         # Create a temporary in-memory file for processing
         file_stream = io.BytesIO(contents)
@@ -109,35 +123,96 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         if state is None:
             return templates.TemplateResponse("index.html", {
                 "request": request,
-                "error_message": "Failed to read CSV file or build dashboard. Please ensure the file is a valid CSV.",
+                "error_message": "Failed to read CSV file or build dashboard. Please ensure the file is a valid CSV with proper structure.",
                 "success": False
             })
+
+        # Validate that all required data exists and is the correct type before passing to template
+        # Ensure all data structures are simple, serializable Python types
+        profile = state.profile if isinstance(state.profile, list) else []
+        dataset_profile = state.dataset_profile if isinstance(state.dataset_profile, dict) else {}
+        kpis = state.kpis if isinstance(state.kpis, list) else []
+        charts = state.charts if isinstance(state.charts, list) else []
+        primary_chart = state.primary_chart if state.primary_chart is not None else {}
+        category_charts = state.category_charts if isinstance(state.category_charts, dict) else {}
+        all_charts = state.all_charts if isinstance(state.all_charts, list) else []
+        eda_summary = state.eda_summary if isinstance(state.eda_summary, dict) else {}
+        original_filename = original_filename if original_filename else "Unknown"
+
+        # Validate and sanitize titles to ensure they are proper strings
+        def sanitize_chart_titles(chart_list):
+            for chart in chart_list:
+                if 'title' in chart and chart['title']:
+                    # Ensure title is a proper string, not a method reference
+                    if hasattr(chart['title'], 'title') and callable(chart['title'].title):
+                        # If the title is a string object, call its title() method properly
+                        chart['title'] = str(chart['title']).replace('_', ' ').title()
+                    elif not isinstance(chart['title'], str):
+                        chart['title'] = str(chart['title'])
+            return chart_list
+
+        # Apply sanitization to all chart title fields
+        charts = sanitize_chart_titles(charts)
+        all_charts = sanitize_chart_titles(all_charts)
+
+        # If we have a primary chart, make sure its title is a proper string
+        if primary_chart and 'title' in primary_chart:
+            if hasattr(primary_chart['title'], 'title') and callable(primary_chart['title'].title):
+                primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
+            elif not isinstance(primary_chart['title'], str):
+                primary_chart['title'] = str(primary_chart['title'])
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "profile": state.profile,
-                "dataset_profile": state.dataset_profile,
-                "kpis": state.kpis,
-                "charts": state.charts,
-                "primary_chart": state.primary_chart,
-                "category_charts": state.category_charts,
-                "all_charts": state.all_charts,
-                "eda_summary": state.eda_summary,
+                "profile": profile,
+                "dataset_profile": dataset_profile,
+                "kpis": kpis,
+                "charts": charts,
+                "primary_chart": primary_chart,
+                "category_charts": category_charts,
+                "all_charts": all_charts,
+                "eda_summary": eda_summary,
                 "original_filename": original_filename,
                 "success": True
             }
         )
-    except HTTPException:
-        # Re-raise HTTP exceptions to be handled by the global handler
-        raise
-    except Exception as e:
-        logger.exception(f"Error processing uploaded file: {e}")
+    except HTTPException as e:
+        logger.error(f"HTTP error during upload: {e}")
         return templates.TemplateResponse("index.html", {
             "request": request,
-            "error_message": f"An error occurred while processing the file: {str(e)}",
+            "error_message": f"HTTP error during upload: {e.detail}",
+            "success": False
+        })
+    except UnicodeDecodeError as e:
+        logger.error(f"File encoding error: {e}")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": f"File encoding error - try saving your CSV file with UTF-8 encoding: {str(e)}",
+            "success": False
+        })
+    except pd.errors.EmptyDataError:
+        logger.error("CSV file is empty")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": "CSV file is empty. Please provide a valid CSV file with data.",
+            "success": False
+        })
+    except pd.errors.ParserError as e:
+        logger.error(f"CSV parsing error: {e}")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": f"Error parsing CSV file: {str(e)}. Please check your CSV file format.",
+            "success": False
+        })
+    except Exception as e:
+        logger.exception(f"Error processing uploaded file: {e}")
+        error_type = type(e).__name__
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": f"Error processing file: {error_type} - {str(e)}",
             "success": False
         })
 
@@ -145,6 +220,13 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
 async def load_external(request: Request, external_source: str = Form(...)):
     """Load a dataset from external source (URL or Kaggle)"""
     try:
+        if not external_source:
+            return templates.TemplateResponse("index.html", {
+                "request": request,
+                "error_message": "No external source provided. Please enter a URL or Kaggle dataset identifier.",
+                "success": False
+            })
+
         # Validate external source format (basic check for URL or Kaggle slug)
         if external_source.startswith("http://") or external_source.startswith("https://"):
             # Basic URL validation could be more robust, e.g., using urllib.parse
@@ -188,35 +270,82 @@ async def load_external(request: Request, external_source: str = Form(...)):
             logger.error("Failed to build dashboard from external dataset.")
             return templates.TemplateResponse("index.html", {
                 "request": request,
-                "error_message": "Failed to build dashboard from the loaded dataset.",
+                "error_message": "Failed to build dashboard from the loaded dataset. The dataset may have structural issues or be incompatible.",
                 "success": False
             })
+
+        # Validate that all required data exists and is the correct type before passing to template
+        # Ensure all data structures are simple, serializable Python types
+        profile = state.profile if isinstance(state.profile, list) else []
+        dataset_profile = state.dataset_profile if isinstance(state.dataset_profile, dict) else {}
+        kpis = state.kpis if isinstance(state.kpis, list) else []
+        charts = state.charts if isinstance(state.charts, list) else []
+        primary_chart = state.primary_chart if state.primary_chart is not None else {}
+        category_charts = state.category_charts if isinstance(state.category_charts, dict) else {}
+        all_charts = state.all_charts if isinstance(state.all_charts, list) else []
+        eda_summary = state.eda_summary if isinstance(state.eda_summary, dict) else {}
+        original_filename = original_filename if original_filename else "Unknown"
+
+        # Validate and sanitize titles to ensure they are proper strings
+        def sanitize_chart_titles(chart_list):
+            for chart in chart_list:
+                if 'title' in chart and chart['title']:
+                    # Ensure title is a proper string, not a method reference
+                    if hasattr(chart['title'], 'title') and callable(chart['title'].title):
+                        # If the title is a string object, call its title() method properly
+                        chart['title'] = str(chart['title']).replace('_', ' ').title()
+                    elif not isinstance(chart['title'], str):
+                        chart['title'] = str(chart['title'])
+            return chart_list
+
+        # Apply sanitization to all chart title fields
+        charts = sanitize_chart_titles(charts)
+        all_charts = sanitize_chart_titles(all_charts)
+
+        # If we have a primary chart, make sure its title is a proper string
+        if primary_chart and 'title' in primary_chart:
+            if hasattr(primary_chart['title'], 'title') and callable(primary_chart['title'].title):
+                primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
+            elif not isinstance(primary_chart['title'], str):
+                primary_chart['title'] = str(primary_chart['title'])
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "profile": state.profile,
-                "dataset_profile": state.dataset_profile,
-                "kpis": state.kpis,
-                "charts": state.charts,
-                "primary_chart": state.primary_chart,
-                "category_charts": state.category_charts,
-                "all_charts": state.all_charts,
-                "eda_summary": state.eda_summary,
+                "profile": profile,
+                "dataset_profile": dataset_profile,
+                "kpis": kpis,
+                "charts": charts,
+                "primary_chart": primary_chart,
+                "category_charts": category_charts,
+                "all_charts": all_charts,
+                "eda_summary": eda_summary,
                 "original_filename": original_filename,
                 "success": True
             }
         )
-    except HTTPException:
-        # Re-raise HTTP exceptions to be handled by the global handler
-        raise
-    except Exception as e:
-        logger.exception(f"Error loading external dataset: {e}")
+    except HTTPException as e:
+        logger.error(f"HTTP error while loading external dataset: {e}")
         return templates.TemplateResponse("index.html", {
             "request": request,
-            "error_message": f"An error occurred while loading the external dataset: {str(e)}",
+            "error_message": f"HTTP error during external load: {e.detail}",
+            "success": False
+        })
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error while loading external dataset: {e}")
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": f"Network error loading external dataset: {str(e)}. Please check the URL or your internet connection.",
+            "success": False
+        })
+    except Exception as e:
+        logger.exception(f"Error loading external dataset: {e}")
+        error_type = type(e).__name__
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "error_message": f"Error loading external dataset: {error_type} - {str(e)}",
             "success": False
         })
 
