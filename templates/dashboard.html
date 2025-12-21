@@ -36,6 +36,13 @@
             min-height: 200px; /* Minimum height for visibility */
             height: 100%; /* Take available space */
             width: 100%; /* Ensure full width */
+            position: relative; /* Needed for proper sizing */
+        }
+
+        /* Ensure chart containers fill their parent */
+        .chart-container > div {
+            width: 100% !important;
+            height: 100% !important;
         }
         .kpi-badge {
             transition: background-color 0.2s, color 0.2s;
