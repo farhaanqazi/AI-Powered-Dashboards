@@ -40,6 +40,7 @@ class DashboardState:
     correlation_analysis: Optional[Dict[str, Any]] = None
     original_filename: Optional[str] = None
     critical_aggregates: Optional[Dict[str, float]] = None
+    critical_totals: Optional[Dict[str, float]] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -153,6 +154,23 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         critical_aggregates['total_revenue'] = df['revenue'].sum()
     if 'sales' in df.columns and pd.api.types.is_numeric_dtype(df['sales']):
         critical_aggregates['total_sales'] = df['sales'].sum()
+    # ---------------------------------
+
+    # --- Calculate critical totals for financial/quantitative columns ---
+    critical_totals = {}
+    financial_keywords = ['amount', 'revenue', 'price', 'total', 'cost', 'expense', 'profit', 'fee', 'charge', 'payment', 'income', 'value']
+    quantity_keywords = ['qty', 'quantity', 'count', 'volume', 'size', 'number']
+
+    for col in df.columns:
+        col_lower = col.lower()
+
+        # Check if column is numeric and matches financial keywords
+        if pd.api.types.is_numeric_dtype(df[col]) and any(keyword in col_lower for keyword in financial_keywords):
+            critical_totals[f"Total {col.replace('_', ' ').title()}"] = df[col].sum()
+
+        # Check if column is numeric and matches quantity keywords
+        if pd.api.types.is_numeric_dtype(df[col]) and any(keyword in col_lower for keyword in quantity_keywords):
+            critical_totals[f"Total {col.replace('_', ' ').title()}"] = df[col].sum()
     # ---------------------------------
 
     # Cap rows and columns to prevent expensive processing
@@ -293,7 +311,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         eda_summary=eda_summary,
         correlation_analysis=correlation_analysis,
         original_filename=None,
-        critical_aggregates=critical_aggregates
+        critical_aggregates=critical_aggregates,
+        critical_totals=critical_totals
     )
 
 

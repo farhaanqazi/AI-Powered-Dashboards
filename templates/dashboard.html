@@ -109,16 +109,37 @@
                     </div>
                 {% endif %}
             </div>
-                </div>
-            </div>
+        </div>
 
-            <!-- Visible Tabs -->
-            <div class="tabs tabs-boxed bg-gray-100 mb-6">
-                <button class="tab tab-active" onclick="showSection('overview', event)">Overview</button>
-                <button class="tab" onclick="showSection('eda', event)">EDA Insights</button>
-                <button class="tab" onclick="showSection('visualizations', event)">Visual Gallery</button>
-                <button class="tab" onclick="showSection('column_profiling', event)">Columns</button>
+        <!-- Critical Financial Totals Section -->
+        {% if critical_totals and critical_totals|length > 0 %}
+        <div class="light-card rounded-3xl p-6 mb-6">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl font-semibold text-gray-900">Financial & Quantity Totals</h2>
+                <span class="badge badge-soft">Pre-sampling</span>
             </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {% for key, value in critical_totals.items() %}
+                    <div class="light-card rounded-2xl p-4 text-center">
+                        <p class="text-sm text-gray-600">{{ key }}</p>
+                        {% if 'amount' in key.lower() or 'revenue' in key.lower() or 'cost' in key.lower() or 'expense' in key.lower() or 'profit' in key.lower() or 'fee' in key.lower() or 'charge' in key.lower() or 'payment' in key.lower() or 'income' in key.lower() or 'value' in key.lower() %}
+                            <p class="text-xl font-bold text-green-600">${{ "%.2f"|format(value) }}</p>
+                        {% else %}
+                            <p class="text-xl font-bold text-blue-600">{{ value|round(2) }}</p>
+                        {% endif %}
+                    </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Visible Tabs -->
+        <div class="tabs tabs-boxed bg-gray-100 mb-6">
+            <button class="tab tab-active" onclick="showSection('overview', event)">Overview</button>
+            <button class="tab" onclick="showSection('eda', event)">EDA Insights</button>
+            <button class="tab" onclick="showSection('visualizations', event)">Visual Gallery</button>
+            <button class="tab" onclick="showSection('column_profiling', event)">Columns</button>
+        </div>
         </div>
 
         <div class="space-y-6">
