@@ -159,6 +159,10 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
     Returns:
         Tuple of (is_multi_value, primary_delimiter, confidence_score)
     """
+    # Ensure series is a pandas Series
+    if not isinstance(series, pd.Series):
+        series = pd.Series(series) if hasattr(series, '__iter__') and not isinstance(series, str) else pd.Series([series])
+
     if series.dtype != 'object' and not str(series.dtype).startswith('string'):
         return False, "", 0.0
 
@@ -185,7 +189,11 @@ def _is_multi_value_field(series: pd.Series, delimiter_chars: List[str] = [',', 
         # Additional validation: check if the splits seem meaningful
         sample_with_delim = sample_values[sample_values.astype(str).str.contains(best_delimiter, na=False)]
         if len(sample_with_delim) > 0:
-            avg_splits = sample_with_delim.astype(str).str.count(best_delimiter).mean() + 1
+            avg_split_count = sample_with_delim.astype(str).str.count(best_delimiter)
+            # Ensure avg_split_count is a pandas Series before calling .mean()
+            if not hasattr(avg_split_count, 'mean'):
+                avg_split_count = pd.Series(avg_split_count)
+            avg_splits = avg_split_count.mean() + 1
             # If on average there are more than 2 values per field, it's likely multi-value
             if avg_splits >= 2:
                 return True, best_delimiter, confidence
@@ -275,6 +283,10 @@ def _infer_role_advanced(
         confidence_factors: breakdown of the confidence calculation
         semantic_tags: list of semantic hints like ["geographic"], ["duration"], ["monetary"], ["percentage"], ["multi_value"]
     """
+    # Ensure series is a pandas Series
+    if not isinstance(series, pd.Series):
+        series = pd.Series(series) if hasattr(series, '__iter__') and not isinstance(series, str) else pd.Series([series])
+
     semantic_tags = []
 
     if series.empty:
@@ -568,6 +580,11 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
     for i, col in enumerate(df_to_profile.columns):
         if i >= max_cols:
             break
+
+        # Skip columns with no data or that are entirely null
+        if df_to_profile[col].isna().all():
+            logger.info(f"Skipping column {col} as it contains only null values")
+            continue
 
         s = df_to_profile[col]
 

@@ -50,6 +50,21 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> Load
                            encoding='utf-8',
                            engine='python',
                            on_bad_lines='skip')  # Skip problematic lines instead of failing
+
+            # Clean up column names - remove problematic characters and handle unnamed columns
+            df.columns = [str(col).strip().replace(' ', '_').replace('-', '_') for col in df.columns]
+
+            # Handle unnamed columns
+            unnamed_count = 0
+            new_columns = []
+            for col in df.columns:
+                if col.startswith('Unnamed:'):
+                    new_columns.append(f'unnamed_col_{unnamed_count}')
+                    unnamed_count += 1
+                else:
+                    new_columns.append(col)
+            df.columns = new_columns
+
             logger.info(f"Successfully loaded CSV with {len(df)} rows and {len(df.columns)} columns")
             return LoadResult(success=True, df=df)
         except UnicodeDecodeError as e:
@@ -63,6 +78,21 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE) -> Load
                            encoding="latin1",
                            engine='python',
                            on_bad_lines='skip')
+
+            # Clean up column names - remove problematic characters and handle unnamed columns
+            df.columns = [str(col).strip().replace(' ', '_').replace('-', '_') for col in df.columns]
+
+            # Handle unnamed columns
+            unnamed_count = 0
+            new_columns = []
+            for col in df.columns:
+                if col.startswith('Unnamed:'):
+                    new_columns.append(f'unnamed_col_{unnamed_count}')
+                    unnamed_count += 1
+                else:
+                    new_columns.append(col)
+            df.columns = new_columns
+
             logger.info(f"Successfully loaded CSV with latin1 encoding")
             return LoadResult(success=True, df=df)
         except pd.errors.EmptyDataError:

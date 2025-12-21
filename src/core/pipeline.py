@@ -87,6 +87,40 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
 
     df = df[valid_columns] if valid_columns else df[[]]  # Handle case where all columns are invalid
 
+    # Handle potentially problematic column names that could cause issues downstream
+    original_columns = df.columns.tolist()
+    try:
+        # Clean up column names to ensure they are valid identifiers
+        clean_columns = []
+        for col in df.columns:
+            # Convert to string and remove problematic characters
+            clean_col = str(col).strip()
+            # Replace spaces, hyphens, and other problematic characters
+            clean_col = clean_col.replace(' ', '_').replace('-', '_').replace('.', '_').replace('(', '').replace(')', '')
+            # If it starts with a number, add a prefix
+            if clean_col and clean_col[0].isdigit():
+                clean_col = f"col_{clean_col}"
+            clean_columns.append(clean_col)
+
+        # Check for duplicates after cleaning and resolve them
+        seen = set()
+        final_columns = []
+        for col in clean_columns:
+            counter = 1
+            unique_col = col
+            while unique_col in seen:
+                unique_col = f"{col}_{counter}"
+                counter += 1
+            seen.add(unique_col)
+            final_columns.append(unique_col)
+
+        df.columns = final_columns
+
+        logger.info(f"Cleaned up column names from {original_columns} to {df.columns.tolist()}")
+    except Exception as e:
+        logger.warning(f"Error cleaning column names: {e}, using original names")
+        pass  # Continue with original names if cleaning fails
+
     # Cap rows and columns to prevent expensive processing
     MAX_ROWS = 100000
     if len(df) > MAX_ROWS:
