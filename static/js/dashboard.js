@@ -136,10 +136,12 @@
                 title: "Correlation Heatmap",
                 xaxis: { title: "Variables", automargin: true },
                 yaxis: { title: "Variables", automargin: true },
-                margin: { t: 40, l: 100, r: 40, b: 100 }
+                margin: { t: 40, l: 100, r: 40, b: 100 },
+                autosize: true,
+                responsive: true
             };
 
-            Plotly.react('correlation-heatmap', [trace], layout);
+            Plotly.react('correlation-heatmap', [trace], layout, {responsive: true});
         }
 
         // Render key indicators chart (simple bar chart)
@@ -162,11 +164,12 @@
                 title: "Top Key Indicators by Significance Score",
                 xaxis: { title: "Significance Score", automargin: true },
                 yaxis: { title: "Indicator", automargin: true, tickangle: -45 },
-                height: 600,
-                margin: { t: 40, l: 150, r: 40, b: 100 }
+                margin: { t: 40, l: 150, r: 40, b: 100 },
+                autosize: true,
+                responsive: true
             };
 
-            Plotly.react('trends-chart', [trace], layout); // Reusing trends div for simplicity, could use dedicated ID
+            Plotly.react('trends-chart', [trace], layout, {responsive: true}); // Reusing trends div for simplicity, could use dedicated ID
         }
 
         // Render trends chart (simple bar chart for count of trend types)
@@ -193,11 +196,12 @@
                 title: "Distribution of Time Series Trends",
                 xaxis: { title: "Trend Type", automargin: true },
                 yaxis: { title: "Count", automargin: true },
-                height: 400,
-                margin: { t: 40, l: 60, r: 40, b: 80 }
+                margin: { t: 40, l: 60, r: 40, b: 80 },
+                autosize: true,
+                responsive: true
             };
 
-            Plotly.react('trends-chart', [trace], layout);
+            Plotly.react('trends-chart', [trace], layout, {responsive: true});
         }
 
         // Render outliers chart (simple bar chart for outlier counts)
@@ -219,11 +223,12 @@
                 title: "Outlier Count by Column",
                 xaxis: { title: "Column", automargin: true, tickangle: 45 },
                 yaxis: { title: "Outlier Count", automargin: true },
-                height: 400,
-                margin: { t: 40, l: 60, r: 40, b: 120 }
+                margin: { t: 40, l: 60, r: 40, b: 120 },
+                autosize: true,
+                responsive: true
             };
 
-            Plotly.react('outliers-chart', [trace], layout);
+            Plotly.react('outliers-chart', [trace], layout, {responsive: true});
         }
 
         // Render use cases chart (simple bar chart for key inputs count)
@@ -245,11 +250,12 @@
                 title: "Number of Key Inputs per Use Case",
                 xaxis: { title: "Use Case", automargin: true, tickangle: 45 },
                 yaxis: { title: "Number of Key Inputs", automargin: true },
-                height: 400,
-                margin: { t: 40, l: 60, r: 40, b: 120 }
+                margin: { t: 40, l: 60, r: 40, b: 120 },
+                autosize: true,
+                responsive: true
             };
 
-            Plotly.react('use-cases-chart', [trace], layout);
+            Plotly.react('use-cases-chart', [trace], layout, {responsive: true});
         }
 
 
@@ -310,8 +316,9 @@
                     xaxis: { title: "Value", tickformat: ",d", exponentformat: "none", rangemode: "tozero", range: [0, maxVal * 1.15 || 1], automargin: true },
                     yaxis: { title: chartData.column || "Category", categoryorder: "array", categoryarray: categories, automargin: true },
                     margin: { t: 20, b: 60, l: 100, r: 20 },
-                    height: 320,
-                    title: { text: title, x: 0.05 }
+                    title: { text: title, x: 0.05 },
+                    autosize: true,
+                    responsive: true
                 };
             } else {
                 trace = {
@@ -326,13 +333,14 @@
                     xaxis: { title: chartData.column || "Category", categoryorder: "array", categoryarray: categories, automargin: true, tickangle: 45 },
                     yaxis: { title: "Value", tickformat: ",d", exponentformat: "none", rangemode: "tozero", range: [0, maxVal * 1.15 || 1], automargin: true },
                     margin: { t: 40, b: 100, l: 60, r: 20 },
-                    height: 320,
-                    title: { text: title, x: 0.05 }
+                    title: { text: title, x: 0.05 },
+                    autosize: true,
+                    responsive: true
                 };
             }
 
             try {
-                Plotly.react(containerId, [trace], layout);
+                Plotly.react(containerId, [trace], layout, {responsive: true});
             } catch (error) {
                 console.error(`Error rendering chart in container ${containerId}:`, error);
                 renderEmptyChart(containerId, `Render Error: ${error.message || 'Unknown error'}`);
@@ -371,11 +379,13 @@
                 title: chartData.title || "Scatter Plot",
                 xaxis: { title: chartData.x_column || "X Values", automargin: true, showgrid: true, gridcolor: 'lightgray' },
                 yaxis: { title: chartData.y_column || "Y Values", automargin: true, showgrid: true, gridcolor: 'lightgray' },
-                margin: { t: 60, b: 80, l: 60, r: 40 }
+                margin: { t: 60, b: 80, l: 60, r: 40 },
+                autosize: true,
+                responsive: true
             };
 
             try {
-                Plotly.react(containerId, [trace], layout);
+                Plotly.react(containerId, [trace], layout, {responsive: true});
             } catch (error) {
                 console.error(`Error rendering scatter chart in container ${containerId}:`, error);
                 renderEmptyChart(containerId, `Render Error: ${error.message || 'Unknown error'}`);
@@ -413,11 +423,13 @@
                 title: chartData.title || "Histogram",
                 xaxis: { title: chartData.column || "Bins", automargin: true, tickangle: -45 },
                 yaxis: { title: "Frequency", automargin: true },
-                margin: { t: 40, b: 80, l: 60, r: 40 }
+                margin: { t: 40, b: 80, l: 60, r: 40 },
+                autosize: true,
+                responsive: true
             };
 
             try {
-                Plotly.react(containerId, [trace], layout);
+                Plotly.react(containerId, [trace], layout, {responsive: true});
             } catch (error) {
                 console.error(`Error rendering histogram in container ${containerId}:`, error);
                 renderEmptyChart(containerId, `Render Error: ${error.message || 'Unknown error'}`);
@@ -456,11 +468,13 @@
 
             const layout = {
                 title: chartData.title || "Pie Chart",
-                margin: { t: 60, b: 40, l: 40, r: 40 }
+                margin: { t: 60, b: 40, l: 40, r: 40 },
+                autosize: true,
+                responsive: true
             };
 
             try {
-                Plotly.react(containerId, [trace], layout);
+                Plotly.react(containerId, [trace], layout, {responsive: true});
             } catch (error) {
                 console.error(`Error rendering pie chart in container ${containerId}:`, error);
                 renderEmptyChart(containerId, `Render Error: ${error.message || 'Unknown error'}`);
@@ -496,11 +510,13 @@
                 xaxis: { title: chartData.x_column || "Category", automargin: true },
                 yaxis: { title: chartData.y_column || "Value", automargin: true },
                 margin: { t: 60, b: 80, l: 60, r: 40 },
-                showlegend: false
+                showlegend: false,
+                autosize: true,
+                responsive: true
             };
 
             try {
-                Plotly.react(containerId, traces, layout);
+                Plotly.react(containerId, traces, layout, {responsive: true});
             } catch (error) {
                 console.error(`Error rendering box plot in container ${containerId}:`, error);
                 renderEmptyChart(containerId, `Render Error: ${error.message || 'Unknown error'}`);
@@ -623,6 +639,114 @@
                             console.error("Error in KPI click handler:", error);
                         }
                     });
+                });
+
+                // Make charts responsive to window resize
+                window.addEventListener('resize', function() {
+                    // Small delay to ensure DOM is updated before resizing
+                    setTimeout(function() {
+                        // Re-render the primary chart if it exists
+                        if (window.PRIMARY_CHART) {
+                            const chartType = window.PRIMARY_CHART.type || 'bar';
+                            switch(chartType) {
+                                case 'bar':
+                                case 'category_count':
+                                     _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                                case 'scatter':
+                                     _renderScatterPlot(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                                case 'histogram':
+                                     _renderHistogram(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                                case 'pie':
+                                     _renderPieChart(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                                case 'box_plot':
+                                     _renderBoxPlot(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                                default:
+                                     _renderSimpleBarChart(window.PRIMARY_CHART, 'primary-chart');
+                                     break;
+                            }
+                        }
+
+                        // Re-render all category charts
+                        if (typeof window.CATEGORY_CHARTS === 'object' && window.CATEGORY_CHARTS !== null) {
+                            Object.keys(window.CATEGORY_CHARTS).forEach(function(columnName) {
+                                try {
+                                    const chartData = window.CATEGORY_CHARTS[columnName];
+                                    const containerId = "chart-" + columnName.replace(/[\s.]/g, '_');
+                                    const chartType = chartData.type || 'bar';
+                                    switch(chartType) {
+                                        case 'bar':
+                                        case 'category_count':
+                                            _renderSimpleBarChart(chartData, containerId);
+                                            break;
+                                        case 'scatter':
+                                            _renderScatterPlot(chartData, containerId);
+                                            break;
+                                        case 'histogram':
+                                            _renderHistogram(chartData, containerId);
+                                            break;
+                                        case 'pie':
+                                            _renderPieChart(chartData, containerId);
+                                            break;
+                                        case 'box_plot':
+                                            _renderBoxPlot(chartData, containerId);
+                                            break;
+                                        default:
+                                            _renderSimpleBarChart(chartData, containerId); // Fallback
+                                            break;
+                                    }
+                                } catch (e) {
+                                    console.error("Error re-rendering category chart for " + columnName + ":", e);
+                                }
+                            });
+                        }
+
+                        // Re-render all other charts
+                        if (typeof window.ALL_CHARTS === 'object' && window.ALL_CHARTS !== null) {
+                            Object.values(window.ALL_CHARTS).forEach(function(chartSpec) {
+                                try {
+                                    if (chartSpec && chartSpec.id) {
+                                        const containerId = "chart-" + chartSpec.id;
+                                        const chartType = chartSpec.type || 'bar';
+                                        switch(chartType) {
+                                            case 'bar':
+                                            case 'category_count':
+                                            case 'category_summary':
+                                                _renderSimpleBarChart({ ...chartSpec, data: chartSpec.data.map(d => ({ category: d.category, count: d.agg_value })) }, containerId);
+                                                break;
+                                            case 'scatter':
+                                                _renderScatterPlot(chartSpec, containerId);
+                                                break;
+                                            case 'histogram':
+                                                _renderHistogram(chartSpec, containerId);
+                                                break;
+                                            case 'pie':
+                                                 _renderPieChart({ ...chartSpec, data: chartSpec.data.map(d => ({ label: d.category, value: d.value })) }, containerId);
+                                                break;
+                                            case 'box_plot':
+                                                _renderBoxPlot(chartSpec, containerId);
+                                                break;
+                                            default:
+                                                _renderSimpleBarChart({ ...chartSpec, data: chartSpec.data.map(d => ({ category: d.category, count: d.agg_value })) }, containerId); // Fallback
+                                                break;
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error("Error re-rendering chart " + (chartSpec ? chartSpec.id : '') + ":", e);
+                                }
+                            });
+                        }
+
+                        // Re-render advanced visualizations if on the visualizations tab
+                        const activeSection = document.querySelector('.analysis-section:not(.hidden)');
+                        if (activeSection && activeSection.id === 'visualizations-section' && window.EDA_SUMMARY) {
+                            renderAdvancedVisualizations();
+                        }
+                    }, 100); // Small delay to allow for layout changes
                 });
             } catch (error) {
                 console.error("Error in DOMContentLoaded:", error);

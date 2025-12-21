@@ -33,18 +33,9 @@
             border-bottom: 2px solid #3b82f6; /* Blue indicator */
         }
         .chart-container {
-            min-height: 300px; /* Ensure chart containers have minimum height */
+            min-height: 200px; /* Minimum height for visibility */
             height: 100%; /* Take available space */
-            flex-grow: 1; /* Allow to grow to fill space */
-        }
-        .chart-container.h-64 {
-            min-height: 256px;
-        }
-        .chart-container.h-80 {
-            min-height: 320px;
-        }
-        .chart-container.h-96 {
-            min-height: 384px;
+            width: 100%; /* Ensure full width */
         }
         .kpi-badge {
             transition: background-color 0.2s, color 0.2s;
@@ -165,7 +156,7 @@
                                 <h3 class="text-lg font-semibold text-gray-900">{{ primary_chart.get('title', primary_chart.get('column', 'Primary Chart')|title) }}</h3>
                                 <span class="badge badge-soft">Featured</span>
                             </div>
-                            <div class="chart-container h-96" id="primary-chart"></div>
+                            <div class="chart-container h-80" id="primary-chart"></div>
                         </div>
                     {% endif %}
 
@@ -174,7 +165,7 @@
                             {% for column, chart_data in category_charts.items() %}
                                 <div class="light-card rounded-2xl p-4">
                                     <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart_data.get('title', column|title) }}</h4>
-                                    <div class="chart-container h-64" id="chart-{{ column|replace(' ', '_')|replace('.', '_') }}"></div>
+                                    <div class="chart-container h-48" id="chart-{{ column|replace(' ', '_')|replace('.', '_') }}"></div>
                                 </div>
                             {% endfor %}
                         {% else %}
@@ -193,9 +184,9 @@
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {% if all_charts %}
                             {% for chart in all_charts %}
-                                <div class="light-card rounded-2xl p-4 flex flex-col">
+                                <div class="light-card rounded-2xl p-4">
                                     <h4 class="text-md font-semibold text-gray-900 mb-2">{{ chart.get('title', chart.get('id', 'Chart')|title) }}</h4>
-                                    <div class="chart-container flex-grow" id="chart-{{ chart.id }}"></div>
+                                    <div class="chart-container h-64" id="chart-{{ chart.id }}"></div>
                                 </div>
                             {% endfor %}
                         {% else %}
