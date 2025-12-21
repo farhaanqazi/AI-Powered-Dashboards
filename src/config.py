@@ -6,12 +6,12 @@ APP_DESCRIPTION = "Upload a CSV or point to a URL/Kaggle dataset and instantly g
 DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
 
 # --- Pipeline Configuration ---
-MAX_ROWS = int(os.environ.get("MAX_ROWS", 100000))
+MAX_ROWS = int(os.environ.get("MAX_ROWS", 500000))  # Increased for financial data analysis
 MAX_COLS = int(os.environ.get("MAX_COLS", 50))
 MAX_CATEGORIES = int(os.environ.get("MAX_CATEGORIES", 10))
 MAX_CHARTS = int(os.environ.get("MAX_CHARTS", 20))
-MEMORY_LIMIT_MB = int(os.environ.get("MEMORY_LIMIT_MB", 500))
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", 300))
+MEMORY_LIMIT_MB = int(os.environ.get("MEMORY_LIMIT_MB", 1000))  # Increased for financial data
+TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", 600))  # Increased for larger datasets
 
 # --- Analyser Configuration ---
 UNIQUENESS_CUTOFF = float(os.environ.get("UNIQUENESS_CUTOFF", 0.5))

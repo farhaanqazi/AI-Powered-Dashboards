@@ -20,7 +20,7 @@ class LoadResult(NamedTuple):
     error_code: Optional[str] = None
     detail: Optional[str] = None
 
-def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_rows: int = 50000) -> LoadResult:
+def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_rows: int = 500000) -> LoadResult:
     """
     Load a CSV file from Flask file storage with validation and error handling.
 
@@ -125,7 +125,7 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_row
         return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}")
 
 
-def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 50000) -> LoadResult:
+def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> LoadResult:
     """
     Load a CSV directly from a URL (e.g. GitHub raw link).
     Includes validation, timeout, and error handling.
@@ -207,7 +207,7 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 50000) -> Loa
         return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}")
 
 
-def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60, max_rows: int = 50000) -> LoadResult:
+def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60, max_rows: int = 500000) -> LoadResult:
     """
     Load a CSV from a Kaggle dataset using kagglehub with validation and error handling.
 

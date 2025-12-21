@@ -99,6 +99,26 @@
                         <p class="text-xl font-semibold text-gray-900">{{ dataset_profile.role_counts.categorical if dataset_profile.role_counts else 0 }}</p>
                     </div>
                 </div>
+
+                <!-- Financial aggregates if available -->
+                {% if critical_aggregates %}
+                    <div class="flex gap-2 mt-2 md:mt-0">
+                        {% if critical_aggregates.total_revenue %}
+                            <div class="light-card rounded-xl p-3 min-w-[120px] text-center bg-blue-50 border border-blue-200">
+                                <p class="text-xs text-blue-600">Total Revenue</p>
+                                <p class="text-lg font-semibold text-blue-800">${{ "%.2f"|format(critical_aggregates.total_revenue) }}</p>
+                            </div>
+                        {% endif %}
+                        {% if critical_aggregates.total_sales %}
+                            <div class="light-card rounded-xl p-3 min-w-[120px] text-center bg-green-50 border border-green-200">
+                                <p class="text-xs text-green-600">Total Sales</p>
+                                <p class="text-lg font-semibold text-green-800">${{ "%.2f"|format(critical_aggregates.total_sales) }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+                </div>
             </div>
 
             <!-- Visible Tabs -->

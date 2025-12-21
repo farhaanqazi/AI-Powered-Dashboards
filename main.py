@@ -173,6 +173,7 @@ async def upload(request: Request, background_tasks: BackgroundTasks, dataset: U
                 "category_charts": category_charts,
                 "all_charts": all_charts,
                 "eda_summary": eda_summary,
+                "critical_aggregates": state.critical_aggregates if state and hasattr(state, 'critical_aggregates') else {},
                 "original_filename": original_filename,
                 "success": True
             }
@@ -314,6 +315,7 @@ async def load_external(request: Request, background_tasks: BackgroundTasks, ext
                 "category_charts": category_charts,
                 "all_charts": all_charts,
                 "eda_summary": eda_summary,
+                "critical_aggregates": state.critical_aggregates if state and hasattr(state, 'critical_aggregates') else {},
                 "original_filename": original_filename,
                 "success": True
             }
