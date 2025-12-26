@@ -176,7 +176,7 @@
                 dragmode: false
             };
 
-            Plotly.newPlot('trends-chart', [trace], layout, {responsive: true, displayModeBar: false});
+            Plotly.newPlot('key-indicators-chart', [trace], layout, {responsive: true, displayModeBar: false});
         }
 
         // Render trends chart (simple bar chart for count of trend types)
@@ -612,7 +612,12 @@
                                     case 'bar':
                                     case 'category_count':
                                     case 'category_summary':
-                                        _renderSimpleBarChart({ ...chartSpec, data: chartSpec.data.map(d => ({ category: d.category, count: d.agg_value })) }, containerId);
+                                        const isSummary = chartSpec.intent === 'category_summary';
+                                        const mappedData = chartSpec.data.map(d => ({
+                                            category: d.category,
+                                            count: isSummary ? d.agg_value : d.count
+                                        }));
+                                        _renderSimpleBarChart({ ...chartSpec, data: mappedData }, containerId);
                                         break;
                                     case 'scatter':
                                         _renderScatterPlot(chartSpec, containerId);

@@ -378,6 +378,18 @@ def _infer_role_advanced(
     if series.isna().all():
         return "text", 0.3, "all_nan", {"data_consistency": 0.0}, semantic_tags
 
+    # --- NEW: Early coercion attempt for object dtypes ---
+    if series.dtype == "object":
+        # Try to convert to numeric, coercing errors to NaN
+        s_numeric = pd.to_numeric(series, errors='coerce')
+        # If a high percentage of non-null values can be converted, treat it as numeric
+        if series.notna().sum() > 0:
+            valid_numeric_ratio = s_numeric.notna().sum() / series.notna().sum()
+            if valid_numeric_ratio > 0.85: # Threshold: 85% of non-null values are numeric
+                # It's a numeric column masquerading as an object. Re-assign and proceed.
+                series = s_numeric
+    # --- END NEW ---
+
     # Check if series has only one unique non-null value (near-constant)
     n_unique_non_null = series.dropna().nunique()
     if n_unique_non_null <= 1:

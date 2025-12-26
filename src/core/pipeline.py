@@ -114,6 +114,7 @@ class DashboardState:
     critical_aggregates: Optional[Dict[str, float]] = None
     critical_totals: Optional[Dict[str, float]] = None
     critical_full_dataset_aggregates: Optional[Dict[str, float]] = None
+    errors: Optional[List[str]] = None
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
@@ -269,6 +270,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
 
     start_time = time.time()
     timing = {}
+    errors = []
 
     # 1) Determine max columns
     if max_cols is None:
@@ -339,6 +341,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     except Exception as e:
         logger.exception("Error generating KPIs")
         kpis = []
+        errors.append(f"KPI Generation Failed: {type(e).__name__}")
     timing['kpis'] = time.time() - kpi_start
 
     # 7) Chart suggestions (generic ChartSpec-like dicts)
@@ -349,6 +352,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     except Exception as e:
         logger.exception("Error suggesting charts")
         charts = []
+        errors.append(f"Chart Suggestion Failed: {type(e).__name__}")
     timing['charts'] = time.time() - chart_start
 
     # 8) Build multiple category_count charts with semantic awareness and pick a primary one
@@ -367,6 +371,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         logger.exception("Error building category charts")
         category_charts = {}
         primary_chart = None
+        errors.append(f"Category Chart Building Failed: {type(e).__name__}")
     timing['category_charts'] = time.time() - category_start
 
     # 9) Build all charts using the new intelligent renderer with semantic awareness
@@ -384,6 +389,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     except Exception as e:
         logger.exception("Error generating all charts")
         all_charts = []
+        errors.append(f"Chart Generation Failed: {type(e).__name__}")
     timing['all_charts'] = time.time() - all_charts_start
 
     total_time = time.time() - start_time
@@ -412,7 +418,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         original_filename=None,
         critical_aggregates=critical_aggregates,
         critical_totals=critical_totals,
-        critical_full_dataset_aggregates=critical_full_dataset_aggregates
+        critical_full_dataset_aggregates=critical_full_dataset_aggregates,
+        errors=errors
     )
 
     # Validate DashboardState for inconsistencies

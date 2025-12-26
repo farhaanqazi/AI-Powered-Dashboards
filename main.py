@@ -177,7 +177,8 @@ async def upload(request: Request, background_tasks: BackgroundTasks, dataset: U
                 "critical_totals": state.critical_totals if state and hasattr(state, 'critical_totals') else {},
                 "critical_full_dataset_aggregates": state.critical_full_dataset_aggregates if state and hasattr(state, 'critical_full_dataset_aggregates') else {},
                 "original_filename": original_filename,
-                "success": True
+                "success": True,
+                "errors": state.errors if state and hasattr(state, 'errors') else []
             }
         )
     except HTTPException as e:
