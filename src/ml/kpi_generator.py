@@ -269,10 +269,8 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
     Higher scores indicate more important KPIs.
     """
     if not isinstance(series, pd.Series):
-        try:
-            series = pd.Series(series)
-        except Exception:
-            return 0.0
+        logger.warning(f"Input to _calculate_significance_score is not a pandas Series. Type: {type(series)}")
+        return 0.0 # Return default score
 
     if series.empty or series.isna().all():
         return 0.0
@@ -290,23 +288,34 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
 
     # Variability score: meaningful metrics tend to have variability
     if pd.api.types.is_numeric_dtype(series):
-        # Ensure series is a pandas Series before processing
-        if not isinstance(series, pd.Series):
-            series = pd.Series(series)
-
         numeric_series = pd.to_numeric(series, errors='coerce').dropna()
         if len(numeric_series) > 1:
-            std_dev = numeric_series.std()
-            mean_val = numeric_series.mean()
+            std_dev = 0.0
+            mean_val = 0.0
+            try:
+                std_dev = float(numeric_series.std())
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.warning(f"Error calculating std_dev for series '{series.name}': {e}. Defaulting to 0.0.")
+            try:
+                mean_val = float(numeric_series.mean())
+            except (AttributeError, TypeError, ValueError) as e:
+                logger.warning(f"Error calculating mean_val for series '{series.name}': {e}. Defaulting to 0.0.")
 
             if pd.notna(std_dev) and pd.notna(mean_val) and mean_val != 0 and np.isfinite(std_dev) and np.isfinite(mean_val):
                 cv = abs(std_dev / mean_val)  # Coefficient of variation
                 score += min(0.5, cv)  # Cap at 0.5 to prevent extreme scores
-            elif pd.notna(std_dev) and np.isfinite(std_dev):
-                score += min(0.5, std_dev / 10)  # If mean is 0, use raw std deviation capped
+            elif pd.notna(std_dev) and np.isfinite(std_dev): # If mean_val is 0 or NaN, but std_dev is valid
+                score += min(0.5, std_dev / 10) # Use raw std dev capped
 
     # Uniqueness score: avoid both too unique (IDs) and too uniform (constants)
-    n_unique = series.nunique(dropna=True)
+    n_unique = 0
+    try:
+        n_unique = series.nunique(dropna=True)
+    except AttributeError:
+        logger.warning(f"AttributeError calculating nunique for series '{series.name}'. Defaulting to 0.")
+    except Exception as e:
+        logger.warning(f"Error calculating nunique for series '{series.name}': {e}. Defaulting to 0.")
+
     unique_ratio = n_unique / n_valid if n_valid > 0 else 0.0
 
     # Score peaks at medium uniqueness, penalizes extreme uniqueness (like IDs) or low uniqueness (like constants)
@@ -329,19 +338,19 @@ def _calculate_significance_score(series: pd.Series, semantic_categories: List[s
             score += 0.15  # Time fields are often important
 
     # Distribution shape significance (for numeric fields)
-    if pd.api.types.is_numeric_dtype(series):
-        numeric_series = pd.to_numeric(series, errors='coerce').dropna()
-        if len(numeric_series) >= 4:  # Need enough points for distribution metrics
-            skewness, kurtosis = _calculate_distribution_metrics(numeric_series)
-            # Only add score if the metrics are valid numbers
-            if abs(skewness) > 1.0 and np.isfinite(skewness):  # Highly skewed - might be important for analysis
-                score += 0.1
-            if abs(kurtosis) > 1.0 and np.isfinite(kurtosis): # Heavy or light-tailed - might be important
-                score += 0.1
+    numeric_series_for_dist = pd.to_numeric(series, errors='coerce').dropna()
+    if len(numeric_series_for_dist) >= 4:  # Need enough points for distribution metrics
+        skewness, kurtosis = _calculate_distribution_metrics(numeric_series_for_dist)
+        # Only add score if the metrics are valid numbers
+        if abs(skewness) > 1.0 and np.isfinite(skewness):  # Highly skewed - might be important for analysis
+            score += 0.1
+        if abs(kurtosis) > 1.0 and np.isfinite(kurtosis): # Heavy or light-tailed - might be important
+            score += 0.1
 
     # Outlier significance
-    if pd.api.types.is_numeric_dtype(series):
-        outlier_count = _calculate_outliers(series)
+    numeric_series_for_outliers = pd.to_numeric(series, errors='coerce').dropna()
+    if len(numeric_series_for_outliers) > 0: # Only run if there's data to analyze
+        outlier_count = _calculate_outliers(numeric_series_for_outliers)
         if outlier_count > 0:
             outlier_ratio = outlier_count / n_valid if n_valid > 0 else 0
             # More outliers might indicate interesting phenomena
@@ -454,7 +463,18 @@ def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
     column_analyses = []
 
     for col in columns:
-        col_name = col["name"]
+        if not isinstance(col, dict): # Validate col is a dict
+            logger.warning(f"Invalid column profile entry (not a dictionary): {col}. Skipping.")
+            continue
+
+        col_name = col.get("name")
+        if col_name is None: # Validate col_name exists
+            logger.warning(f"Column profile missing 'name' key: {col}. Skipping.")
+            continue
+
+        if col_name not in df.columns: # Validate col_name exists in actual df
+            logger.warning(f"Column '{col_name}' from profile not found in DataFrame. Skipping.")
+            continue
 
         # Get semantic tags and role from dataset profile
         semantic_tags = col.get("semantic_tags", [])
