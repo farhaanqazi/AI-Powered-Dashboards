@@ -23,10 +23,14 @@ def _analyze_column_for_viz_from_profile(col_profile: Dict[str, Any], semantic_t
     """
     # Get information from the column profile
     role = col_profile.get("role", "unknown")
-    n_total = col_profile.get("stats", {}).get("count", 0)
+    
+    # Safely get stats, n_total, n_unique, and missing_count
+    stats = col_profile.get("stats") or {}
+    n_total = stats.get("count", 0)
     n_unique = col_profile.get("unique_count", 0)
-    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
     missing_count = col_profile.get("missing_count", 0)
+
+    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
     missing_ratio = missing_count / n_total if n_total > 0 else 0.0
 
     # Get statistics from profile
@@ -308,16 +312,14 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
             logger.warning(f"Column found without a name: {col}")
             continue
 
-        # Check if this is an identifier based on profile role
+        # Check if this is an identifier based on profile role (SSOT)
         if role == "identifier":
             identifier_cols.append(col)
             continue
 
         if role == "numeric":
-            # Use profile information to verify meaningful numeric data (not an ID disguised as a number)
-            unique_ratio = col.get("unique_count", 0) / col.get("stats", {}).get("count", 1)
-            if unique_ratio < 0.95:  # Exclude columns that are almost all unique (likely IDs)
-                numeric_cols.append(col)
+            # If the analyser classified it as numeric, trust it. No need to re-check unique_ratio.
+            numeric_cols.append(col)
         elif role in ["categorical", "text"]:
             if unique_count <= 50:  # Low cardinality categorical/text
                 categorical_cols.append(col)
@@ -327,7 +329,7 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
         elif role == "datetime":
             datetime_cols.append(col)
         else:
-            # Default to treating as text if unknown
+            # Default to treating as text if unknown (this shouldn't happen with a good analyser)
             text_cols.append(col)
 
     logger.info(f"Column classification from profile: {len(numeric_cols)} numeric, "
@@ -439,7 +441,7 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
                 "id": f"pie_{col_name}",
                 "title": f"Distribution of {col_name.replace('_', ' ').title()}",
                 "chart_type": "pie",
-                "intent": "category_distribution",
+                "intent": "category_pie",
                 "x_field": col_name,
                 "y_field": None,
                 "agg_func": "count",
@@ -466,7 +468,7 @@ def _suggest_appropriate_charts_for_columns(df: pd.DataFrame, dataset_profile: D
                     "id": f"scatter_{col1['name']}_{col2['name']}",
                     "title": f"{col1['name'].replace('_', ' ').title()} vs {col2['name'].replace('_', ' ').title()}",
                     "chart_type": "scatter",
-                    "intent": "correlation",
+                    "intent": "scatter",
                     "x_field": col2["name"],
                     "y_field": col1["name"],
                     "agg_func": None,

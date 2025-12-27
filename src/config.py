@@ -14,7 +14,7 @@ MEMORY_LIMIT_MB = int(os.environ.get("MEMORY_LIMIT_MB", 1000))  # Increased for 
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", 600))  # Increased for larger datasets
 
 # --- Analyser Configuration ---
-UNIQUENESS_CUTOFF = float(os.environ.get("UNIQUENESS_CUTOFF", 0.5))
+UNIQUENESS_CUTOFF = float(os.environ.get("UNIQUENESS_CUTOFF", 0.95))
 AVG_LENGTH_CUTOFF = int(os.environ.get("AVG_LENGTH_CUTOFF", 30))
 MIN_DATE = int(os.environ.get("MIN_DATE", 1900))
 MAX_DATE = int(os.environ.get("MAX_DATE", 2100))

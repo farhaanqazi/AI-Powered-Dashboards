@@ -371,7 +371,9 @@ def _calculate_significance_score_from_profile(col_profile: Dict[str, Any], sema
     # Get column information from profile
     col_role = col_profile.get("role", "unknown")
     n_unique = col_profile.get("unique_count", 0)
-    n_total = col_profile.get("stats", {}).get("count", 0)
+    # Safely get n_total from stats, defaulting to 0 if stats is None
+    stats = col_profile.get("stats") or {}
+    n_total = stats.get("count", 0)
     missing_count = col_profile.get("missing_count", 0)
 
     # Check if this is an identifier (should have low significance)
@@ -391,7 +393,7 @@ def _calculate_significance_score_from_profile(col_profile: Dict[str, Any], sema
             if 2 <= n_unique <= 20:  # Ideal range for categorical KPIs
                 uniqueness_bonus += 0.1
             score += uniqueness_bonus
-        elif unique_ratio > 0.95:  # Probably an ID, reduce score
+        elif unique_ratio > 0.95 and col_role != 'numeric':  # PENALTY: Only apply to non-numeric columns
             score -= 0.3
 
     # Semantic significance boosts
@@ -421,252 +423,129 @@ def _calculate_significance_score_from_profile(col_profile: Dict[str, Any], sema
     return score
 
 
-def generate_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
-                 min_variability_threshold: float = config.MIN_VARIABILITY_THRESHOLD,
-                 min_unique_ratio: float = config.MIN_UNIQUE_RATIO,
-                 max_unique_ratio: float = config.MAX_UNIQUE_RATIO,
+def generate_kpis(dataset_profile: Dict[str, Any],
                  top_k: int = config.KPI_TOP_K,
                  eda_summary: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """
     Enhanced KPIs with robust statistical metrics and semantic understanding.
-    Addresses issues with misidentified IDs, inappropriate correlations, and 
-    meaningless KPI scoring.
+    This version operates ONLY on the dataset_profile, not the raw DataFrame,
+    to enforce a Single Source of Truth for data schema and stats.
 
     Args:
-        df: Input DataFrame
-        dataset_profile: Dataset profile from analyser
-        min_variability_threshold: Minimum standard deviation to consider a column variable
-        min_unique_ratio: Minimum unique ratio for categorical columns
-        max_unique_ratio: Maximum unique ratio (to avoid IDs)
-        top_k: Number of top KPIs to return
-        eda_summary: Optional EDA summary to incorporate insights
+        dataset_profile: Dataset profile from analyser (The SSOT).
+        top_k: Number of top KPIs to return.
+        eda_summary: Optional EDA summary to incorporate insights.
 
     Returns:
-        List of KPI dictionaries with significance scores and semantic meaning
+        List of KPI dictionaries with significance scores and semantic meaning.
     """
-    if df.empty:
-        logger.warning("Empty dataframe provided to KPI generator")
+    if not dataset_profile or not dataset_profile.get("columns"):
+        logger.warning("Empty or invalid dataset_profile provided to KPI generator")
         return []
 
-    logger.info(f"Generating enhanced KPIs with parameters: min_variability_threshold={min_variability_threshold}, "
-                f"min_unique_ratio={min_unique_ratio}, max_unique_ratio={max_unique_ratio}, top_k={top_k}")
+    logger.info(f"Generating enhanced KPIs based on profile with top_k={top_k}")
 
     kpis = []
     columns = dataset_profile.get("columns", [])
-    n_rows = dataset_profile.get("n_rows", len(df))
+    n_rows = dataset_profile.get("n_rows", 0)
 
     if n_rows == 0:
-        logger.warning("No data rows provided to KPI generator")
+        logger.warning("No data rows in profile for KPI generator")
         return []
 
     # Prepare a comprehensive analysis of each column using dataset_profile
     column_analyses = []
+    for col_profile in columns:
+        # --- Input Validation for each column profile ---
+        if not isinstance(col_profile, dict):
+            logger.warning(f"Invalid column profile entry (not a dictionary): {col_profile}. Skipping.")
+            continue
+        if "name" not in col_profile or "role" not in col_profile or "stats" not in col_profile:
+            logger.warning(f"Column profile missing required keys ('name', 'role', 'stats'): {col_profile}. Skipping.")
+            continue
+        # --- End Validation ---
 
-    for col in columns:
-        if not isinstance(col, dict): # Validate col is a dict
-            logger.warning(f"Invalid column profile entry (not a dictionary): {col}. Skipping.")
+        col_name = col_profile["name"]
+        col_role = col_profile["role"]
+        
+        if col_role == "identifier" or col_profile.get("unique_count", 0) <= 1:
+            logger.debug(f"Skipping '{col_name}' from KPI generation (role: {col_role}, unique: {col_profile.get('unique_count')}).")
             continue
 
-        col_name = col.get("name")
-        if col_name is None: # Validate col_name exists
-            logger.warning(f"Column profile missing 'name' key: {col}. Skipping.")
-            continue
-
-        if col_name not in df.columns: # Validate col_name exists in actual df
-            logger.warning(f"Column '{col_name}' from profile not found in DataFrame. Skipping.")
-            continue
-
-        # Get semantic tags and role from dataset profile
-        semantic_tags = col.get("semantic_tags", [])
-        col_role = col.get("role", "unknown")
-
-        # Check if this is an identifier based on dataset profile
-        is_identifier = (col_role == "identifier")
-
-        # Check if this is near-constant based on dataset profile
-        n_unique = col.get("unique_count", 0)
-        n_total = col.get("stats", {}).get("count", n_rows if n_rows > 0 else len(df))
-        unique_ratio = n_unique / n_total if n_total > 0 else 0.0
-
-        # Check if this is near-constant (only one unique non-null value)
-        is_near_constant = (n_unique <= 1)
-
-        # Check if column has only NaN values
-        missing_count = col.get("missing_count", 0)
-        is_all_nan = (missing_count == n_total)
-
-        # Skip if all values are NaN
-        if is_all_nan:
-            logger.debug(f"Skipping column {col_name} as it contains only NaN values.")
-            continue
-
-        # Skip if it's an identifier or near-constant
-        if is_identifier or is_near_constant:
-            logger.debug(f"Skipping {'identifier' if is_identifier else 'near-constant'} column {col_name} from KPI generation.")
-            continue
-
-        # Determine semantic categories from profile semantic tags
-        semantic_categories = semantic_tags.copy()  # Use semantic tags from profile
-
-        # Calculate significance score based on profile data
-        significance_score = _calculate_significance_score_from_profile(col, semantic_categories)
-
-        # Get statistics from profile
-        numeric_stats = col.get("stats", {})
+        significance_score = _calculate_significance_score_from_profile(col_profile, col_profile.get("semantic_tags", []))
 
         column_analyses.append({
-            'name': col_name,
-            'role': col_role,
-            'semantic_categories': semantic_categories,
-            'is_identifier': is_identifier,
-            'is_near_constant': is_near_constant,
+            'profile': col_profile,
             'significance_score': significance_score,
-            'n_unique': n_unique,
-            'n_valid': n_total - missing_count,
-            'unique_ratio': unique_ratio,
-            'numeric_stats': numeric_stats,
-            'missing_count': missing_count
         })
 
     # Sort by significance score to identify the most important columns
     column_analyses.sort(key=lambda x: x['significance_score'], reverse=True)
-    
+
     # Generate KPIs based on the analyses
     for analysis in column_analyses[:top_k]:  # Take top K by significance
-        col_name = analysis['name']
-        col_role = analysis['role']
-        significance_score = analysis['significance_score']
+        col_profile = analysis['profile']
+        col_name = col_profile['name']
+        col_role = col_profile['role']
 
-        # Skip identifiers or near-constant fields as they are not meaningful KPIs
-        if analysis['is_identifier'] or analysis['is_near_constant']:
-            logger.debug(f"Skipping {'identifier' if analysis['is_identifier'] else 'near-constant'} column {col_name} from KPI generation.")
-            continue
-
-        # Prepare KPI information
         kpi_info = {
             "label": col_name,
             "type": col_role,
-            "significance_score": significance_score,
-            "semantic_categories": analysis['semantic_categories'],
-            "provenance": "enhanced_analysis"
+            "significance_score": analysis['significance_score'],
+            "semantic_categories": col_profile.get("semantic_tags", []),
+            "provenance": "profile_analysis"
         }
 
-        # Add specific metrics based on the column's role and semantic categories
-        series = df[col_name]
-
+        # Add specific metrics based on the column's role using ONLY profile data
+        stats = col_profile.get("stats", {})
         if col_role == 'numeric':
-            numeric_stats = analysis['numeric_stats']
-            if numeric_stats and numeric_stats.get('mean') is not None:
-                mean_val = numeric_stats.get('mean')
-                std_val = numeric_stats.get('std', 0.0)
-                if mean_val is not None and np.isfinite(mean_val):
-                    kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
-                else:
-                    kpi_info["value"] = "Invalid numeric value"
+            if stats and stats.get('mean') is not None:
+                mean_val = stats.get('mean', 0.0)
+                std_val = stats.get('std', 0.0)
+                kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
             else:
-                # Fallback: compute from series directly if stats weren't available in profile
-                numeric_series = pd.to_numeric(series, errors='coerce').dropna()
-                if len(numeric_series) > 0:
-                    mean_val = float(numeric_series.mean())
-                    std_val = float(numeric_series.std()) if len(numeric_series) > 1 else 0.0
-                    if np.isfinite(mean_val):
-                         kpi_info["value"] = f"{mean_val:.2f} (±{std_val:.2f})"
-                    else:
-                         kpi_info["value"] = "Invalid numeric value"
-                else:
-                    kpi_info["value"] = "No valid numeric values"
-
-            # Add outlier information if available in profile
-            outlier_count = numeric_stats.get('outlier_count', 0) if numeric_stats else 0
-            if outlier_count > 0 and 'Invalid' not in kpi_info["value"]:
-                kpi_info["value"] += f" [{outlier_count} outliers]"
+                kpi_info["value"] = "No valid numeric stats"
 
         elif col_role in ['categorical', 'text']:
-            # For categorical/text, show top value and distribution
-            top_categories = col.get("top_categories", [])
-            if top_categories:
-                top_val = top_categories[0]["value"]
-                top_count = top_categories[0]["count"]
-                total_valid = analysis['n_valid']
-                pct_top = (top_count / total_valid) * 100 if total_valid > 0 else 0
+            top_categories = col_profile.get("top_categories", [])
+            if top_categories and isinstance(top_categories, list) and len(top_categories) > 0:
+                top_val_info = top_categories[0]
+                top_val = top_val_info.get("value", "N/A")
+                top_count = top_val_info.get("count", 0)
+                
+                n_valid = col_profile.get("stats", {}).get("count", n_rows)
+                pct_top = (top_count / n_valid) * 100 if n_valid > 0 else 0
                 kpi_info["value"] = f"Top: '{top_val}' ({top_count}, {pct_top:.1f}%)"
             else:
-                kpi_info["value"] = "No valid values"
+                kpi_info["value"] = "No category data"
 
         elif col_role == 'datetime':
-            # For datetime, show time range from profile
-            stats = analysis.get('numeric_stats', {})
             if stats and stats.get('min') and stats.get('max'):
                 kpi_info["value"] = f"Range: {stats['min']} to {stats['max']}"
             else:
-                # Fallback to series if not in profile
-                try:
-                    datetime_series = pd.to_datetime(series, errors='coerce').dropna()
-                    if len(datetime_series) > 0:
-                        min_date = datetime_series.min().strftime('%Y-%m-%d')
-                        max_date = datetime_series.max().strftime('%Y-%m-%d')
-                        kpi_info["value"] = f"Range: {min_date} to {max_date}"
-                    else:
-                        kpi_info["value"] = "No valid dates"
-                except Exception as e:
-                    logger.warning(f"Error processing datetime column {col_name}: {e}")
-                    kpi_info["value"] = "Invalid datetime format"
-
+                kpi_info["value"] = "No date range data"
         else:
-            # For other roles, show basic statistics
-            kpi_info["value"] = f"Unique: {analysis['n_unique']}, Missing: {analysis['missing_count']}"
-
-        # Add semantic context to the value description if relevant
-        if analysis['semantic_categories']:
-            semantic_info = ", ".join(analysis['semantic_categories'])
-            kpi_info["value"] += f" [{semantic_info}]"
+            kpi_info["value"] = f"Unique: {col_profile.get('unique_count', 'N/A')}"
 
         kpis.append(kpi_info)
 
-    # Validation step: check for invalid KPIs and filter them out
-    validated_kpis = []
-    for kpi in kpis:
-        # Check for invalid values
-        if kpi.get('value') and kpi['value'] not in ['Invalid numeric value', 'No valid values', 'No valid numeric values', 'Invalid datetime format']:
-            # Check significance score is valid
-            sig_score = kpi.get('significance_score')
-            if sig_score is not None and not (isinstance(sig_score, float) and np.isnan(sig_score)):
-                validated_kpis.append(kpi)
-            else:
-                logger.warning(f"Filtered out KPI '{kpi.get('label')}' due to invalid significance score: {sig_score}")
-        else:
-            logger.warning(f"Filtered out KPI '{kpi.get('label')}' due to invalid value: {kpi.get('value')}")
+    # Final validation for correlation KPIs remains dependent on eda_summary
+    # This part does not use the raw 'df', so it is safe.
+    if eda_summary and eda_summary.get('correlation_insights'):
+        for insight in eda_summary['correlation_insights']:
+            if insight.get('type') == 'strong_correlation' and insight.get('details'):
+                for corr_detail in insight['details'][:2]: # Top 2 strong correlations
+                     kpis.append({
+                        "label": f"Corr: {corr_detail['variables'][0]} & {corr_detail['variables'][1]}",
+                        "value": f"{corr_detail['correlation']:.3f}",
+                        "type": "correlation",
+                        "significance_score": abs(corr_detail.get('correlation', 0)),
+                        "provenance": "correlation_insight"
+                     })
+                break 
 
-    kpis = validated_kpis
-
-    # Additionally, add some correlation-based KPIs if EDA summary is available
-    if eda_summary:
-        try:
-            # Try to get correlations from EDA summary first, then fall back to calculating
-            correlations = eda_summary.get('patterns_and_relationships', {}).get('correlations', [])
-            if not correlations:
-                 correlations = _calculate_correlations(df)
-
-            for abs_corr, corr_val, col1, col2 in correlations[:3]:  # Top 3 correlations
-                correlation_kpi = {
-                    "label": f"Correlation: {col1} ↔ {col2}",
-                    "value": f"{corr_val:.3f}",
-                    "type": "correlation",
-                    "correlation_value": corr_val,
-                    "columns": [col1, col2],
-                    "significance_score": abs(corr_val),  # Correlation strength as significance
-                    "provenance": "correlation_insight"
-                }
-
-                # Add correlation KPI if it's valid
-                if correlation_kpi['value'] and not (isinstance(correlation_kpi.get('significance_score'), float) and np.isnan(correlation_kpi.get('significance_score'))):
-                    kpis.append(correlation_kpi)
-        except Exception as e:
-            logger.warning(f"Error calculating or adding correlation-based KPIs: {e}")
-
-    logger.info(f"Generated {len(kpis)} enhanced KPIs")
+    logger.info(f"Generated {len(kpis)} KPIs purely from dataset profile.")
     return kpis
-
 
 def generate_basic_kpis(df: pd.DataFrame, dataset_profile: Dict[str, Any],
                        min_variability_threshold: float = 0.01,

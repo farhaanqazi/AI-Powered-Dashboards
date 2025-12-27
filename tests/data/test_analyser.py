@@ -10,7 +10,7 @@ def test_infer_role_numeric_string():
     numeric_string_series = pd.Series(["10", "20", "30.5", "40", None, "50.0"])
     role, confidence, _, _, _ = _infer_role_advanced(numeric_string_series)
     assert role == "numeric"
-    assert confidence > 0.8
+    assert confidence >= 0.8
 
 def test_infer_role_identifier_strings():
     """

@@ -336,7 +336,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
     # 6) KPIs (now using EDA insights for better identification)
     kpi_start = time.time()
     try:
-        kpis = generate_kpis(df, dataset_profile, eda_summary=eda_summary, top_k=10) # Limit KPIs for speed
+        kpis = generate_kpis(dataset_profile, eda_summary=eda_summary, top_k=10) # Limit KPIs for speed
         logger.info(f"Generated {len(kpis)} KPIs")
     except Exception as e:
         logger.exception("Error generating KPIs")
