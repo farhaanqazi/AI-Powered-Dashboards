@@ -348,6 +348,33 @@ async def load_external(request: Request, background_tasks: BackgroundTasks, ext
             "success": False
         })
 
+# === Temporary Persistence Test Endpoint (can be removed later) ===
+from pathlib import Path
+from datetime import datetime
+from fastapi.responses import PlainTextResponse
+
+TEST_FILE = Path("persistence_test.txt")
+
+@app.get("/test-persistence/{action}", response_class=PlainTextResponse)
+async def test_persistence(action: str):
+    if action == "write":
+        content = f"File written at: {datetime.utcnow().isoformat()}"
+        try:
+            TEST_FILE.write_text(content)
+            return f"SUCCESS: Wrote to {TEST_FILE.resolve()}. Content: '{content}'"
+        except Exception as e:
+            return f"ERROR during write: {e}"
+    
+    elif action == "read":
+        if TEST_FILE.exists():
+            content = TEST_FILE.read_text()
+            return f"SUCCESS: File exists after restart. Content: '{content}'"
+        else:
+            return f"FAILURE: File at {TEST_FILE.resolve()} does not exist after restart. Filesystem is ephemeral."
+    
+    return "Invalid action. Use '/test-persistence/write' or '/test-persistence/read'."
+# === End of Test Endpoint ===
+
 # Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
