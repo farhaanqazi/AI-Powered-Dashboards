@@ -550,7 +550,7 @@ def build_dataset_profile(df: pd.DataFrame, max_cols: int = 50, sample_size: Opt
 
     return {
         "n_rows": n_rows,
-        "n_cols": n_cols,
+        "n_cols": len(columns), # FIX: Use the count of columns actually profiled.
         "role_counts": role_counts,
         "columns": columns,
     }
