@@ -131,54 +131,27 @@ async def upload(request: Request, background_tasks: BackgroundTasks, dataset: U
                 "success": False
             })
 
-        # Validate that all required data exists and is the correct type before passing to template
         # Ensure all data structures are simple, serializable Python types
-        profile = state.profile if isinstance(state.profile, list) else []
         dataset_profile = state.dataset_profile if isinstance(state.dataset_profile, dict) else {}
         kpis = state.kpis if isinstance(state.kpis, list) else []
         charts = state.charts if isinstance(state.charts, list) else []
         primary_chart = state.primary_chart if state.primary_chart is not None else {}
-        category_charts = state.category_charts if isinstance(state.category_charts, dict) else {}
         all_charts = state.all_charts if isinstance(state.all_charts, list) else []
-        eda_summary = state.eda_summary if isinstance(state.eda_summary, dict) else {}
         original_filename = original_filename if original_filename else "Unknown"
-
-        # Validate and sanitize titles to ensure they are proper strings
-        def sanitize_chart_titles(chart_list):
-            if not chart_list:
-                return []
-            for chart in chart_list:
-                if 'title' in chart and chart['title']:
-                    chart['title'] = str(chart['title']).replace('_', ' ').title()
-            return chart_list
-
-        # Apply sanitization to all chart title fields
-        charts = sanitize_chart_titles(charts)
-        all_charts = sanitize_chart_titles(all_charts)
-
-        # If we have a primary chart, make sure its title is a proper string
-        if primary_chart and 'title' in primary_chart:
-            primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "profile": profile,
                 "dataset_profile": dataset_profile,
                 "kpis": kpis,
                 "charts": charts,
                 "primary_chart": primary_chart,
-                "category_charts": category_charts,
                 "all_charts": all_charts,
-                "eda_summary": eda_summary,
-                "critical_aggregates": state.critical_aggregates if state and hasattr(state, 'critical_aggregates') else {},
-                "critical_totals": state.critical_totals if state and hasattr(state, 'critical_totals') else {},
-                "critical_full_dataset_aggregates": state.critical_full_dataset_aggregates if state and hasattr(state, 'critical_full_dataset_aggregates') else {},
                 "original_filename": original_filename,
                 "success": True,
-                "errors": state.errors if state and hasattr(state, 'errors') else []
+                "errors": state.errors if hasattr(state, 'errors') else []
             }
         )
     except HTTPException as e:
@@ -276,53 +249,27 @@ async def load_external(request: Request, background_tasks: BackgroundTasks, ext
                 "success": False
             })
 
-        # Validate that all required data exists and is the correct type before passing to template
         # Ensure all data structures are simple, serializable Python types
-        profile = state.profile if isinstance(state.profile, list) else []
         dataset_profile = state.dataset_profile if isinstance(state.dataset_profile, dict) else {}
         kpis = state.kpis if isinstance(state.kpis, list) else []
         charts = state.charts if isinstance(state.charts, list) else []
         primary_chart = state.primary_chart if state.primary_chart is not None else {}
-        category_charts = state.category_charts if isinstance(state.category_charts, dict) else {}
         all_charts = state.all_charts if isinstance(state.all_charts, list) else []
-        eda_summary = state.eda_summary if isinstance(state.eda_summary, dict) else {}
         original_filename = original_filename if original_filename else "Unknown"
-
-        # Validate and sanitize titles to ensure they are proper strings
-        def sanitize_chart_titles(chart_list):
-            if not chart_list:
-                return []
-            for chart in chart_list:
-                if 'title' in chart and chart['title']:
-                    chart['title'] = str(chart['title']).replace('_', ' ').title()
-            return chart_list
-
-        # Apply sanitization to all chart title fields
-        charts = sanitize_chart_titles(charts)
-        all_charts = sanitize_chart_titles(all_charts)
-
-        # If we have a primary chart, make sure its title is a proper string
-        if primary_chart and 'title' in primary_chart:
-            primary_chart['title'] = str(primary_chart['title']).replace('_', ' ').title()
 
         # If state is returned successfully, pass data to dashboard template
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "profile": profile,
                 "dataset_profile": dataset_profile,
                 "kpis": kpis,
                 "charts": charts,
                 "primary_chart": primary_chart,
-                "category_charts": category_charts,
                 "all_charts": all_charts,
-                "eda_summary": eda_summary,
-                "critical_aggregates": state.critical_aggregates if state and hasattr(state, 'critical_aggregates') else {},
-                "critical_totals": state.critical_totals if state and hasattr(state, 'critical_totals') else {},
-                "critical_full_dataset_aggregates": state.critical_full_dataset_aggregates if state and hasattr(state, 'critical_full_dataset_aggregates') else {},
                 "original_filename": original_filename,
-                "success": True
+                "success": True,
+                "errors": state.errors if hasattr(state, 'errors') else []
             }
         )
     except HTTPException as e:
