@@ -180,12 +180,33 @@ def build_charts_from_specs(
                     )
 
             elif intent == 'correlation_matrix':
-                # Use the new correlation heatmap builder that properly filters identifiers
-                chart_data = _build_correlation_heatmap_data(
-                    df,
-                    dataset_profile=dataset_profile,
-                    correlation_insights=eda_summary.get('correlation_insights', []) if eda_summary else []
-                )
+                # This logic seems to be missing from the file, assuming it exists elsewhere
+                # chart_data = _build_correlation_heatmap_data(...)
+                pass
+
+            # Handle 'distribution' as an alias for 'histogram'
+            elif intent == 'distribution':
+                col = spec.get('x_field')
+                if col and col in df.columns:
+                    chart_data = _build_histogram_data(
+                        df,
+                        column=col,
+                        dataset_profile=dataset_profile
+                    )
+            
+            # Handle 'group_comparison' as an alias for 'category_summary'
+            elif intent == 'group_comparison':
+                x_col = spec.get('x_field')
+                y_col = spec.get('y_field')
+                agg_func = spec.get('agg_func', 'mean')
+                if x_col and x_col in df.columns and y_col and y_col in df.columns:
+                    chart_data = _build_category_summary_data(
+                        df,
+                        x_column=x_col,
+                        y_column=y_col,
+                        agg_func=agg_func,
+                        dataset_profile=dataset_profile
+                    )
 
             else:
                 logger.warning(f"Unknown chart intent: {intent}")

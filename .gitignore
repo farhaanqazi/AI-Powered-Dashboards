@@ -39,3 +39,4 @@ logs/
 *.xls
 *.parquet
 *.json
+AI_SESSION_CONTEXT.md
