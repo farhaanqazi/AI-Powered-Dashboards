@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 import pandas as pd
 from datetime import datetime
 import time
+import re
 # Corrected import paths based on the modular structure
 from src.data.analyser import build_dataset_profile, basic_profile
 from src.ml.kpi_generator import generate_kpis
@@ -121,6 +122,51 @@ class DashboardState:
     critical_full_dataset_aggregates: Optional[Dict[str, float]] = None
     errors: Optional[List[str]] = None
 
+def _reshape_if_wide_timeseries(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Detects if a DataFrame is in a wide time-series format (e.g., columns are years)
+    and, if so, reshapes it into a long format.
+
+    Returns:
+        The transformed DataFrame if reshaping was done, otherwise the original DataFrame.
+    """
+    # Regex to match columns that look like years (e.g., '1960', '2023', or 'col_1999' from cleaning)
+    year_pattern = re.compile(r'^(col_)?(19\d{2}|20\d{2})$')
+    year_cols = [col for col in df.columns if year_pattern.fullmatch(str(col))]
+
+    # Heuristic: If more than 5 columns are years and they represent a significant portion of the dataframe,
+    # assume it's a wide time-series.
+    if len(year_cols) > 5 and len(year_cols) / len(df.columns) > 0.3:
+        logger.info(f"Wide time-series format detected with {len(year_cols)} year-like columns. Reshaping data.")
+        
+        id_vars = [col for col in df.columns if col not in year_cols]
+        
+        # If there are no identifying columns, melting is ambiguous and risky.
+        if not id_vars:
+            logger.warning("No identifying columns found for reshaping wide time-series. Aborting transformation.")
+            return df
+        
+        # Melt the dataframe to convert it from wide to long format
+        try:
+            df_long = pd.melt(
+                df,
+                id_vars=id_vars,
+                value_vars=year_cols,
+                var_name='Year',
+                value_name='Value'
+            )
+            
+            # Clean up the 'Year' column to be a numeric type
+            df_long['Year'] = df_long['Year'].astype(str).str.replace(r'^(col_)?', '', regex=True).astype(int)
+            
+            logger.info(f"Reshaped DataFrame from {df.shape} to {df_long.shape}")
+            return df_long
+        except Exception as e:
+            logger.error(f"Failed to reshape wide time-series data: {e}. Proceeding with original format.")
+            return df
+
+    return df
+
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
                            max_categories: int = 10, max_charts: int = 20,
                            kpi_thresholds: Optional[Dict[str, float]] = None,
@@ -135,6 +181,10 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
         if df is None:
             logger.error("Input DataFrame is None")
             raise ValueError("Input DataFrame cannot be None")
+
+        # --- Detect and Reshape Wide Time-Series Data ---
+        df = _reshape_if_wide_timeseries(df)
+        # --- End of Reshaping Step ---
 
         # Ensure df is a pandas DataFrame
         if df is not None and not isinstance(df, pd.DataFrame):
