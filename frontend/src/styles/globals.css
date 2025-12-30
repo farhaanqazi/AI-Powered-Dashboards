@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background: radial-gradient(circle at 20% 20%, rgba(147, 197, 253, 0.1), transparent 25%),
+              radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.1), transparent 30%),
+              radial-gradient(circle at 40% 80%, rgba(74, 222, 128, 0.08), transparent 30%),
+              #f9fafb;
+  color: #1f2937;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
+.light-card {
+  @apply bg-white/90 border border-gray-200 rounded-2xl p-6 shadow-sm;
+}
+
+.gradient-text {
+  background: linear-gradient(120deg, #3b82f6, #8b5cf6, #10b981);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.floating {
+  animation: float 8s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+
+.chart-container {
+  min-height: 200px;
+  height: 100%;
+  width: 100%;
+  position: relative;
+}
+
+.tab {
+  @apply text-gray-500 border-b-2 border-transparent;
+}
+
+.tab-active {
+  @apply text-gray-900 border-b-2 border-blue-500;
+}
+
+.kpi-badge {
+  @apply transition-colors duration-200 cursor-pointer;
+}
+
+.kpi-badge:hover {
+  @apply bg-blue-50 text-blue-700;
+}
