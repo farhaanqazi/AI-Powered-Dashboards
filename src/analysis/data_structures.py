@@ -5,6 +5,7 @@ This module defines the structured data classes (e.g., using dataclasses or Pyda
 that are passed between the layers of the analysis engine. This ensures a clear,
 typed contract between each step of the analysis.
 """
+import pandas as pd
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 
@@ -39,3 +40,17 @@ class AnalysisOutput:
     relational_insights: List[RelationalInsight]
     kpis: List[Dict[str, Any]]
     charts: List[Dict[str, Any]]
+
+@dataclass
+class DashboardState:
+    """Structured return type for the final dashboard state passed to the UI."""
+    df: pd.DataFrame
+    dataset_profile: Dict[str, Any]
+    profile: List[Dict[str, Any]] # Deprecated, but kept for compatibility
+    kpis: List[Dict[str, Any]]
+    charts: List[Dict[str, Any]]
+    primary_chart: Optional[Dict[str, Any]]
+    category_charts: Dict[str, Any]
+    all_charts: List[Dict[str, Any]]
+    original_filename: Optional[str] = None
+    errors: List[str] = field(default_factory=list)
