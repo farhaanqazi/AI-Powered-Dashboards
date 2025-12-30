@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 def validate_pipeline_contract(df: pd.DataFrame, dataset_profile: dict) -> bool:
     """
     Validate the pipeline contract between DataFrame and dataset_profile.
+    This version correctly handles partially profiled datasets (where the number
+    of columns in the profile is less than the DataFrame).
     Returns True if validation passes, False otherwise.
     """
     if not isinstance(df, pd.DataFrame):
@@ -38,22 +40,24 @@ def validate_pipeline_contract(df: pd.DataFrame, dataset_profile: dict) -> bool:
         logger.error("dataset_profile missing 'n_rows' or 'n_cols' keys")
         return False
 
-    # Check that the column names in profile match the DataFrame columns
+    # 1. Check that the columns in the profile are a valid subset of the DataFrame columns.
     profile_col_names = {col.get('name') for col in dataset_profile.get('columns', []) if col.get('name')}
     df_col_names = set(df.columns)
 
-    if profile_col_names != df_col_names:
-        logger.error(f"Mismatch between profile columns {profile_col_names} and DataFrame columns {df_col_names}")
+    if not profile_col_names.issubset(df_col_names):
+        logger.error(f"Profile contains columns not present in the DataFrame: {profile_col_names - df_col_names}")
         return False
 
-    # Check that row counts match
+    # 2. Check for internal consistency in the profile's column count.
+    # The number of columns in the 'columns' list must match the 'n_cols' field.
+    if len(dataset_profile.get('columns', [])) != dataset_profile.get('n_cols', -1):
+        logger.error(f"Inconsistency in profile: {len(dataset_profile.get('columns', []))} columns listed but n_cols is {dataset_profile.get('n_cols')}")
+        return False
+        
+    # 3. Check that row count in profile matches the DataFrame row count.
+    # The profiler always runs on the full set of rows, even if columns are limited.
     if len(df) != dataset_profile.get('n_rows', -1):
         logger.error(f"Mismatch between DataFrame rows ({len(df)}) and profile rows ({dataset_profile.get('n_rows')})")
-        return False
-
-    # Check that column counts match
-    if len(df.columns) != dataset_profile.get('n_cols', -1):
-        logger.error(f"Mismatch between DataFrame columns ({len(df.columns)}) and profile columns ({dataset_profile.get('n_cols')})")
         return False
 
     return True
@@ -238,18 +242,24 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = None,
 
         # --- Calculate critical totals for financial/quantitative columns ---
         critical_totals = {}
-        financial_keywords = ['amount', 'revenue', 'price', 'total', 'cost', 'expense', 'profit', 'fee', 'charge', 'payment', 'income', 'value']
-        quantity_keywords = ['qty', 'quantity', 'count', 'volume', 'size', 'number']
+        
+        # Keywords for metrics that are semantically valid to aggregate by summation (flows).
+        # This list explicitly EXCLUDES terms like 'price', 'rate', 'level', 'score', 'bmi', 'density', 'rank'
+        # which represent point-in-time values or ratios, not summable quantities.
+        aggregatable_keywords = [
+            'revenue', 'sales', 'amount', 'cost', 'expense', 'profit', 'fee',
+            'charge', 'payment', 'income', 'funding', 'investment', 'dividend',
+            'quantity', 'qty', 'count', 'volume', 'usage', 'total'
+        ]
 
         for col in df.columns:
             col_lower = col.lower()
 
-            # Check if column is numeric and matches financial keywords
-            if pd.api.types.is_numeric_dtype(df[col]) and any(keyword in col_lower for keyword in financial_keywords):
-                critical_totals[f"Total {col.replace('_', ' ').title()}"] = df[col].sum()
-
-            # Check if column is numeric and matches quantity keywords
-            if pd.api.types.is_numeric_dtype(df[col]) and any(keyword in col_lower for keyword in quantity_keywords):
+            # Check if the column is numeric AND its name suggests it's a summable quantity.
+            if pd.api.types.is_numeric_dtype(df[col]) and any(keyword in col_lower for keyword in aggregatable_keywords):
+                # Add an extra check to exclude columns that are likely ratios or prices despite keywords
+                if 'price' in col_lower or 'rate' in col_lower or 'level' in col_lower:
+                    continue
                 critical_totals[f"Total {col.replace('_', ' ').title()}"] = df[col].sum()
         # ---------------------------------
 
