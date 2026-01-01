@@ -26,12 +26,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY . .
 
 # Install frontend dependencies and build the React app
-WORKDIR /app/frontend
-RUN npm install
-RUN npm run build
-
-# Switch back to main directory
 WORKDIR /app
+RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
+    echo "Frontend directory exists, building React app..."; \
+    cd frontend && npm install && npm run build; \
+    else \
+    echo "Frontend directory does not exist or package.json is missing"; \
+    ls -la; \
+    exit 1; \
+    fi
 
 # Create a non-root user and switch to it
 RUN useradd --create-home --shell /bin/bash --uid 1001 appuser && \
