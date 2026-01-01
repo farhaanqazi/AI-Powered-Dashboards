@@ -15,10 +15,16 @@ from src.data.parser import load_csv_from_url, load_csv_from_kaggle, LoadResult 
 from starlette.responses import RedirectResponse
 import logging
 from src import config
+from typing import Optional
+import requests
+import uuid
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Temporary Global State for Dashboard ---
+_last_dashboard_state: Optional[dict] = None
 
 # --- Pydantic Models for Request Validation ---
 class UploadFileRequest(BaseModel):
@@ -295,6 +301,145 @@ async def load_external(request: Request, background_tasks: BackgroundTasks, ext
             "success": False
         })
 
+# --- NEW API ENDPOINTS FOR REACT ---
+@app.post("/api/upload")
+async def api_upload(dataset: UploadFile = File(...)):
+    global _last_dashboard_state
+    trace_id = str(uuid.uuid4()) # Generate a trace_id for each request
+    try:
+        if not dataset.filename.lower().endswith('.csv'):
+            raise HTTPException(status_code=400, detail="Only CSV files are allowed.")
+
+        contents = await dataset.read()
+        if not contents:
+            raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+        file_stream = io.BytesIO(contents)
+        file_stream.seek(0)
+        original_filename = dataset.filename
+
+        state = build_dashboard_from_file(file_stream, original_filename=original_filename)
+
+        if state is None:
+            raise HTTPException(status_code=500, detail="Failed to read CSV file or build dashboard. Please ensure the file is a valid CSV with proper structure.")
+
+        # Ensure all data structures are simple, serializable Python types for global state and JSON response
+        response_data = {
+            "dataset_profile": state.dataset_profile if isinstance(state.dataset_profile, dict) else {},
+            "kpis": state.kpis if isinstance(state.kpis, list) else [],
+            "charts": state.charts if isinstance(state.charts, list) else [],
+            "primary_chart": state.primary_chart if state.primary_chart is not None else {},
+            "category_charts": state.category_charts if isinstance(state.category_charts, dict) else {},
+            "all_charts": state.all_charts if isinstance(state.all_charts, list) else [],
+            "original_filename": original_filename,
+            "errors": state.errors if hasattr(state, 'errors') else []
+        }
+
+        _last_dashboard_state = response_data # Store the state globally
+
+        return {
+            "status": "success",
+            "message": "File uploaded and dashboard processed successfully.",
+            "trace_id": trace_id,
+            "data": response_data
+        }
+
+    except HTTPException as e:
+        logger.error(f"HTTP error during API upload: {e.detail}")
+        return {"status": "error", "message": e.detail, "trace_id": trace_id, "data": None}
+    except UnicodeDecodeError as e:
+        logger.error(f"File encoding error during API upload: {e}")
+        return {"status": "error", "message": f"File encoding error - try saving your CSV file with UTF-8 encoding: {str(e)}", "trace_id": trace_id, "data": None}
+    except pd.errors.EmptyDataError:
+        logger.error("CSV file is empty during API upload")
+        return {"status": "error", "message": "CSV file is empty. Please provide a valid CSV file with data.", "trace_id": trace_id, "data": None}
+    except pd.errors.ParserError as e:
+        logger.error(f"CSV parsing error during API upload: {e}")
+        return {"status": "error", "message": f"Error parsing CSV file: {str(e)}. Please check your CSV file format.", "trace_id": trace_id, "data": None}
+    except Exception as e:
+        logger.exception(f"Error processing uploaded file via API: {e}")
+        return {"status": "error", "message": f"An unexpected error occurred: {type(e).__name__} - {str(e)}", "trace_id": trace_id, "data": None}
+
+@app.post("/api/load_external")
+async def api_load_external(load_request: LoadExternalRequest):
+    global _last_dashboard_state
+    trace_id = str(uuid.uuid4()) # Generate a trace_id for each request
+    external_source = load_request.external_source
+    try:
+        if not external_source:
+            raise HTTPException(status_code=400, detail="No external source provided. Please enter a URL or Kaggle dataset identifier.")
+
+        if external_source.startswith("http://") or external_source.startswith("https://"):
+            df_load_result = load_csv_from_url(external_source)
+        else:
+            df_load_result = load_csv_from_kaggle(external_source)
+
+        if not df_load_result.success:
+            logger.error(f"Failed to load external dataset: {df_load_result.error_code} - {df_load_result.detail}")
+            raise HTTPException(status_code=400, detail=f"Failed to load dataset from external source: {df_load_result.detail or df_load_result.error_code}")
+
+        df = df_load_result.df
+        if df is None:
+             logger.error("Loaded DataFrame is None after successful LoadResult.")
+             raise HTTPException(status_code=500, detail="Failed to load dataset from external source (internal error).")
+
+        if external_source.startswith("http://") or external_source.startswith("https://"):
+            import urllib.parse
+            parsed_path = urllib.parse.urlparse(external_source).path
+            original_filename = parsed_path.split('/')[-1] or external_source
+        else:
+            original_filename = external_source.split('/')[-1].replace('-', ' ').title() or "Kaggle Dataset"
+
+        state = build_dashboard_from_df(df)
+
+        if state is None:
+            logger.error("Failed to build dashboard from external dataset.")
+            raise HTTPException(status_code=500, detail="Failed to build dashboard from the loaded dataset. The dataset may have structural issues or be incompatible.")
+
+        response_data = {
+            "dataset_profile": state.dataset_profile if isinstance(state.dataset_profile, dict) else {},
+            "kpis": state.kpis if isinstance(state.kpis, list) else [],
+            "charts": state.charts if isinstance(state.charts, list) else [],
+            "primary_chart": state.primary_chart if state.primary_chart is not None else {},
+            "category_charts": state.category_charts if isinstance(state.category_charts, dict) else {},
+            "all_charts": state.all_charts if isinstance(state.all_charts, list) else [],
+            "original_filename": original_filename,
+            "errors": state.errors if hasattr(state, 'errors') else []
+        }
+
+        _last_dashboard_state = response_data # Store the state globally
+
+        return {
+            "status": "success",
+            "message": "Dataset loaded and dashboard processed successfully.",
+            "trace_id": trace_id,
+            "data": response_data
+        }
+
+    except HTTPException as e:
+        logger.error(f"HTTP error during API external load: {e.detail}")
+        return {"status": "error", "message": e.detail, "trace_id": trace_id, "data": None}
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Network error during API external load: {e}")
+        return {"status": "error", "message": f"Network error loading external dataset: {str(e)}. Please check the URL or your internet connection.", "trace_id": trace_id, "data": None}
+    except Exception as e:
+        logger.exception(f"Error loading external dataset via API: {e}")
+        return {"status": "error", "message": f"An unexpected error occurred: {type(e).__name__} - {str(e)}", "trace_id": trace_id, "data": None}
+
+@app.get("/api/dashboard")
+async def api_get_dashboard():
+    global _last_dashboard_state
+    trace_id = str(uuid.uuid4()) # Generate a trace_id for this request
+    if _last_dashboard_state:
+        return {
+            "status": "success",
+            "message": "Dashboard state retrieved successfully.",
+            "trace_id": trace_id,
+            "data": _last_dashboard_state
+        }
+    else:
+        raise HTTPException(status_code=404, detail="No dashboard data available. Please upload a file or load an external source first.")
+
 # === Temporary Persistence Test Endpoint (can be removed later) ===
 from pathlib import Path
 from datetime import datetime
@@ -324,6 +469,13 @@ async def test_persistence(action: str):
 
 # Mount static files directory
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Mount React application static files
+app.mount(
+  "/app",
+  StaticFiles(directory="frontend/dist", html=True),
+  name="react_app"
+)
 
 if __name__ == "__main__":
     import uvicorn
