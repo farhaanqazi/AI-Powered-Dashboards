@@ -40,3 +40,5 @@ logs/
 *.parquet
 *.json
 AI_SESSION_CONTEXT.md
+node_modules/
+frontend/dist/
