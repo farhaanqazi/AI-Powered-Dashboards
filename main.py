@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -13,6 +13,9 @@ import requests
 from typing import Optional
 from pathlib import Path
 from datetime import datetime
+import json
+from threading import Lock
+from starlette.middleware.sessions import SessionMiddleware
 
 # ---- Internal imports ----
 from src.core.pipeline import build_dashboard_from_file, build_dashboard_from_df
@@ -22,8 +25,15 @@ from src.data.parser import load_csv_from_url, load_csv_from_kaggle
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ---------------- DASHBOARD STATE STORAGE ----------------
+dashboard_storage = {}
+storage_lock = Lock()
+
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
+
+# Add session middleware
+app.add_middleware(SessionMiddleware, secret_key="dashboard_secret_key")
 
 # ---------------- JINJA SETUP (Diagnostics UI) ----------------
 env = Environment(
@@ -83,6 +93,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         )
 
     contents = await dataset.read()
+    file_stream = io.BytesIO(contents)
     state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
 
     if not state:
@@ -90,6 +101,23 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
             "index.html",
             {"request": request, "error_message": "Processing failed.", "success": False},
         )
+
+    # Store the dashboard state in the session for consistency
+    dashboard_data = {
+        "dataset_profile": state.dataset_profile,
+        "kpis": state.kpis,
+        "charts": state.charts,
+        "primary_chart": state.primary_chart,
+        "category_charts": getattr(state, "category_charts", {}),
+        "all_charts": state.all_charts,
+        "original_filename": dataset.filename,
+        "errors": getattr(state, "errors", []),
+        "critical_totals": getattr(state, "critical_totals", {}),
+        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+        "eda_summary": getattr(state, "eda_summary", {})
+    }
+
+    request.session['dashboard_data'] = dashboard_data
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -102,6 +130,9 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
             "all_charts": state.all_charts,
             "original_filename": dataset.filename,
             "errors": getattr(state, "errors", []),
+            "critical_totals": getattr(state, "critical_totals", {}),
+            "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+            "eda_summary": getattr(state, "eda_summary", {}),
             "success": True,
         },
     )
@@ -121,6 +152,23 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
     state = build_dashboard_from_df(result.df)
 
+    # Store the dashboard state in the session for consistency
+    dashboard_data = {
+        "dataset_profile": state.dataset_profile,
+        "kpis": state.kpis,
+        "charts": state.charts,
+        "primary_chart": state.primary_chart,
+        "category_charts": getattr(state, "category_charts", {}),
+        "all_charts": state.all_charts,
+        "original_filename": external_source,
+        "errors": getattr(state, "errors", []),
+        "critical_totals": getattr(state, "critical_totals", {}),
+        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+        "eda_summary": getattr(state, "eda_summary", {})
+    }
+
+    request.session['dashboard_data'] = dashboard_data
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -132,6 +180,9 @@ async def load_external(request: Request, external_source: str = Form(...)):
             "all_charts": state.all_charts,
             "original_filename": external_source,
             "errors": getattr(state, "errors", []),
+            "critical_totals": getattr(state, "critical_totals", {}),
+            "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+            "eda_summary": getattr(state, "eda_summary", {}),
             "success": True,
         },
     )
@@ -141,7 +192,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
 # =========================================================
 
 @app.post("/api/upload")
-async def api_upload(dataset: UploadFile = File(...)):
+async def api_upload(request: Request, dataset: UploadFile = File(...)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename.lower().endswith(".csv"):
@@ -163,7 +214,13 @@ async def api_upload(dataset: UploadFile = File(...)):
         "all_charts": state.all_charts,
         "original_filename": dataset.filename,
         "errors": getattr(state, "errors", []),
+        "critical_totals": getattr(state, "critical_totals", {}),
+        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+        "eda_summary": getattr(state, "eda_summary", {})
     }
+
+    # Store the dashboard state in the session
+    request.session['dashboard_data'] = response_data
 
     return {
         "status": "success",
@@ -194,13 +251,31 @@ async def api_load_external(req: LoadExternalRequest):
         "all_charts": state.all_charts,
         "original_filename": req.external_source,
         "errors": getattr(state, "errors", []),
+        "critical_totals": getattr(state, "critical_totals", {}),
+        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+        "eda_summary": getattr(state, "eda_summary", {})
     }
+
+    # Store the dashboard state in the session
+    request.session['dashboard_data'] = response_data
 
     return {
         "status": "success",
         "trace_id": trace_id,
         "data": response_data,
     }
+
+# Add the missing /api/dashboard endpoint
+@app.get("/api/dashboard")
+async def api_get_dashboard(request: Request):
+    # Get the dashboard data from the session
+    dashboard_data = request.session.get('dashboard_data')
+
+    if not dashboard_data:
+        raise HTTPException(status_code=404, detail="No dashboard data available in session")
+
+    # Return the dashboard data directly to match frontend expectations
+    return dashboard_data
 
 
 
@@ -238,6 +313,8 @@ app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react-
 async def serve_react_app(request: Request, full_path: str):
     # This catch-all route ensures that client-side routing in React works correctly.
     # Any route not matched by your API or other static mounts will serve the React app.
+    # FastAPI will match more specific routes (like /api/upload) before this catch-all,
+    # so this should only serve the React app for frontend routes like /dashboard, /settings, etc.
     return FileResponse("frontend/dist/index.html")
 
 # --- END: New SPA Serving Logic ---

@@ -60,7 +60,19 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         df = _reshape_if_wide_timeseries(df)
         if df.empty:
             logger.warning("DataFrame is empty after initial prep.")
-            return DashboardState(df=df, dataset_profile={}, profile=[], kpis=[], charts=[], primary_chart=None, category_charts={}, all_charts=[])
+            return DashboardState(
+                df=df,
+                dataset_profile={},
+                profile=[],
+                kpis=[],
+                charts=[],
+                primary_chart=None,
+                category_charts={},
+                all_charts=[],
+                critical_totals={},
+                critical_full_dataset_aggregates={},
+                eda_summary={}
+            )
 
         # --- 4-LAYER ANALYSIS PIPELINE ---
         # Layer 1: Get raw facts
@@ -84,8 +96,15 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
+        # Calculate role counts
+        role_counts = {}
+        for profile in enriched_profiles.values():
+            role = profile.role
+            role_counts[role] = role_counts.get(role, 0) + 1
+
         dataset_profile_for_viz = {
             "n_rows": len(df), "n_cols": len(enriched_profiles),
+            "role_counts": role_counts,
             "columns": [p.__dict__ for p in enriched_profiles.values()]
         }
 
@@ -102,7 +121,10 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             category_charts={},
             all_charts=all_charts,
             original_filename=original_filename,
-            errors=[]
+            errors=[],
+            critical_totals={},
+            critical_full_dataset_aggregates={},
+            eda_summary={}
         )
         return state
 
@@ -111,7 +133,20 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         errors = [f"{type(e).__name__}: {e}"]
         # Create a minimal state for error reporting
         if not state:
-            state = DashboardState(df=df, dataset_profile={}, profile=[], kpis=[], charts=[], primary_chart=None, category_charts={}, all_charts=[], errors=errors)
+            state = DashboardState(
+                df=df,
+                dataset_profile={},
+                profile=[],
+                kpis=[],
+                charts=[],
+                primary_chart=None,
+                category_charts={},
+                all_charts=[],
+                errors=errors,
+                critical_totals={},
+                critical_full_dataset_aggregates={},
+                eda_summary={}
+            )
         else:
             state.errors = errors
         return state

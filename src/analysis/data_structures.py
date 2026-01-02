@@ -54,3 +54,6 @@ class DashboardState:
     all_charts: List[Dict[str, Any]]
     original_filename: Optional[str] = None
     errors: List[str] = field(default_factory=list)
+    critical_totals: Dict[str, Any] = field(default_factory=dict)
+    critical_full_dataset_aggregates: Dict[str, Any] = field(default_factory=dict)
+    eda_summary: Dict[str, Any] = field(default_factory=dict)
