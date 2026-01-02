@@ -33,9 +33,13 @@ RUN cd frontend && npm install
 COPY . .
 
 # Build the React frontend
-RUN cd frontend && npm run build && \
-    echo "✅ Frontend built successfully" && \
-    ls -la frontend/dist/
+RUN cd frontend && \
+    npm run build && \
+    echo "✅ Build command completed" && \
+    pwd && \
+    ls -la && \
+    ls -la dist/ && \
+    echo "✅ Frontend built successfully"
 # --- End of Frontend Build ---
 
 # Create a non-root user and switch to it
