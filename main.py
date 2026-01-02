@@ -83,14 +83,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         )
 
     contents = await dataset.read()
-    if not contents:
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Empty file.", "success": False},
-        )
-
-    file_stream = io.BytesIO(contents)
-    state = build_dashboard_from_file(file_stream, dataset.filename)
+    state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
 
     if not state:
         return templates.TemplateResponse(
@@ -157,7 +150,7 @@ async def api_upload(dataset: UploadFile = File(...)):
     contents = await dataset.read()
     file_stream = io.BytesIO(contents)
 
-    state = build_dashboard_from_file(file_stream, dataset.filename)
+    state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
     if not state:
         raise HTTPException(status_code=500, detail="Dashboard build failed.")
 
