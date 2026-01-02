@@ -16,7 +16,7 @@ from src.analysis.layer_4_interpreter import determine_kpis, select_charts
 
 # --- Existing Visualization and Data Structures ---
 from src.viz.plotly_renderer import build_charts_from_specs
-from src.analysis.data_structures import DashboardState
+from src.analysis.data_structures import DashboardState, EnrichedProfile
 
 logger = logging.getLogger(__name__)
 
