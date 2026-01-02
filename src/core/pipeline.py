@@ -34,7 +34,7 @@ def _reshape_if_wide_timeseries(df: pd.DataFrame) -> pd.DataFrame:
         if not id_vars:
             logger.warning("No identifying columns found for reshaping wide time-series. Aborting.")
             return df
-        
+
         try:
             df_long = pd.melt(df, id_vars=id_vars, value_vars=year_cols, var_name='Year', value_name='Value')
             df_long['Year'] = df_long['Year'].astype(str).str.replace(r'^(col_)?', '', regex=True).astype(int)
@@ -44,6 +44,50 @@ def _reshape_if_wide_timeseries(df: pd.DataFrame) -> pd.DataFrame:
             logger.error(f"Failed to reshape wide time-series data: {e}. Proceeding with original format.")
             return df
     return df
+
+
+def _detect_dataset_grain(enriched_profiles: Dict[str, EnrichedProfile], df: pd.DataFrame) -> str:
+    """
+    Detects whether the dataset represents event-level (transactional) or entity-level (descriptive) records.
+
+    Event-level: Each row represents an event/transaction (e.g., sales, orders, clicks)
+    Entity-level: Each row represents an entity (e.g., customers, products, cars)
+    """
+    # Count identifier and entity-like columns
+    identifier_count = 0
+    numeric_count = 0
+
+    for col_name, profile in enriched_profiles.items():
+        if profile.role == 'identifier':
+            identifier_count += 1
+        elif profile.role == 'numeric':
+            numeric_count += 1
+
+    # If we have many identifiers relative to other columns, it's likely entity-level
+    # If we have many numeric transactional metrics, it's likely event-level
+    total_cols = len(enriched_profiles)
+
+    if total_cols == 0:
+        return "unknown"
+
+    identifier_ratio = identifier_count / total_cols
+    numeric_ratio = numeric_count / total_cols
+
+    # Heuristic: if more than 30% of columns are identifiers, likely entity-level
+    # If more than 40% are numeric and we have transactional indicators, likely event-level
+    if identifier_ratio > 0.3:
+        return "entity-level"  # Each row describes a unique entity
+
+    # Look for transactional indicators (datetime + numeric combinations)
+    datetime_count = sum(1 for profile in enriched_profiles.values() if profile.role == 'datetime')
+    if datetime_count > 0 and numeric_count > 0:
+        return "event-level"  # Likely transactional data with timestamps
+
+    # Default heuristic based on column composition
+    if numeric_ratio > 0.4:
+        return "event-level"  # Likely transactional/quantitative data
+    else:
+        return "entity-level"  # Likely descriptive entity data
 
 
 def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
@@ -87,13 +131,16 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         relational_insights = run_relational_analysis(df, enriched_profiles)
         tracer.record_custom_event(trace_id, "layer_3_complete", {"insights_found": len(relational_insights)})
 
+        # Detect dataset grain (event-level vs entity-level)
+        dataset_grain = _detect_dataset_grain(enriched_profiles, df)
+
         # Layer 4: Decide what to show
         kpis = determine_kpis(enriched_profiles, relational_insights)
         tracer.record_kpi_generation(trace_id, kpis)
-        
+
         chart_specs = select_charts(enriched_profiles, relational_insights)
         tracer.record_chart_selection(trace_id, chart_specs)
-        
+
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
         # Calculate role counts
@@ -105,12 +152,13 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         dataset_profile_for_viz = {
             "n_rows": len(df), "n_cols": len(enriched_profiles),
             "role_counts": role_counts,
+            "dataset_grain": dataset_grain,  # Add dataset grain information
             "columns": [p.__dict__ for p in enriched_profiles.values()]
         }
 
         all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
         primary_chart = next((c for c in all_charts if c.get('type') == 'bar'), None)
-        
+
         state = DashboardState(
             df=df,
             dataset_profile=dataset_profile_for_viz,
