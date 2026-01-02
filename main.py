@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -15,7 +15,6 @@ from pathlib import Path
 from datetime import datetime
 import json
 from threading import Lock
-from starlette.middleware.sessions import SessionMiddleware
 
 # ---- Internal imports ----
 from src.core.pipeline import build_dashboard_from_file, build_dashboard_from_df
@@ -31,9 +30,6 @@ storage_lock = Lock()
 
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
-
-# Add session middleware
-app.add_middleware(SessionMiddleware, secret_key="dashboard_secret_key")
 
 # ---------------- JINJA SETUP (Diagnostics UI) ----------------
 env = Environment(
@@ -102,7 +98,7 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
             {"request": request, "error_message": "Processing failed.", "success": False},
         )
 
-    # Store the dashboard state in the session for consistency
+    # Store the dashboard state in memory for API access
     dashboard_data = {
         "dataset_profile": state.dataset_profile,
         "kpis": state.kpis,
@@ -117,7 +113,9 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    request.session['dashboard_data'] = dashboard_data
+    # Store as the most recent for API access
+    with storage_lock:
+        dashboard_storage['most_recent'] = dashboard_data
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -152,7 +150,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
     state = build_dashboard_from_df(result.df)
 
-    # Store the dashboard state in the session for consistency
+    # Store the dashboard state in memory for API access
     dashboard_data = {
         "dataset_profile": state.dataset_profile,
         "kpis": state.kpis,
@@ -167,7 +165,9 @@ async def load_external(request: Request, external_source: str = Form(...)):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    request.session['dashboard_data'] = dashboard_data
+    # Store as the most recent for API access
+    with storage_lock:
+        dashboard_storage['most_recent'] = dashboard_data
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -192,7 +192,7 @@ async def load_external(request: Request, external_source: str = Form(...)):
 # =========================================================
 
 @app.post("/api/upload")
-async def api_upload(request: Request, dataset: UploadFile = File(...)):
+async def api_upload(dataset: UploadFile = File(...)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename.lower().endswith(".csv"):
@@ -219,8 +219,13 @@ async def api_upload(request: Request, dataset: UploadFile = File(...)):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    # Store the dashboard state in the session
-    request.session['dashboard_data'] = response_data
+    # Store the dashboard state for later retrieval using the trace_id
+    with storage_lock:
+        dashboard_storage[trace_id] = response_data
+
+    # Also store as the most recent for simple access
+    with storage_lock:
+        dashboard_storage['most_recent'] = response_data
 
     return {
         "status": "success",
@@ -256,8 +261,13 @@ async def api_load_external(req: LoadExternalRequest):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    # Store the dashboard state in the session
-    request.session['dashboard_data'] = response_data
+    # Store the dashboard state for later retrieval using the trace_id
+    with storage_lock:
+        dashboard_storage[trace_id] = response_data
+
+    # Also store as the most recent for simple access
+    with storage_lock:
+        dashboard_storage['most_recent'] = response_data
 
     return {
         "status": "success",
@@ -267,12 +277,13 @@ async def api_load_external(req: LoadExternalRequest):
 
 # Add the missing /api/dashboard endpoint
 @app.get("/api/dashboard")
-async def api_get_dashboard(request: Request):
-    # Get the dashboard data from the session
-    dashboard_data = request.session.get('dashboard_data')
+async def api_get_dashboard():
+    # Get the most recently stored dashboard
+    with storage_lock:
+        dashboard_data = dashboard_storage.get('most_recent')
 
     if not dashboard_data:
-        raise HTTPException(status_code=404, detail="No dashboard data available in session")
+        raise HTTPException(status_code=404, detail="No dashboard data available")
 
     # Return the dashboard data directly to match frontend expectations
     return dashboard_data
