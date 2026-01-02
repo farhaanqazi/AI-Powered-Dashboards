@@ -127,7 +127,19 @@ const ChartRenderer = ({ chartData }) => {
     <Plot
       data={plotlyData}
       layout={layout}
-      config={{ displayModeBar: true, responsive: true }}
+      config={{
+        displayModeBar: true,
+        responsive: true,
+        displaylogo: false,
+        modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d', 'resetScale2d'],
+        toImageButtonOptions: {
+          format: 'png',
+          filename: 'chart',
+          height: 600,
+          width: 800,
+          scale: 2
+        }
+      }}
       style={{ width: '100%', height: '100%' }}
     />
   );

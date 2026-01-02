@@ -81,8 +81,8 @@ const UploadPage = () => {
                 <i className="fas fa-bolt mr-2"></i> AI-Powered Insights in Seconds
               </div>
 
-              <h1 className="text-4xl md:text-6xl font-bold text-gray-900 leading-tight">
-                Transform Your Data into <span className="hero-gradient">Actionable Insights</span>
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-gray-900 leading-tight mb-6">
+                Transform Your Data into <span className="bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Actionable Insights</span>
               </h1>
 
               <p className="text-xl text-gray-600 max-w-2xl leading-relaxed">
@@ -130,24 +130,35 @@ const UploadPage = () => {
               </div>
 
               <div className="space-y-6">
-                <div className="upload-area rounded-2xl p-6 transition-all">
+                <div className="upload-area rounded-2xl p-6 transition-all border-2 border-dashed border-gray-300 hover:border-blue-400 bg-gray-50">
                   <div className="text-center">
                     <i className="fas fa-cloud-upload-alt text-4xl text-blue-500 mb-4"></i>
                     <h4 className="text-lg font-semibold text-gray-900 mb-2">Upload CSV File</h4>
                     <p className="text-gray-600 text-sm mb-4">Drag & drop or click to browse</p>
                     <form onSubmit={handleUpload} className="space-y-3">
-                      <label className="block">
+                      <label className="block cursor-pointer">
                         <input
                           type="file"
                           accept=".csv"
                           onChange={handleFileChange}
-                          className="file-input file-input-bordered w-full text-gray-700 bg-white border-gray-300"
+                          className="hidden"
                         />
+                        <div className="p-4 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                          {file ? (
+                            <div className="text-center">
+                              <i className="fas fa-file-csv text-green-500 text-xl mb-2"></i>
+                              <p className="text-sm font-medium text-gray-900 truncate">{file.name}</p>
+                              <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                            </div>
+                          ) : (
+                            <p className="text-gray-600 text-sm">Choose a CSV file</p>
+                          )}
+                        </div>
                       </label>
                       <button
                         type="submit"
-                        disabled={loading}
-                        className="btn btn-primary-gradient w-full"
+                        disabled={loading || !file}
+                        className={`btn w-full ${file ? 'btn-primary-gradient' : 'btn-disabled'}`}
                       >
                         <i className="fas fa-chart-line mr-2"></i>
                         {loading ? 'Processing...' : 'Generate Dashboard'}
