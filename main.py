@@ -389,9 +389,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- START: New SPA Serving Logic with Cache Busting ---
 
-# Mount the React frontend's static assets (js, css, images, etc.)
-# This MUST come before the root route
-app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react-assets")
+# Serve the React frontend's static assets (js, css, images, etc.)
+# This is the recommended approach for serving React SPAs with FastAPI
+app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
+app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="spa")
 
 # Add cache-busting middleware for frontend assets
 @app.middleware("http")
@@ -405,9 +406,9 @@ async def add_cache_headers(request, call_next):
         response.headers["Expires"] = "0"
         response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
 
-    # For the main HTML file, also add cache control
+    # For the main HTML file and other HTML routes, also add cache control
     if request.url.path.endswith('.html') or request.url.path == '/':
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Cache-Control"] = "no-cache, no-store, must revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
         response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
@@ -419,19 +420,6 @@ async def add_cache_headers(request, call_next):
         response.headers["Expires"] = "0"
 
     return response
-
-# Serve the index.html for any path that is not an API route or a known file
-@app.get("/{full_path:path}", response_class=HTMLResponse)
-async def serve_react_app(request: Request, full_path: str):
-    # This catch-all route ensures that client-side routing in React works correctly.
-    # Any route not matched by your API or other static mounts will serve the React app.
-    # FastAPI will match more specific routes (like /api/upload) before this catch-all,
-    # so this should only serve the React app for frontend routes like /dashboard, /settings, etc.
-    # Exclude API routes and asset files from this catch-all
-    if full_path.startswith('api/') or full_path.startswith('assets/') or full_path.endswith(('.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico')):
-        # This should be handled by the static mount or API routes, so return 404 if we reach here
-        raise HTTPException(status_code=404, detail="Not found")
-    return FileResponse("frontend/dist/index.html")
 
 # --- END: New SPA Serving Logic ---
 
