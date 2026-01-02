@@ -31,27 +31,38 @@ const DashboardPage = () => {
 
   const renderTabContent = () => {
     if (loading) {
-      return <div className="text-center py-10">Loading dashboard...</div>;
+      return (
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      );
     }
 
     if (error) {
       return (
-        <div className="alert alert-error shadow-lg bg-red-100 border border-red-300 text-red-800">
-          <div>
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current flex-shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+        <div className="alert alert-error shadow-lg bg-red-50 border border-red-200 rounded-xl mb-6">
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current flex-shrink-0 h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <div>
-              <h3 className="font-bold">Dashboard Loading Failed!</h3>
-              <p>{error}</p>
-            </div>
+            <span className="text-red-700">{error}</span>
           </div>
         </div>
       );
     }
 
     if (!dashboardData) {
-      return <div className="text-center py-10">No dashboard data available</div>;
+      return (
+        <div className="text-center py-20">
+          <div className="text-gray-400 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Dashboard Data Available</h3>
+          <p className="text-gray-500">Please upload a dataset to generate insights</p>
+        </div>
+      );
     }
 
     switch (activeTab) {
@@ -69,8 +80,9 @@ const DashboardPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-emerald-50 py-12">
-      <div className="container mx-auto px-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="container mx-auto px-4 py-6">
+        {/* Header */}
         <header className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -184,32 +196,6 @@ const DashboardPage = () => {
           </div>
         )}
 
-        {/* Critical Full Dataset Aggregates Section */}
-        {dashboardData?.critical_full_dataset_aggregates && Object.keys(dashboardData.critical_full_dataset_aggregates).length > 0 && (
-          <div className="glass-card rounded-3xl p-6 mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-semibold text-gray-900">Critical Full Dataset Aggregates</h2>
-              <span className="badge badge-soft bg-purple-100 text-purple-700">Pre-sampling</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {Object.entries(dashboardData.critical_full_dataset_aggregates).map(([key, value]) => (
-                <div key={key} className="glass-card rounded-2xl p-4 text-center">
-                  <p className="text-sm text-gray-600">{key.replace('total_', 'Total ').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                  {key.toLowerCase().includes('amount') || key.toLowerCase().includes('revenue') ||
-                   key.toLowerCase().includes('cost') || key.toLowerCase().includes('expense') ||
-                   key.toLowerCase().includes('profit') || key.toLowerCase().includes('fee') ||
-                   key.toLowerCase().includes('charge') || key.toLowerCase().includes('payment') ||
-                   key.toLowerCase().includes('income') || key.toLowerCase().includes('value') ? (
-                    <p className="text-xl font-bold text-green-600">${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                  ) : (
-                    <p className="text-xl font-bold text-blue-600">{typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}</p>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Navigation Tabs */}
         <div className="bg-white rounded-2xl shadow-sm p-1 mb-6 border border-gray-100">
           <div className="flex space-x-1">
@@ -256,7 +242,8 @@ const DashboardPage = () => {
           </div>
         </div>
 
-        <div className="space-y-6">
+        {/* Tab Content */}
+        <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
           {renderTabContent()}
         </div>
       </div>

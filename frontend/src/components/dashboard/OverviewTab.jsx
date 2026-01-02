@@ -77,14 +77,6 @@ const OverviewTab = ({ data }) => {
         </div>
       )}
 
-      {/* Fallback message when no charts are available */}
-      {!primary_chart && (!category_charts || Object.keys(category_charts).length === 0) && (
-        <div className="bg-gray-50 rounded-xl p-8 text-center border-2 border-dashed border-gray-200 mb-8">
-          <i className="fas fa-chart-bar text-gray-400 text-2xl mb-3"></i>
-          <p className="text-gray-500">No primary charts available for this dataset.</p>
-        </div>
-      )}
-
       {/* All Charts Gallery */}
       {all_charts && all_charts.length > 0 && (
         <div>
@@ -107,10 +99,10 @@ const OverviewTab = ({ data }) => {
       )}
 
       {/* Fallback message when no charts are available */}
-      {(!all_charts || all_charts.length === 0) && (
+      {!primary_chart && (!category_charts || Object.keys(category_charts).length === 0) && (!all_charts || all_charts.length === 0) && (
         <div className="bg-gray-50 rounded-xl p-8 text-center border-2 border-dashed border-gray-200">
           <i className="fas fa-chart-bar text-gray-400 text-2xl mb-3"></i>
-          <p className="text-gray-500">No additional charts generated for this dataset.</p>
+          <p className="text-gray-500">No charts could be generated for this dataset.</p>
         </div>
       )}
     </section>
