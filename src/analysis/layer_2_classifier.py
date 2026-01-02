@@ -80,7 +80,7 @@ def run_semantic_classification(
         elif profile.dtype == 'object':
             try:
                 # Attempt to parse as datetime
-                if pd.to_datetime(df[name], errors='coerce', infer_datetime_format=True).notna().mean() > 0.7:
+                if pd.to_datetime(df[name], errors='coerce').notna().mean() > 0.7:
                     role = "datetime"
                 # Check for low-cardinality strings
                 elif profile.unique_count / profile.stats['count'] < 0.5 and profile.unique_count < 100:

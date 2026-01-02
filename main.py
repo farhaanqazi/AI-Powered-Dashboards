@@ -315,7 +315,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- START: New SPA Serving Logic ---
 
-# Mount the React frontend's static assets (js, css)
+# Mount the React frontend's static assets (js, css, images, etc.)
 # This MUST come before the root route
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react-assets")
 
@@ -326,6 +326,10 @@ async def serve_react_app(request: Request, full_path: str):
     # Any route not matched by your API or other static mounts will serve the React app.
     # FastAPI will match more specific routes (like /api/upload) before this catch-all,
     # so this should only serve the React app for frontend routes like /dashboard, /settings, etc.
+    # Exclude API routes and asset files from this catch-all
+    if full_path.startswith('api/') or full_path.startswith('assets/') or full_path.endswith(('.js', '.css', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico')):
+        # This should be handled by the static mount or API routes, so return 404 if we reach here
+        raise HTTPException(status_code=404, detail="Not found")
     return FileResponse("frontend/dist/index.html")
 
 # --- END: New SPA Serving Logic ---

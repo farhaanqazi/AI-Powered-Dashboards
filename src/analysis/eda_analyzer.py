@@ -74,8 +74,8 @@ def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, Any]
     
     # Add indicators for numeric columns
     for col_name, profile in enriched_profiles.items():
-        if profile.get('role') == 'numeric':
-            stats = profile.get('stats', {})
+        if profile.role == 'numeric':
+            stats = profile.stats
             if 'mean' in stats:
                 indicators.append({
                     "indicator": f"Average {col_name}",
@@ -83,7 +83,7 @@ def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, Any]
                     "value": stats['mean'],
                     "type": "average"
                 })
-                
+
             if 'std' in stats and stats['std'] > 0:
                 indicators.append({
                     "indicator": f"Variability in {col_name}",
@@ -107,29 +107,29 @@ def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, Any]
             "type": "dominant_category"
         }
     ])
-    
+
     return indicators
 
 
-def _get_most_frequent_category_info(enriched_profiles: Dict[str, Any]) -> str:
+def _get_most_frequent_category_info(enriched_profiles: Dict[str, EnrichedProfile]) -> str:
     """Helper to get info about the most frequent category."""
     for col_name, profile in enriched_profiles.items():
-        if profile.get('role') == 'categorical' and profile.get('top_categories'):
-            top_cat = profile['top_categories'][0]
+        if profile.role == 'categorical' and profile.top_categories:
+            top_cat = profile.top_categories[0]
             return f"The most frequent category in {col_name} is '{top_cat['value']}' with {top_cat['count']} occurrences"
     return "No categorical columns found"
 
 
-def _get_most_frequent_value(enriched_profiles: Dict[str, Any]) -> str:
+def _get_most_frequent_value(enriched_profiles: Dict[str, EnrichedProfile]) -> str:
     """Helper to get the most frequent value."""
     for col_name, profile in enriched_profiles.items():
-        if profile.get('role') == 'categorical' and profile.get('top_categories'):
-            top_cat = profile['top_categories'][0]
+        if profile.role == 'categorical' and profile.top_categories:
+            top_cat = profile.top_categories[0]
             return f"{top_cat['value']} ({top_cat['count']} times)"
     return "N/A"
 
 
-def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Dict[str, Any], 
+def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProfile],
                                        relational_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Identify patterns and relationships in the data.
@@ -140,10 +140,10 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
         "outliers": [],
         "anomalies": []
     }
-    
+
     # Extract correlations from relational insights
     for insight in relational_insights:
-        if insight.get('type') == 'correlation':
+        if insight.get('type') == 'correlation':  # insight is still a dict from the analysis layer
             details = insight.get('details', {})
             if 'correlation_coefficient' in details:
                 patterns['correlations'].append({
@@ -153,10 +153,10 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
                     "p_value": details.get('p_value', None),
                     "strength": details.get('strength', 'moderate')
                 })
-    
+
     # Identify outliers in numeric columns
     for col_name, profile in enriched_profiles.items():
-        if profile.get('role') == 'numeric':
+        if profile.role == 'numeric':
             series = df[col_name].dropna()
             if len(series) > 10:  # Need sufficient data points
                 Q1 = series.quantile(0.25)
@@ -164,7 +164,7 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
                 IQR = Q3 - Q1
                 lower_bound = Q1 - 1.5 * IQR
                 upper_bound = Q3 + 1.5 * IQR
-                
+
                 outliers = series[(series < lower_bound) | (series > upper_bound)]
                 if len(outliers) > 0:
                     patterns['outliers'].append({
@@ -172,74 +172,74 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
                         "outlier_count": len(outliers),
                         "outlier_percentage": (len(outliers) / len(series)) * 100
                     })
-    
+
     return patterns
 
 
-def _generate_use_cases(enriched_profiles: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _generate_use_cases(enriched_profiles: Dict[str, EnrichedProfile]) -> List[Dict[str, Any]]:
     """
     Generate potential use cases based on column roles.
     """
     use_cases = []
-    
+
     # Identify potential business use cases based on column types
-    has_numeric = any(p.get('role') == 'numeric' for p in enriched_profiles.values())
-    has_categorical = any(p.get('role') == 'categorical' for p in enriched_profiles.values())
-    has_datetime = any(p.get('role') == 'datetime' for p in enriched_profiles.values())
-    
+    has_numeric = any(p.role == 'numeric' for p in enriched_profiles.values())
+    has_categorical = any(p.role == 'categorical' for p in enriched_profiles.values())
+    has_datetime = any(p.role == 'datetime' for p in enriched_profiles.values())
+
     if has_numeric and has_categorical:
         use_cases.append({
             "use_case": "Segmentation Analysis",
             "description": "Analyze how numeric metrics vary across different categories",
-            "key_inputs": [name for name, profile in enriched_profiles.items() 
-                          if profile.get('role') in ['numeric', 'categorical']]
+            "key_inputs": [name for name, profile in enriched_profiles.items()
+                          if profile.role in ['numeric', 'categorical']]
         })
-    
+
     if has_datetime and has_numeric:
         use_cases.append({
             "use_case": "Time Series Analysis",
             "description": "Track numeric metrics over time to identify trends",
-            "key_inputs": [name for name, profile in enriched_profiles.items() 
-                          if profile.get('role') in ['datetime', 'numeric']]
+            "key_inputs": [name for name, profile in enriched_profiles.items()
+                          if profile.role in ['datetime', 'numeric']]
         })
-    
+
     if has_numeric:
         use_cases.append({
             "use_case": "Performance Metrics Dashboard",
             "description": "Monitor key numeric metrics and KPIs",
-            "key_inputs": [name for name, profile in enriched_profiles.items() 
-                          if profile.get('role') == 'numeric']
+            "key_inputs": [name for name, profile in enriched_profiles.items()
+                          if profile.role == 'numeric']
         })
-    
+
     return use_cases
 
 
-def _generate_recommendations(enriched_profiles: Dict[str, Any], patterns: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _generate_recommendations(enriched_profiles: Dict[str, EnrichedProfile], patterns: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     Generate recommendations based on the analysis.
     """
     recommendations = []
-    
+
     # Recommend visualizations based on column types
-    numeric_cols = [name for name, profile in enriched_profiles.items() 
-                   if profile.get('role') == 'numeric']
-    categorical_cols = [name for name, profile in enriched_profiles.items() 
-                       if profile.get('role') == 'categorical']
-    
+    numeric_cols = [name for name, profile in enriched_profiles.items()
+                   if profile.role == 'numeric']
+    categorical_cols = [name for name, profile in enriched_profiles.items()
+                       if profile.role == 'categorical']
+
     if len(numeric_cols) >= 2:
         recommendations.append({
             "title": "Correlation Analysis",
             "description": f"Consider analyzing correlations between numeric columns: {', '.join(numeric_cols[:3])}",
             "priority": "high"
         })
-    
+
     if len(categorical_cols) > 0 and len(numeric_cols) > 0:
         recommendations.append({
             "title": "Group Comparisons",
             "description": f"Compare numeric metrics across categories: {categorical_cols[0] if categorical_cols else 'N/A'}",
             "priority": "medium"
         })
-    
+
     # Add recommendation if there are many correlations
     if len(patterns.get('correlations', [])) > 3:
         recommendations.append({
@@ -247,27 +247,27 @@ def _generate_recommendations(enriched_profiles: Dict[str, Any], patterns: Dict[
             "description": "Several strong correlations detected - investigate causation vs correlation",
             "priority": "high"
         })
-    
+
     return recommendations
 
 
-def _generate_critical_totals(df: pd.DataFrame, enriched_profiles: Dict[str, Any]) -> Dict[str, Any]:
+def _generate_critical_totals(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProfile]) -> Dict[str, Any]:
     """
     Generate critical totals that might be important for business metrics.
     """
     critical_totals = {}
-    
+
     # Look for columns that might represent monetary values
     for col_name, profile in enriched_profiles.items():
-        if profile.get('role') == 'numeric':
+        if profile.role == 'numeric':
             # Check if column name suggests it's a monetary value
             name_lower = col_name.lower()
             monetary_indicators = ['amount', 'revenue', 'cost', 'price', 'fee', 'charge', 'payment', 'income', 'expense', 'profit']
-            
+
             if any(indicator in name_lower for indicator in monetary_indicators):
                 total = df[col_name].sum()
                 critical_totals[f"total_{col_name}"] = float(total)
-    
+
     return critical_totals
 
 
