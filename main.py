@@ -8,6 +8,7 @@ from jinja2 import Environment, FileSystemLoader
 import pandas as pd
 import io
 import logging
+import time
 import uuid
 import requests
 from typing import Optional
@@ -399,12 +400,20 @@ async def add_cache_headers(request, call_next):
 
     # Add cache control headers for frontend assets to prevent aggressive caching
     if request.url.path.startswith('/assets/'):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
+        response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
 
     # For the main HTML file, also add cache control
     if request.url.path.endswith('.html') or request.url.path == '/':
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
+
+    # For API responses, add cache control as well
+    if request.url.path.startswith('/api/'):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
