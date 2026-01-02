@@ -17,9 +17,9 @@ const Footer = () => {
             </div>
             <p className="text-gray-400 mb-4">Transform your data into actionable insights with our AI-powered analytics platform.</p>
             <div className="flex space-x-4">
-              <a href="#" className="text-gray-400 hover:text-white"><i className="fab fa-twitter"></i></a>
-              <a href="#" className="text-gray-400 hover:text-white"><i className="fab fa-linkedin"></i></a>
-              <a href="#" className="text-gray-400 hover:text-white"><i className="fab fa-github"></i></a>
+              <a href="https://twitter.com" className="text-gray-400 hover:text-blue-400" target="_blank" rel="noopener noreferrer"><i className="fab fa-twitter"></i></a>
+              <a href="https://linkedin.com" className="text-gray-400 hover:text-blue-400" target="_blank" rel="noopener noreferrer"><i className="fab fa-linkedin"></i></a>
+              <a href="https://github.com" className="text-gray-400 hover:text-blue-400" target="_blank" rel="noopener noreferrer"><i className="fab fa-github"></i></a>
             </div>
           </div>
 
@@ -55,7 +55,7 @@ const Footer = () => {
         </div>
 
         <div className="border-t border-gray-800 mt-12 pt-8 text-center text-gray-400">
-          <p>&copy; 2023 DataInsight. All rights reserved. Built with ❤️ for data professionals.</p>
+          <p>&copy; 2026 DataInsight. All rights reserved. Built with ❤️ for data professionals.</p>
         </div>
       </div>
     </footer>

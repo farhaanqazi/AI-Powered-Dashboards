@@ -13,6 +13,7 @@ from src.analysis.layer_1_profiler import run_syntactic_profiling
 from src.analysis.layer_2_classifier import run_semantic_classification
 from src.analysis.layer_3_relational import run_relational_analysis
 from src.analysis.layer_4_interpreter import determine_kpis, select_charts
+from src.analysis.eda_analyzer import run_eda_analysis
 
 # --- Existing Visualization and Data Structures ---
 from src.viz.plotly_renderer import build_charts_from_specs
@@ -134,6 +135,9 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         # Detect dataset grain (event-level vs entity-level)
         dataset_grain = _detect_dataset_grain(enriched_profiles, df)
 
+        # Run EDA analysis to generate insights
+        eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+
         # Layer 4: Decide what to show
         kpis = determine_kpis(enriched_profiles, relational_insights)
         tracer.record_kpi_generation(trace_id, kpis)
@@ -172,7 +176,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             errors=[],
             critical_totals={},
             critical_full_dataset_aggregates={},
-            eda_summary={}
+            eda_summary=eda_summary
         )
         return state
 

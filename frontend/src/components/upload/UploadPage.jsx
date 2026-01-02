@@ -106,16 +106,16 @@ const UploadPage = () => {
 
               <div className="grid grid-cols-3 gap-6 pt-6">
                 <div className="text-center">
-                  <div className="stat-number">99%</div>
-                  <p className="text-gray-600">Accuracy</p>
+                  <div className="stat-number">100%</div>
+                  <p className="text-gray-600">Free</p>
                 </div>
                 <div className="text-center">
-                  <div className="stat-number">10x</div>
-                  <p className="text-gray-600">Faster</p>
+                  <div className="stat-number">100%</div>
+                  <p className="text-gray-600">Open Source</p>
                 </div>
                 <div className="text-center">
-                  <div className="stat-number">500+</div>
-                  <p className="text-gray-600">Data Sources</p>
+                  <div className="stat-number">100%</div>
+                  <p className="text-gray-600">Secure</p>
                 </div>
               </div>
             </div>

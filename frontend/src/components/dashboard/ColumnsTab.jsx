@@ -42,19 +42,19 @@ const ColumnsTab = ({ data }) => {
                   <td>{col.dtype}</td>
                   <td>{col.missing_count}</td>
                   <td>{col.unique_count}</td>
-                  <td>
-                    <span className="badge badge-xs badge-soft text-xs">{col.role}</span>
-                  </td>
+                  <td className="font-medium text-blue-600">{col.role}</td>
                   <td>{col.stats && col.stats.min !== undefined ? col.stats.min : 'N/A'}</td>
                   <td>{col.stats && col.stats.max !== undefined ? col.stats.max : 'N/A'}</td>
                   <td>{col.stats && col.stats.mean !== undefined ? col.stats.mean.toFixed(2) : 'N/A'}</td>
                   <td>
                     {col.top_categories && col.top_categories.length > 0 ? (
-                      col.top_categories.slice(0, 3).map((cat, catIndex) => (
-                        <span key={catIndex} className="badge badge-xs badge-soft mr-1">
-                          {cat.value?.toString().substring(0, 10)}... ({cat.count})
-                        </span>
-                      ))
+                      <div className="flex flex-wrap gap-1">
+                        {col.top_categories.slice(0, 3).map((cat, catIndex) => (
+                          <span key={catIndex} className="text-xs bg-gray-100 rounded px-2 py-1">
+                            {cat.value?.toString().substring(0, 10)}... ({cat.count})
+                          </span>
+                        ))}
+                      </div>
                     ) : (
                       'N/A'
                     )}
