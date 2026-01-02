@@ -82,7 +82,22 @@ async def diagnostic_ui(request: Request):
 
 @app.post("/upload", response_class=HTMLResponse)
 async def upload(request: Request, dataset: UploadFile = File(...)):
-    if not dataset.filename.lower().endswith(".csv"):
+    # Validate file type and sanitize filename
+    if not dataset.filename:
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error_message": "No file provided.", "success": False},
+        )
+
+    # Sanitize filename to prevent path traversal
+    filename = dataset.filename
+    if '..' in filename or filename.startswith('/'):
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error_message": "Invalid filename.", "success": False},
+        )
+
+    if not filename.lower().endswith(".csv"):
         return templates.TemplateResponse(
             "index.html",
             {"request": request, "error_message": "Only CSV files allowed.", "success": False},
@@ -137,9 +152,38 @@ async def upload(request: Request, dataset: UploadFile = File(...)):
 
 @app.post("/load_external", response_class=HTMLResponse)
 async def load_external(request: Request, external_source: str = Form(...)):
-    if external_source.startswith("http"):
+    # Sanitize and validate the external source
+    if not external_source or not isinstance(external_source, str):
+        return templates.TemplateResponse(
+            "index.html",
+            {"request": request, "error_message": "Invalid external source provided.", "success": False},
+        )
+
+    # Remove any potentially dangerous characters or patterns
+    external_source = external_source.strip()
+
+    # Validate URL format if it looks like a URL
+    if external_source.startswith(("http://", "https://")):
+        # Basic URL validation
+        import re
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  # domain
+            r'(?:/[^\s]*)?$'  # optional path
+        )
+        if not url_pattern.match(external_source):
+            return templates.TemplateResponse(
+                "index.html",
+                {"request": request, "error_message": "Invalid URL format.", "success": False},
+            )
         result = load_csv_from_url(external_source)
     else:
+        # For Kaggle datasets, validate the format (username/dataset)
+        if '/' not in external_source or len(external_source.split('/')) != 2:
+            return templates.TemplateResponse(
+                "index.html",
+                {"request": request, "error_message": "Invalid Kaggle dataset format. Expected 'username/dataset'.", "success": False},
+            )
         result = load_csv_from_kaggle(external_source)
 
     if not result.success or result.df is None:
@@ -195,7 +239,16 @@ async def load_external(request: Request, external_source: str = Form(...)):
 async def api_upload(dataset: UploadFile = File(...)):
     trace_id = str(uuid.uuid4())
 
-    if not dataset.filename.lower().endswith(".csv"):
+    # Validate file type and sanitize filename
+    if not dataset.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+
+    # Sanitize filename to prevent path traversal
+    filename = dataset.filename
+    if '..' in filename or filename.startswith('/'):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+
+    if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files allowed.")
 
     contents = await dataset.read()
@@ -237,10 +290,30 @@ async def api_upload(dataset: UploadFile = File(...)):
 async def api_load_external(req: LoadExternalRequest):
     trace_id = str(uuid.uuid4())
 
-    if req.external_source.startswith("http"):
-        result = load_csv_from_url(req.external_source)
+    # Sanitize and validate the external source
+    if not req.external_source or not isinstance(req.external_source, str):
+        raise HTTPException(status_code=400, detail="Invalid external source provided.")
+
+    # Remove any potentially dangerous characters or patterns
+    external_source = req.external_source.strip()
+
+    # Validate URL format if it looks like a URL
+    if external_source.startswith(("http://", "https://")):
+        # Basic URL validation
+        import re
+        url_pattern = re.compile(
+            r'^https?://'  # http:// or https://
+            r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  # domain
+            r'(?:/[^\s]*)?$'  # optional path
+        )
+        if not url_pattern.match(external_source):
+            raise HTTPException(status_code=400, detail="Invalid URL format.")
+        result = load_csv_from_url(external_source)
     else:
-        result = load_csv_from_kaggle(req.external_source)
+        # For Kaggle datasets, validate the format (username/dataset)
+        if '/' not in external_source or len(external_source.split('/')) != 2:
+            raise HTTPException(status_code=400, detail="Invalid Kaggle dataset format. Expected 'username/dataset'.")
+        result = load_csv_from_kaggle(external_source)
 
     if not result.success or result.df is None:
         raise HTTPException(status_code=400, detail="Failed to load dataset.")

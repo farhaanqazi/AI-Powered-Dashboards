@@ -4,13 +4,14 @@ import UploadPage from './components/upload/UploadPage';
 import DashboardPage from './components/dashboard/DashboardPage';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
-import './styles/App.css'; // Import the enhanced styles
+import './styles/design-system.css';
+import './styles/App.css';
 
 function App() {
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 via-purple-50 to-emerald-50">
+    <div className="min-h-screen flex flex-col bg-gray-50">
       <Header />
-      <main className="flex-grow container mx-auto px-4 py-6">
+      <main className="flex-grow">
         <Routes>
           <Route path="/" element={<UploadPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
