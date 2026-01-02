@@ -1,4 +1,4 @@
-# --- Single Stage Build ---
+# --- Single Stage Build with Cache Busting ---
 FROM python:3.9-slim
 
 # Install system dependencies including Node.js
@@ -22,25 +22,29 @@ COPY ./requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# --- Optimized Frontend Build ---
+# --- Optimized Frontend Build with Cache Busting ---
 # Copy frontend dependency manifests
 COPY frontend/package.json frontend/package-lock.json ./frontend/
 
 # Install frontend dependencies first to leverage Docker cache
 RUN cd frontend && npm install
 
+# Add cache-busting timestamp to ensure fresh builds
+RUN echo "CACHE_BUST_TIMESTAMP=$(date +%s)" > /tmp/cache_bust.txt
+
 # Copy the rest of the application code
 COPY . .
 
-# Build the React frontend
+# Build the React frontend with cache-busting
 RUN cd frontend && \
+    # Clear any existing build cache to ensure fresh build
+    rm -rf dist/ && \
     npm run build && \
-    echo "✅ Build command completed" && \
+    echo "✅ Build command completed at $(date)" && \
     pwd && \
     ls -la && \
     ls -la dist/ && \
-    echo "✅ Frontend built successfully"
-# --- End of Frontend Build ---
+    echo "✅ Frontend built successfully with cache-busting"
 
 # Create a non-root user and switch to it
 RUN useradd --create-home --shell /bin/bash --uid 1001 appuser && \

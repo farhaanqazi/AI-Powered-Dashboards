@@ -70,9 +70,14 @@ const UploadPage = () => {
       <header className="bg-white shadow-sm">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                <i className="fas fa-chart-network"></i>
+            <div className="flex items-center space-x-4">
+              <div className="logo-container relative">
+                <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-xl transform transition duration-300 hover:scale-110 hover:rotate-6 animate-bounce-slow">
+                  <i className="fas fa-chart-network"></i>
+                </div>
+                <div className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-green-500 flex items-center justify-center text-white text-xs border-2 border-white animate-ping-slow">
+                  <i className="fas fa-bolt"></i>
+                </div>
               </div>
               <div>
                 <h1 className="text-xl font-bold text-gray-900">DataInsight</h1>

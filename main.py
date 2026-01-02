@@ -386,11 +386,30 @@ async def test_persistence(action: str):
 # Legacy static
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- START: New SPA Serving Logic ---
+# --- START: New SPA Serving Logic with Cache Busting ---
 
 # Mount the React frontend's static assets (js, css, images, etc.)
 # This MUST come before the root route
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react-assets")
+
+# Add cache-busting middleware for frontend assets
+@app.middleware("http")
+async def add_cache_headers(request, call_next):
+    response = await call_next(request)
+
+    # Add cache control headers for frontend assets to prevent aggressive caching
+    if request.url.path.startswith('/assets/'):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    # For the main HTML file, also add cache control
+    if request.url.path.endswith('.html') or request.url.path == '/':
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    return response
 
 # Serve the index.html for any path that is not an API route or a known file
 @app.get("/{full_path:path}", response_class=HTMLResponse)
