@@ -22,19 +22,21 @@ COPY ./requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# --- Optimized Frontend Build ---
+# Copy frontend dependency manifests
+COPY frontend/package.json frontend/package-lock.json ./frontend/
+
+# Install frontend dependencies first to leverage Docker cache
+RUN cd frontend && npm install
+
+# Copy the rest of the application code
 COPY . .
 
-# Install frontend dependencies and build the React app
-WORKDIR /app
-RUN if [ -d "frontend" ] && [ -f "frontend/package.json" ]; then \
-    echo "Frontend directory exists, building React app..."; \
-    cd frontend && npm install && npm run build; \
-    else \
-    echo "Frontend directory does not exist or package.json is missing"; \
-    ls -la; \
-    exit 1; \
-    fi
+# Build the React frontend
+RUN cd frontend && npm run build && \
+    echo "✅ Frontend built successfully" && \
+    ls -la frontend/dist/
+# --- End of Frontend Build ---
 
 # Create a non-root user and switch to it
 RUN useradd --create-home --shell /bin/bash --uid 1001 appuser && \

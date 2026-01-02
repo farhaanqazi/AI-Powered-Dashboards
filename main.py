@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -21,9 +21,6 @@ from src.data.parser import load_csv_from_url, load_csv_from_kaggle
 # ---------------- LOGGING ----------------
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# ---------------- GLOBAL STATE ----------------
-_last_dashboard_state: Optional[dict] = None
 
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
@@ -152,7 +149,6 @@ async def load_external(request: Request, external_source: str = Form(...)):
 
 @app.post("/api/upload")
 async def api_upload(dataset: UploadFile = File(...)):
-    global _last_dashboard_state
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename.lower().endswith(".csv"):
@@ -176,8 +172,6 @@ async def api_upload(dataset: UploadFile = File(...)):
         "errors": getattr(state, "errors", []),
     }
 
-    _last_dashboard_state = response_data
-
     return {
         "status": "success",
         "trace_id": trace_id,
@@ -186,7 +180,6 @@ async def api_upload(dataset: UploadFile = File(...)):
 
 @app.post("/api/load_external")
 async def api_load_external(req: LoadExternalRequest):
-    global _last_dashboard_state
     trace_id = str(uuid.uuid4())
 
     if req.external_source.startswith("http"):
@@ -210,19 +203,13 @@ async def api_load_external(req: LoadExternalRequest):
         "errors": getattr(state, "errors", []),
     }
 
-    _last_dashboard_state = response_data
-
     return {
         "status": "success",
         "trace_id": trace_id,
         "data": response_data,
     }
 
-@app.get("/api/dashboard")
-async def api_dashboard():
-    if not _last_dashboard_state:
-        raise HTTPException(status_code=404, detail="No dashboard data.")
-    return {"status": "success", "data": _last_dashboard_state}
+
 
 # =========================================================
 # ================== PERSISTENCE TEST =====================
@@ -247,8 +234,20 @@ async def test_persistence(action: str):
 # Legacy static
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# React SPA (MUST BE LAST)
-app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="react_app")
+# --- START: New SPA Serving Logic ---
+
+# Mount the React frontend's static assets (js, css)
+# This MUST come before the root route
+app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="react-assets")
+
+# Serve the index.html for any path that is not an API route or a known file
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def serve_react_app(request: Request, full_path: str):
+    # This catch-all route ensures that client-side routing in React works correctly.
+    # Any route not matched by your API or other static mounts will serve the React app.
+    return FileResponse("frontend/dist/index.html")
+
+# --- END: New SPA Serving Logic ---
 
 # =========================================================
 # ================== LOCAL RUN ============================
