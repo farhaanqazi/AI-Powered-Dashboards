@@ -1,67 +1,64 @@
 import pandas as pd
 import pytest
-from src.data.analyser import _infer_role_advanced
+from src.utils.identifier_detector import is_likely_identifier_with_confidence
 
-def test_infer_role_numeric_string():
+def test_identify_identifier_with_confidence():
     """
-    Tests if a series of numeric strings is correctly inferred as 'numeric'.
-    This verifies the fix for data coercion.
-    """
-    numeric_string_series = pd.Series(["10", "20", "30.5", "40", None, "50.0"])
-    role, confidence, _, _, _ = _infer_role_advanced(numeric_string_series)
-    assert role == "numeric"
-    assert confidence >= 0.8
-
-def test_infer_role_identifier_strings():
-    """
-    Tests if a series of ID-like strings is correctly inferred as 'identifier'.
+    Tests if the identifier detection function works properly.
     """
     id_series = pd.Series(["ID-001", "ID-002", "ID-003", "ID-004", "ID-005"])
     id_series.name = "customer_id"
-    role, _, _, _, _ = _infer_role_advanced(id_series)
-    assert role == "identifier"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(id_series, "customer_id")
+    assert is_id == True
+    assert confidence >= 0.6
 
-def test_infer_role_categorical_strings():
+def test_identify_identifier_basic():
     """
-    Tests if a series with a small number of unique strings is inferred as 'categorical'.
+    Tests if a series of ID-like strings is correctly identified as an identifier.
+    """
+    id_series = pd.Series(["ID-001", "ID-002", "ID-003", "ID-004", "ID-005"])
+    id_series.name = "customer_id"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(id_series, "customer_id")
+    assert is_id == True
+
+def test_identify_non_identifier():
+    """
+    Tests if a series with categorical values is correctly identified as non-identifier.
     """
     categorical_series = pd.Series(["Apple", "Banana", "Apple", "Cherry", "Banana"])
-    role, _, _, _, _ = _infer_role_advanced(categorical_series)
-    assert role == "categorical"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(categorical_series, "fruit_type")
+    assert is_id == False
 
-def test_infer_role_high_cardinality_text():
+def test_identify_uuid_pattern():
     """
-    Tests if a series with many unique, long strings is inferred as 'text'.
+    Tests if a series with UUID patterns is correctly identified as identifier.
     """
-    text_series = pd.Series([
-        "This is the first long sentence.",
-        "This is a second, completely different sentence.",
-        "Yet another unique phrase for testing.",
-        "The quick brown fox jumps over the lazy dog.",
-        "Each entry is unique to ensure high cardinality."
+    uuid_series = pd.Series([
+        "550e8400-e29b-41d4-a716-446655440000",
+        "550e8400-e29b-41d4-a716-446655440001",
+        "550e8400-e29b-41d4-a716-446655440002",
+        "550e8400-e29b-41d4-a716-446655440003",
+        "550e8400-e29b-41d4-a716-446655440004"
     ])
-    role, _, _, _, _ = _infer_role_advanced(text_series)
-    assert role == "text"
+    uuid_series.name = "user_id"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(uuid_series, "user_id")
+    assert is_id == True
+    assert confidence >= 0.8
 
-def test_infer_role_mixed_currency_gets_monetary_tag():
+def test_identify_sequential_numbers():
     """
-    Tests if a series with mixed currency strings gets the 'monetary' semantic tag.
+    Tests if a series with sequential numbers is correctly identified as identifier.
     """
-    currency_series = pd.Series(["$100.50", "€50.25", "99.99 USD", "25.00"])
-    # Note: _infer_role_advanced will still classify the role as 'text' because of the symbols,
-    # but it should correctly identify the semantic content. The coercion to numeric happens later.
-    # Our updated analyser now coerces first, so the role should be numeric.
-    role, _, _, _, semantic_tags = _infer_role_advanced(currency_series)
-    
-    assert role == "numeric"
-    assert "monetary" in semantic_tags
+    seq_series = pd.Series([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    seq_series.name = "row_id"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(seq_series, "row_id")
+    assert is_id == True
 
 def test_handle_all_nan_series():
     """
     Tests if a series with all NaN/None values is handled gracefully.
     """
     all_nan_series = pd.Series([None, pd.NA, None, None])
-    role, confidence, provenance, _, _ = _infer_role_advanced(all_nan_series)
-    assert role == "text"
-    assert provenance == "all_nan"
+    is_id, signal, confidence = is_likely_identifier_with_confidence(all_nan_series, "test_col")
+    assert is_id == False
     assert confidence < 0.5

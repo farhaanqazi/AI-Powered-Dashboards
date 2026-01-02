@@ -10,10 +10,11 @@ from typing import Dict, List, Any, Optional
 import logging
 from scipy.stats import pearsonr
 from collections import Counter
+from src.analysis.data_structures import EnrichedProfile
 
 logger = logging.getLogger(__name__)
 
-def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, Any], relational_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
+def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProfile], relational_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Performs comprehensive EDA analysis on the dataset.
 
@@ -66,7 +67,7 @@ def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, Any], relati
         }
 
 
-def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProfile]) -> List[Dict[str, Any]]:
     """
     Generate key indicators based on the dataset characteristics.
     """
