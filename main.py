@@ -349,6 +349,9 @@ async def api_load_external(req: LoadExternalRequest):
         "data": response_data,
     }
 
+import json
+from fastapi.encoders import jsonable_encoder
+
 # Add the missing /api/dashboard endpoint
 @app.get("/api/dashboard")
 async def api_get_dashboard():
@@ -359,8 +362,13 @@ async def api_get_dashboard():
     if not dashboard_data:
         raise HTTPException(status_code=404, detail="No dashboard data available")
 
-    # Return the dashboard data directly to match frontend expectations
-    return dashboard_data
+    # Ensure the data is JSON serializable
+    try:
+        json_compatible_data = jsonable_encoder(dashboard_data)
+        return json_compatible_data
+    except Exception as e:
+        logger.error(f"Error serializing dashboard data: {e}")
+        raise HTTPException(status_code=500, detail="Error preparing dashboard data")
 
 # Add a root route to serve the React SPA
 @app.get("/")
