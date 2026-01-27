@@ -364,8 +364,24 @@ async def api_get_dashboard():
 
     # Ensure the data is JSON serializable
     try:
-        json_compatible_data = jsonable_encoder(dashboard_data)
-        return json_compatible_data
+        if dashboard_data:
+            json_compatible_data = jsonable_encoder(dashboard_data)
+            return json_compatible_data
+        else:
+            # Return a default empty structure that the React app expects
+            return {
+                "dataset_profile": {},
+                "kpis": [],
+                "charts": [],
+                "primary_chart": None,
+                "category_charts": {},
+                "all_charts": [],
+                "original_filename": "",
+                "errors": [],
+                "critical_totals": {},
+                "critical_full_dataset_aggregates": {},
+                "eda_summary": {}
+            }
     except Exception as e:
         logger.error(f"Error serializing dashboard data: {e}")
         raise HTTPException(status_code=500, detail="Error preparing dashboard data")
