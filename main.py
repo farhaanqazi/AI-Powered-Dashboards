@@ -378,10 +378,8 @@ def sanitize_for_json(obj):
         return obj.tolist() if hasattr(obj, 'tolist') else str(obj)
     return obj
 
-from src.schemas.dashboard import DashboardResponse
-
 # Add the missing /api/dashboard endpoint
-@app.get("/api/dashboard", response_model=DashboardResponse)
+@app.get("/api/dashboard")
 async def api_get_dashboard():
     try:
         # Get the most recently stored dashboard
@@ -389,38 +387,49 @@ async def api_get_dashboard():
             dashboard_data = dashboard_storage.get('most_recent')
 
         if not dashboard_data:
-            return DashboardResponse(
-                status="empty",
-                message="Dashboard initializing. Data will appear when pipeline completes.",
-                metadata={"hint": "Upload a dataset to generate insights"}
-            )
+            return {
+                "status": "empty",
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": {"hint": "Upload a dataset to generate insights"},
+                "kpis": [],
+                "charts": [],
+                "eda": {},
+                "errors": [],
+                "message": "Dashboard initializing. Data will appear when pipeline completes."
+            }
 
-        # Sanitize BEFORE Pydantic validation (prevents serialization crashes)
+        # Sanitize the data to prevent serialization issues
         clean = sanitize_for_json(dashboard_data)
 
-        # Map the existing structure to the new contract
-        return DashboardResponse(
-            status="ready",
-            kpis=clean.get("kpis", []),
-            charts=clean.get("charts", []),
-            eda=clean.get("eda_summary", clean.get("all_charts", {})),
-            errors=clean.get("errors", []),
-            metadata={
+        # Return the data in the new contract format
+        return {
+            "status": "ready",
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": {
                 "columns": clean.get("dataset_profile", {}).get("n_cols", 0),
                 "rows": clean.get("dataset_profile", {}).get("n_rows", 0),
                 "filename": clean.get("original_filename", "")
-            }
-        )
+            },
+            "kpis": clean.get("kpis", []),
+            "charts": clean.get("charts", []),
+            "eda": clean.get("eda_summary", clean.get("all_charts", {})),
+            "errors": clean.get("errors", []),
+            "message": None
+        }
 
     except Exception as e:
         logger.error(f"Dashboard error: {str(e)}", exc_info=True)
-        # NEVER return 500 - frontend expects contract structure
-        return DashboardResponse(
-            status="error",
-            message="Temporary dashboard issue. Please try uploading a dataset again.",
-            errors=["System recovering"],
-            metadata={"action": "Please refresh the page"}
-        )
+        # Return error state instead of throwing exception
+        return {
+            "status": "error",
+            "timestamp": datetime.utcnow().isoformat(),
+            "metadata": {"action": "Please refresh the page"},
+            "kpis": [],
+            "charts": [],
+            "eda": {},
+            "errors": ["System recovering"],
+            "message": "Temporary dashboard issue. Please try uploading a dataset again."
+        }
 
 # Add a root route to serve the React SPA
 @app.get("/", response_class=HTMLResponse)
