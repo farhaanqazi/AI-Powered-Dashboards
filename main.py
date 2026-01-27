@@ -362,6 +362,22 @@ async def api_get_dashboard():
     # Return the dashboard data directly to match frontend expectations
     return dashboard_data
 
+# Add a root route to serve the React SPA
+@app.get("/")
+async def read_root():
+    return FileResponse("frontend/dist/index.html")
+
+# Catch-all route for React Router (for client-side routing)
+# This should come after all other specific routes
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    # Serve index.html for frontend routes, but not for API routes
+    if full_path.startswith('api/') or full_path.startswith('test-persistence/'):
+        # Let API and other specific routes be handled normally
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not Found")
+    return FileResponse("frontend/dist/index.html")
+
 
 
 # =========================================================
@@ -392,7 +408,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Serve the React frontend's static assets (js, css, images, etc.)
 # This is the recommended approach for serving React SPAs with FastAPI
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
-app.mount("/", StaticFiles(directory="frontend/dist", html=True), name="spa")
 
 # Add cache-busting middleware for frontend assets
 @app.middleware("http")
@@ -429,4 +444,4 @@ async def add_cache_headers(request, call_next):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
