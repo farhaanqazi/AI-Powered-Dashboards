@@ -15,6 +15,7 @@ from typing import Optional
 from pathlib import Path
 from datetime import datetime
 import json
+import os
 from threading import Lock
 
 # ---- Internal imports ----
@@ -352,42 +353,77 @@ async def api_load_external(req: LoadExternalRequest):
 import json
 from fastapi.encoders import jsonable_encoder
 
+def sanitize_for_json(obj):
+    """Recursively neutralize Jinja2 Undefined, datetimes, sets, etc."""
+    from jinja2 import Undefined
+    if obj is None:
+        return None
+    if isinstance(obj, Undefined):
+        return None
+    if isinstance(obj, (set, frozenset)):
+        return list(obj)
+    if isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(i) for i in obj]
+    # Handle numpy/pandas types if present
+    if hasattr(obj, 'item'):  # numpy scalars
+        try:
+            return obj.item()
+        except:
+            pass
+    if str(type(obj)) == "<class 'pandas._libs.tslibs.timestamps.Timestamp'>":
+        return str(obj)
+    if str(type(obj)).startswith("<class 'numpy."):
+        return obj.tolist() if hasattr(obj, 'tolist') else str(obj)
+    return obj
+
+from src.schemas.dashboard import DashboardResponse
+
 # Add the missing /api/dashboard endpoint
-@app.get("/api/dashboard")
+@app.get("/api/dashboard", response_model=DashboardResponse)
 async def api_get_dashboard():
-    # Get the most recently stored dashboard
-    with storage_lock:
-        dashboard_data = dashboard_storage.get('most_recent')
-
-    if not dashboard_data:
-        raise HTTPException(status_code=404, detail="No dashboard data available")
-
-    # Ensure the data is JSON serializable
     try:
-        if dashboard_data:
-            json_compatible_data = jsonable_encoder(dashboard_data)
-            return json_compatible_data
-        else:
-            # Return a default empty structure that the React app expects
-            return {
-                "dataset_profile": {},
-                "kpis": [],
-                "charts": [],
-                "primary_chart": None,
-                "category_charts": {},
-                "all_charts": [],
-                "original_filename": "",
-                "errors": [],
-                "critical_totals": {},
-                "critical_full_dataset_aggregates": {},
-                "eda_summary": {}
+        # Get the most recently stored dashboard
+        with storage_lock:
+            dashboard_data = dashboard_storage.get('most_recent')
+
+        if not dashboard_data:
+            return DashboardResponse(
+                status="empty",
+                message="Dashboard initializing. Data will appear when pipeline completes.",
+                metadata={"hint": "Upload a dataset to generate insights"}
+            )
+
+        # Sanitize BEFORE Pydantic validation (prevents serialization crashes)
+        clean = sanitize_for_json(dashboard_data)
+
+        # Map the existing structure to the new contract
+        return DashboardResponse(
+            status="ready",
+            kpis=clean.get("kpis", []),
+            charts=clean.get("charts", []),
+            eda=clean.get("eda_summary", clean.get("all_charts", {})),
+            errors=clean.get("errors", []),
+            metadata={
+                "columns": clean.get("dataset_profile", {}).get("n_cols", 0),
+                "rows": clean.get("dataset_profile", {}).get("n_rows", 0),
+                "filename": clean.get("original_filename", "")
             }
+        )
+
     except Exception as e:
-        logger.error(f"Error serializing dashboard data: {e}")
-        raise HTTPException(status_code=500, detail="Error preparing dashboard data")
+        logger.error(f"Dashboard error: {str(e)}", exc_info=True)
+        # NEVER return 500 - frontend expects contract structure
+        return DashboardResponse(
+            status="error",
+            message="Temporary dashboard issue. Please try uploading a dataset again.",
+            errors=["System recovering"],
+            metadata={"action": "Please refresh the page"}
+        )
 
 # Add a root route to serve the React SPA
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 async def read_root():
     return FileResponse("frontend/dist/index.html")
 
