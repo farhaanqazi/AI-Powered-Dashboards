@@ -10,6 +10,7 @@ Responsibilities:
 import logging
 import pandas as pd
 from typing import Dict, List, Any, Tuple
+import re
 
 from src.analysis.data_structures import SyntacticProfile, EnrichedProfile
 from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype, is_bool_dtype
@@ -51,13 +52,15 @@ def run_semantic_classification(
         # 4. For 'object' types, perform more detailed checks.
         elif profile.dtype == 'object':
             # Attempt to parse as datetime
-                            if pd.to_datetime(df[name], errors='coerce').notna().mean() > 0.85:                role = "datetime"
-                            # Check for low-cardinality strings
-                        elif profile.unique_count < 50 and profile.unique_count / profile.stats['count'] < 0.2: # Explicit count limit and lower ratio
-                            role = "categorical"
-                        # Fallback for high-cardinality potential categorical (e.g., more than 50 unique values but still a small ratio)
-                        elif profile.unique_count / profile.stats['count'] < 0.05 and profile.unique_count > 50:
-                            role = "categorical"            # Otherwise, it's high-cardinality free text.
+            if pd.to_datetime(df[name], errors='coerce').notna().mean() > 0.85: # Increased confidence to 85%
+                role = "datetime"
+            # Check for low-cardinality strings
+            elif profile.unique_count < 50 and profile.unique_count / profile.stats['count'] < 0.2: # Explicit count limit and lower ratio
+                role = "categorical"
+            # Fallback for high-cardinality potential categorical (e.g., more than 50 unique values but still a small ratio)
+            elif profile.unique_count / profile.stats['count'] < 0.05 and profile.unique_count > 50:
+                role = "categorical"
+            # Otherwise, it's high-cardinality free text.
             else:
                 role = "text"
 
@@ -66,9 +69,11 @@ def run_semantic_classification(
             role = "text"
 
         # --- Semantic Tagging ---
+        # Apply semantic tags only if the role is numeric, to avoid tagging text fields with currency symbols
         if role == 'numeric':
-            col_str_sample = df[name].dropna().head(100).to_string().lower()
-            if any(sym in col_str_sample for sym in ['$', '€', '£']):
+            # Check for monetary symbols more robustly by looking at string representations
+            sample_values = df[name].dropna().astype(str).sample(min(len(df[name].dropna()), 100), random_state=42) # Sample up to 100 values
+            if any(re.search(r'[\$\€\£]', val) for val in sample_values): # Corrected symbols
                 semantic_tags.append('monetary')
 
         enriched_profiles[name] = EnrichedProfile(
