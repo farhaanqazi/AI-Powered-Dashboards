@@ -395,13 +395,22 @@ async def api_get_dashboard():
                 "charts": [],
                 "eda": {},
                 "errors": [],
-                "message": "Dashboard initializing. Data will appear when pipeline completes."
+                "message": "Dashboard initializing. Data will appear when pipeline completes.",
+                # Return empty versions of all expected fields for React frontend
+                "dataset_profile": {},
+                "primary_chart": None,
+                "category_charts": {},
+                "all_charts": [],
+                "original_filename": "",
+                "critical_totals": {},
+                "critical_full_dataset_aggregates": {},
+                "eda_summary": {}
             }
 
         # Sanitize the data to prevent serialization issues
         clean = sanitize_for_json(dashboard_data)
 
-        # Return the data in the new contract format
+        # Return the complete data structure that React frontend expects
         return {
             "status": "ready",
             "timestamp": datetime.utcnow().isoformat(),
@@ -414,7 +423,16 @@ async def api_get_dashboard():
             "charts": clean.get("charts", []),
             "eda": clean.get("eda_summary", clean.get("all_charts", {})),
             "errors": clean.get("errors", []),
-            "message": None
+            "message": None,
+            # Include all the fields that the React components expect
+            "dataset_profile": clean.get("dataset_profile", {}),
+            "primary_chart": clean.get("primary_chart", None),
+            "category_charts": clean.get("category_charts", {}),
+            "all_charts": clean.get("all_charts", []),
+            "original_filename": clean.get("original_filename", ""),
+            "critical_totals": clean.get("critical_totals", {}),
+            "critical_full_dataset_aggregates": clean.get("critical_full_dataset_aggregates", {}),
+            "eda_summary": clean.get("eda_summary", {})
         }
 
     except Exception as e:
@@ -428,7 +446,16 @@ async def api_get_dashboard():
             "charts": [],
             "eda": {},
             "errors": ["System recovering"],
-            "message": "Temporary dashboard issue. Please try uploading a dataset again."
+            "message": "Temporary dashboard issue. Please try uploading a dataset again.",
+            # Return empty versions of all expected fields for React frontend
+            "dataset_profile": {},
+            "primary_chart": None,
+            "category_charts": {},
+            "all_charts": [],
+            "original_filename": "",
+            "critical_totals": {},
+            "critical_full_dataset_aggregates": {},
+            "eda_summary": {}
         }
 
 # Add a root route to serve the React SPA
