@@ -18,7 +18,7 @@ COPY frontend/package*.json ./frontend/
 RUN cd frontend && npm ci  # Use ci for deterministic install
 
 # Critical: Dynamic cache buster BEFORE copying source
-ARG CACHEBUST=1  # Will change on every rebuild if passed dynamically
+ARG CACHEBUST=1  # IMPORTANT: Pass --build-arg CACHEBUST=$(date +%s) for cache invalidation.
 
 # Now copy full source — this layer invalidates on any file change
 COPY . .

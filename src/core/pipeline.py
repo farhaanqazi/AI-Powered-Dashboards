@@ -106,7 +106,6 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         if df.empty:
             logger.warning("DataFrame is empty after initial prep.")
             return DashboardState(
-                df=df,
                 dataset_profile={},
                 profile=[],
                 kpis=[],
@@ -164,7 +163,6 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         primary_chart = next((c for c in all_charts if c.get('type') == 'bar'), None)
 
         state = DashboardState(
-            df=df,
             dataset_profile=dataset_profile_for_viz,
             profile=[], # Old basic profile is deprecated
             kpis=kpis,
@@ -181,27 +179,11 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         return state
 
     except Exception as e:
-        logger.exception("Error during dashboard generation pipeline")
-        errors = [f"{type(e).__name__}: {e}"]
-        # Create a minimal state for error reporting
-        if not state:
-            state = DashboardState(
-                df=df,
-                dataset_profile={},
-                profile=[],
-                kpis=[],
-                charts=[],
-                primary_chart=None,
-                category_charts={},
-                all_charts=[],
-                errors=errors,
-                critical_totals={},
-                critical_full_dataset_aggregates={},
-                eda_summary={}
-            )
-        else:
-            state.errors = errors
-        return state
+        logger.exception("Critical error during dashboard generation pipeline")
+        # Re-raise the exception to be caught by the API layer in main.py
+        # This ensures that the FastAPI endpoints can return a proper 500 Internal Server Error
+        # instead of a 200 OK with embedded errors.
+        raise RuntimeError(f"Dashboard pipeline failed: {e}") from e
 
     finally:
         if trace_id:

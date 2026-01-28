@@ -13,7 +13,7 @@ from typing import Dict, List, Any, Tuple
 
 from src.analysis.data_structures import SyntacticProfile, EnrichedProfile
 from pandas.api.types import is_numeric_dtype, is_datetime64_any_dtype, is_bool_dtype
-from src.utils.identifier_detector import is_likely_identifier
+from src.utils.identifier_detector import is_likely_identifier_with_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def run_semantic_classification(
 
         # 2. **CRITICAL FIX**: Check for identifiers *before* checking for generic numeric types.
         # This prevents numeric IDs from being misclassified as aggregatable measures.
-        elif is_likely_identifier(df[name], name):
+        elif is_likely_identifier_with_confidence(df[name], name)[0]:
             role = "identifier"
 
         # 3. Check for generic numerics if it's not an identifier.
@@ -50,18 +50,16 @@ def run_semantic_classification(
 
         # 4. For 'object' types, perform more detailed checks.
         elif profile.dtype == 'object':
-            try:
-                # Attempt to parse as datetime
-                if pd.to_datetime(df[name], errors='coerce').notna().mean() > 0.7:
-                    role = "datetime"
-                # Check for low-cardinality strings
-                elif profile.unique_count / profile.stats['count'] < 0.5 and profile.unique_count < 100:
-                    role = "categorical"
-                # Otherwise, it's high-cardinality free text.
-                else:
-                    role = "text"
-            except Exception:
-                role = "text" # Fallback
+            # Attempt to parse as datetime
+                            if pd.to_datetime(df[name], errors='coerce').notna().mean() > 0.85:                role = "datetime"
+                            # Check for low-cardinality strings
+                        elif profile.unique_count < 50 and profile.unique_count / profile.stats['count'] < 0.2: # Explicit count limit and lower ratio
+                            role = "categorical"
+                        # Fallback for high-cardinality potential categorical (e.g., more than 50 unique values but still a small ratio)
+                        elif profile.unique_count / profile.stats['count'] < 0.05 and profile.unique_count > 50:
+                            role = "categorical"            # Otherwise, it's high-cardinality free text.
+            else:
+                role = "text"
 
         # 5. Fallback for any other types.
         else:

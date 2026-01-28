@@ -44,7 +44,6 @@ class AnalysisOutput:
 @dataclass
 class DashboardState:
     """Structured return type for the final dashboard state passed to the UI."""
-    df: pd.DataFrame
     dataset_profile: Dict[str, Any]
     profile: List[Dict[str, Any]] # Deprecated, but kept for compatibility
     kpis: List[Dict[str, Any]]

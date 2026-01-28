@@ -1,10 +1,8 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
-from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
-from jinja2 import Environment, FileSystemLoader
 import pandas as pd
 import io
 import logging
@@ -33,209 +31,40 @@ storage_lock = Lock()
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
 
-# ---------------- JINJA SETUP (Diagnostics UI) ----------------
-env = Environment(
-    loader=FileSystemLoader("templates"),
-    autoescape=True
-)
-
-def fake_get_flashed_messages(*args, **kwargs):
-    return []
-
-env.globals["get_flashed_messages"] = fake_get_flashed_messages
-templates = Jinja2Templates(env=env)
-
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
     external_source: str
 
 # ---------------- EXCEPTION HANDLERS ----------------
+# NOTE: These handlers now return JSON responses suitable for the React frontend,
+# instead of rendering Jinja2 templates.
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error(exc)
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "error_message": "Request validation failed.",
-            "success": False,
-        },
+    logger.error(f"Request validation failed: {exc.errors()}", exc_info=True)
+    return HTTPException(
+        status_code=422,
+        detail={
+            "message": "Request validation failed.",
+            "errors": exc.errors()
+        }
     )
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    logger.exception(exc)
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "error_message": f"{type(exc).__name__}: {exc}",
-            "success": False,
-        },
+    logger.exception(f"Unhandled exception: {exc}")
+    return HTTPException(
+        status_code=500,
+        detail={
+            "message": "An internal server error occurred.",
+            "error_type": type(exc).__name__,
+            "error_detail": str(exc)
+        }
     )
 
-# =========================================================
-# ================= JINJA DIAGNOSTIC UI ===================
-# =========================================================
 
-@app.get("/diagnostic-ui", response_class=HTMLResponse)
-async def diagnostic_ui(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-@app.post("/upload", response_class=HTMLResponse)
-async def upload(request: Request, dataset: UploadFile = File(...)):
-    # Validate file type and sanitize filename
-    if not dataset.filename:
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "No file provided.", "success": False},
-        )
-
-    # Sanitize filename to prevent path traversal
-    filename = dataset.filename
-    if '..' in filename or filename.startswith('/'):
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Invalid filename.", "success": False},
-        )
-
-    if not filename.lower().endswith(".csv"):
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Only CSV files allowed.", "success": False},
-        )
-
-    contents = await dataset.read()
-    file_stream = io.BytesIO(contents)
-    state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
-
-    if not state:
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Processing failed.", "success": False},
-        )
-
-    # Store the dashboard state in memory for API access
-    dashboard_data = {
-        "dataset_profile": state.dataset_profile,
-        "kpis": state.kpis,
-        "charts": state.charts,
-        "primary_chart": state.primary_chart,
-        "category_charts": getattr(state, "category_charts", {}),
-        "all_charts": state.all_charts,
-        "original_filename": dataset.filename,
-        "errors": getattr(state, "errors", []),
-        "critical_totals": getattr(state, "critical_totals", {}),
-        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
-        "eda_summary": getattr(state, "eda_summary", {})
-    }
-
-    # Store as the most recent for API access
-    with storage_lock:
-        dashboard_storage['most_recent'] = dashboard_data
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "dataset_profile": state.dataset_profile,
-            "kpis": state.kpis,
-            "charts": state.charts,
-            "primary_chart": state.primary_chart,
-            "all_charts": state.all_charts,
-            "original_filename": dataset.filename,
-            "errors": getattr(state, "errors", []),
-            "critical_totals": getattr(state, "critical_totals", {}),
-            "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
-            "eda_summary": getattr(state, "eda_summary", {}),
-            "success": True,
-        },
-    )
-
-@app.post("/load_external", response_class=HTMLResponse)
-async def load_external(request: Request, external_source: str = Form(...)):
-    # Sanitize and validate the external source
-    if not external_source or not isinstance(external_source, str):
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Invalid external source provided.", "success": False},
-        )
-
-    # Remove any potentially dangerous characters or patterns
-    external_source = external_source.strip()
-
-    # Validate URL format if it looks like a URL
-    if external_source.startswith(("http://", "https://")):
-        # Basic URL validation
-        import re
-        url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  # domain
-            r'(?:/[^\s]*)?$'  # optional path
-        )
-        if not url_pattern.match(external_source):
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "error_message": "Invalid URL format.", "success": False},
-            )
-        result = load_csv_from_url(external_source)
-    else:
-        # For Kaggle datasets, validate the format (username/dataset)
-        if '/' not in external_source or len(external_source.split('/')) != 2:
-            return templates.TemplateResponse(
-                "index.html",
-                {"request": request, "error_message": "Invalid Kaggle dataset format. Expected 'username/dataset'.", "success": False},
-            )
-        result = load_csv_from_kaggle(external_source)
-
-    if not result.success or result.df is None:
-        return templates.TemplateResponse(
-            "index.html",
-            {"request": request, "error_message": "Failed to load dataset.", "success": False},
-        )
-
-    state = build_dashboard_from_df(result.df)
-
-    # Store the dashboard state in memory for API access
-    dashboard_data = {
-        "dataset_profile": state.dataset_profile,
-        "kpis": state.kpis,
-        "charts": state.charts,
-        "primary_chart": state.primary_chart,
-        "category_charts": getattr(state, "category_charts", {}),
-        "all_charts": state.all_charts,
-        "original_filename": external_source,
-        "errors": getattr(state, "errors", []),
-        "critical_totals": getattr(state, "critical_totals", {}),
-        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
-        "eda_summary": getattr(state, "eda_summary", {})
-    }
-
-    # Store as the most recent for API access
-    with storage_lock:
-        dashboard_storage['most_recent'] = dashboard_data
-
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "dataset_profile": state.dataset_profile,
-            "kpis": state.kpis,
-            "charts": state.charts,
-            "primary_chart": state.primary_chart,
-            "all_charts": state.all_charts,
-            "original_filename": external_source,
-            "errors": getattr(state, "errors", []),
-            "critical_totals": getattr(state, "critical_totals", {}),
-            "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
-            "eda_summary": getattr(state, "eda_summary", {}),
-            "success": True,
-        },
-    )
 
 # =========================================================
 # ======================= API ==============================
-# =========================================================
 
 @app.post("/api/upload")
 async def api_upload(dataset: UploadFile = File(...)):
@@ -256,9 +85,13 @@ async def api_upload(dataset: UploadFile = File(...)):
     contents = await dataset.read()
     file_stream = io.BytesIO(contents)
 
-    state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
-    if not state:
-        raise HTTPException(status_code=500, detail="Dashboard build failed.")
+    try:
+        state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
+
+    if not state: # This case should ideally not be reached if RuntimeError is raised for critical failures
+        raise HTTPException(status_code=500, detail="Dashboard build failed: returned no state.")
 
     response_data = {
         "dataset_profile": state.dataset_profile,
@@ -320,7 +153,10 @@ async def api_load_external(req: LoadExternalRequest):
     if not result.success or result.df is None:
         raise HTTPException(status_code=400, detail="Failed to load dataset.")
 
-    state = build_dashboard_from_df(result.df)
+    try:
+        state = build_dashboard_from_df(result.df)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
 
     response_data = {
         "dataset_profile": state.dataset_profile,
@@ -350,103 +186,25 @@ async def api_load_external(req: LoadExternalRequest):
         "data": response_data,
     }
 
-import json
-from fastapi.encoders import jsonable_encoder
 
-def sanitize_for_json(obj):
-    """Recursively neutralize Jinja2 Undefined, datetimes, sets, etc."""
-    from jinja2 import Undefined
-    if obj is None:
-        return None
-    if isinstance(obj, Undefined):
-        return None
-    if isinstance(obj, (set, frozenset)):
-        return list(obj)
-    if isinstance(obj, dict):
-        return {k: sanitize_for_json(v) for k, v in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [sanitize_for_json(i) for i in obj]
-    # Handle numpy/pandas types if present
-    if hasattr(obj, 'item'):  # numpy scalars
-        try:
-            return obj.item()
-        except:
-            pass
-    if str(type(obj)) == "<class 'pandas._libs.tslibs.timestamps.Timestamp'>":
-        return str(obj)
-    if str(type(obj)).startswith("<class 'numpy."):
-        return obj.tolist() if hasattr(obj, 'tolist') else str(obj)
-    return obj
 
 # Add the missing /api/dashboard endpoint
 @app.get("/api/dashboard")
 async def api_get_dashboard():
-    try:
-        # Get the most recently stored dashboard
-        with storage_lock:
-            dashboard_data = dashboard_storage.get('most_recent')
+    # Get the most recently stored dashboard
+    with storage_lock:
+        dashboard_data = dashboard_storage.get('most_recent')
 
-        if not dashboard_data:
-            return {
-                "status": "empty",
-                "timestamp": datetime.utcnow().isoformat(),
-                "metadata": {"hint": "Upload a dataset to generate insights"},
-                "kpis": [],
-                "charts": [],
-                "eda": {},
-                "errors": [],
-                "message": "Dashboard initializing. Data will appear when pipeline completes.",
-                # Return empty versions of all expected fields for React frontend
-                "dataset_profile": {},
-                "primary_chart": None,
-                "category_charts": {},
-                "all_charts": [],
-                "original_filename": "",
-                "critical_totals": {},
-                "critical_full_dataset_aggregates": {},
-                "eda_summary": {}
-            }
-
-        # Sanitize the data to prevent serialization issues
-        clean = sanitize_for_json(dashboard_data)
-
-        # Return the complete data structure that React frontend expects
+    if not dashboard_data:
         return {
-            "status": "ready",
+            "status": "empty",
             "timestamp": datetime.utcnow().isoformat(),
-            "metadata": {
-                "columns": clean.get("dataset_profile", {}).get("n_cols", 0),
-                "rows": clean.get("dataset_profile", {}).get("n_rows", 0),
-                "filename": clean.get("original_filename", "")
-            },
-            "kpis": clean.get("kpis", []),
-            "charts": clean.get("charts", []),
-            "eda": clean.get("eda_summary", clean.get("all_charts", {})),
-            "errors": clean.get("errors", []),
-            "message": None,
-            # Include all the fields that the React components expect
-            "dataset_profile": clean.get("dataset_profile", {}),
-            "primary_chart": clean.get("primary_chart", None),
-            "category_charts": clean.get("category_charts", {}),
-            "all_charts": clean.get("all_charts", []),
-            "original_filename": clean.get("original_filename", ""),
-            "critical_totals": clean.get("critical_totals", {}),
-            "critical_full_dataset_aggregates": clean.get("critical_full_dataset_aggregates", {}),
-            "eda_summary": clean.get("eda_summary", {})
-        }
-
-    except Exception as e:
-        logger.error(f"Dashboard error: {str(e)}", exc_info=True)
-        # Return error state instead of throwing exception
-        return {
-            "status": "error",
-            "timestamp": datetime.utcnow().isoformat(),
-            "metadata": {"action": "Please refresh the page"},
+            "metadata": {"hint": "Upload a dataset to generate insights"},
             "kpis": [],
             "charts": [],
             "eda": {},
-            "errors": ["System recovering"],
-            "message": "Temporary dashboard issue. Please try uploading a dataset again.",
+            "errors": [],
+            "message": "Dashboard initializing. Data will appear when pipeline completes.",
             # Return empty versions of all expected fields for React frontend
             "dataset_profile": {},
             "primary_chart": None,
@@ -457,6 +215,34 @@ async def api_get_dashboard():
             "critical_full_dataset_aggregates": {},
             "eda_summary": {}
         }
+
+    # The dashboard_data is now expected to be JSON-serializable after pipeline changes
+    # and not contain pandas DataFrames or other complex objects.
+
+    # Return the complete data structure that React frontend expects
+    return {
+        "status": "ready",
+        "timestamp": datetime.utcnow().isoformat(),
+        "metadata": {
+            "columns": dashboard_data.get("dataset_profile", {}).get("n_cols", 0),
+            "rows": dashboard_data.get("dataset_profile", {}).get("n_rows", 0),
+            "filename": dashboard_data.get("original_filename", "")
+        },
+        "kpis": dashboard_data.get("kpis", []),
+        "charts": dashboard_data.get("charts", []),
+        "eda": dashboard_data.get("eda_summary", {}), # Use eda_summary directly
+        "errors": dashboard_data.get("errors", []),
+        "message": None,
+        # Include all the fields that the React components expect
+        "dataset_profile": dashboard_data.get("dataset_profile", {}),
+        "primary_chart": dashboard_data.get("primary_chart", None),
+        "category_charts": dashboard_data.get("category_charts", {}),
+        "all_charts": dashboard_data.get("all_charts", []),
+        "original_filename": dashboard_data.get("original_filename", ""),
+        "critical_totals": dashboard_data.get("critical_totals", {}),
+        "critical_full_dataset_aggregates": dashboard_data.get("critical_full_dataset_aggregates", {}),
+        "eda_summary": dashboard_data.get("eda_summary", {})
+    }
 
 # Add a root route to serve the React SPA
 @app.get("/", response_class=HTMLResponse)
@@ -490,9 +276,6 @@ async def test_persistence(action: str):
 # =========================================================
 # ================= STATIC + REACT ========================
 # =========================================================
-
-# Legacy static
-app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # --- START: New SPA Serving Logic with Cache Busting ---
 
