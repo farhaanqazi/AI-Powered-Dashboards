@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import re
 import math
-from src.utils.identifier_detector import is_likely_identifier
+from src.utils.identifier_detector import is_likely_identifier_with_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     Robust identifier detection that matches the new correlation engine logic.
     """
     # Use the centralized identifier detector
-    return is_likely_identifier(series, name)
+    # is_likely_identifier_with_confidence returns (bool, str, float), we only need the bool
+    return is_likely_identifier_with_confidence(series, name)[0]
 
 
 def _build_category_count_data(
