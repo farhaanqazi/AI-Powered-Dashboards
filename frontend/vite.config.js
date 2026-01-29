@@ -7,7 +7,7 @@ const BUILD_ID = Date.now().toString();
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: '/',  // Important for serving
+  base: './',  // Changed to relative path for Hugging Face Spaces compatibility
   build: {
     outDir: 'dist',
     assetsDir: 'assets',
