@@ -251,6 +251,27 @@ async def read_root():
 
 # Catch-all route for React Router (for client-side routing)
 # This should come after all other specific routes
+@app.get("/debug-build-files")
+async def debug_build_files():
+    import os
+    dist_path = "frontend/dist"
+    assets_path = "frontend/dist/assets"
+
+    result = []
+    if os.path.exists(dist_path):
+        result.append("Files in frontend/dist:")
+        result.extend([f"  - {f}" for f in os.listdir(dist_path)])
+    else:
+        result.append("frontend/dist DOES NOT EXIST")
+
+    if os.path.exists(assets_path):
+        result.append("\nFiles in frontend/dist/assets:")
+        result.extend([f"  - {f}" for f in os.listdir(assets_path)])
+    else:
+        result.append("frontend/dist/assets DOES NOT EXIST")
+
+    return PlainTextResponse("\n".join(result))
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
     return FileResponse("frontend/dist/index.html")
