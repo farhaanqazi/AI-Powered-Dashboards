@@ -17,8 +17,11 @@ const DashboardPage = () => {
     const fetchDashboardData = async () => {
       try {
         const data = await getDashboardData();
+        console.log("DASHBOARD PAGE RENDER");
+        console.log("DASHBOARD DATA RAW:", data);
         setDashboardData(data);
       } catch (err) {
+        console.log("DASHBOARD FETCH ERROR:", err);
         setError('Failed to load dashboard data');
         console.error('Error fetching dashboard data:', err);
       } finally {
