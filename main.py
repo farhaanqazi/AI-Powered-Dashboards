@@ -2,6 +2,7 @@ from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 import io
@@ -214,19 +215,13 @@ async def api_get_dashboard():
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
-# Custom route to serve dynamic assets with timestamp subdirectories
-@app.get("/assets/{subdir}/{filename}")
-async def serve_dynamic_assets(subdir: str, filename: str):
-    filepath = f"frontend/dist/assets/{subdir}/{filename}"
-    if os.path.exists(filepath):
-        return FileResponse(filepath)
-    else:
-        raise HTTPException(status_code=404, detail="Asset not found")
+import re
 
-# Also handle assets in subdirectories (for cases where there are nested assets)
-@app.get("/assets/{subdir}/{subdir2}/{filename}")
-async def serve_nested_dynamic_assets(subdir: str, subdir2: str, filename: str):
-    filepath = f"frontend/dist/assets/{subdir}/{subdir2}/{filename}"
+# Custom route to serve dynamic assets with flexible path structures
+@app.get("/assets/{full_path:path}")
+async def serve_dynamic_assets(full_path: str):
+    # Handle various asset structures like {timestamp}/{filename.ext}
+    filepath = f"frontend/dist/assets/{full_path}"
     if os.path.exists(filepath):
         return FileResponse(filepath)
     else:
@@ -273,11 +268,13 @@ async def serve_favicon():
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
-    # Don't serve index.html for asset requests, let the asset route handle them
+    # Check if it's an API request that should not be handled by SPA
+    if full_path.startswith("api/"):
+        raise HTTPException(status_code=404)
+    # Check if it's an asset request that should not be handled by SPA
     if full_path.startswith("assets/"):
-        # This should never reach here due to the asset route, but just in case
-        raise HTTPException(status_code=404, detail="Asset not found, should handled by asset route")
-    # For all other paths (SPA routing), serve the main index.html
+        raise HTTPException(status_code=404)
+    # For all other non-API, non-asset paths (SPA routing), serve the main index.html
     return FileResponse("frontend/dist/index.html")
 
 # Test persistence
