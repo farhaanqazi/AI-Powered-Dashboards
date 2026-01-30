@@ -17,23 +17,29 @@ const UploadPage = () => {
   };
 
   const handleUpload = async (e) => {
+    console.log("UPLOAD BUTTON CLICKED");
     e.preventDefault();
     if (!file) {
       setError('Please select a CSV file to upload');
       return;
     }
 
+    console.log(file);
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
-      await uploadFile(file);
+      console.log("ABOUT TO CALL /api/upload");
+      const res = await uploadFile(file);
+      console.log("UPLOAD RESPONSE STATUS", res.status);
       setSuccess('File uploaded successfully! Redirecting to dashboard...');
+      console.log("UPLOAD SUCCESS — NAVIGATING");
       setTimeout(() => {
         navigate('/dashboard');
       }, 1500);
     } catch (err) {
+      console.log("UPLOAD ERROR:", err);
       setError(err.response?.data?.detail || err.message || 'Upload failed');
     } finally {
       setLoading(false);
