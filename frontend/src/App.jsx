@@ -12,7 +12,7 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      <button onClick={() => alert("CLICK WORKS")}>
+      <button onClick={() => alert("CLICK WORKS")} className="bg-red-500 text-white p-10">
         Test Click
       </button>
       <Header />
