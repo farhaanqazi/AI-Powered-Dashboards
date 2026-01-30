@@ -214,6 +214,24 @@ async def api_get_dashboard():
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
+# Custom route to serve dynamic assets with timestamp subdirectories
+@app.get("/assets/{subdir}/{filename}")
+async def serve_dynamic_assets(subdir: str, filename: str):
+    filepath = f"frontend/dist/assets/{subdir}/{filename}"
+    if os.path.exists(filepath):
+        return FileResponse(filepath)
+    else:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+# Also handle assets in subdirectories (for cases where there are nested assets)
+@app.get("/assets/{subdir}/{subdir2}/{filename}")
+async def serve_nested_dynamic_assets(subdir: str, subdir2: str, filename: str):
+    filepath = f"frontend/dist/assets/{subdir}/{subdir2}/{filename}"
+    if os.path.exists(filepath):
+        return FileResponse(filepath)
+    else:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
 # Serve React SPA
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
@@ -245,10 +263,21 @@ async def debug_build_files():
 
     return PlainTextResponse("\n".join(result))
 
+@app.get("/vite.svg")
+async def serve_favicon():
+    # Return a simple transparent 1x1 pixel as default favicon to avoid 404 errors
+    from fastapi.responses import Response
+    # Simple SVG favicon
+    svg_content = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16"></svg>'
+    return Response(content=svg_content, media_type="image/svg+xml")
+
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
+    # Don't serve index.html for asset requests, let the asset route handle them
     if full_path.startswith("assets/"):
-        raise HTTPException(status_code=404, detail="Not found")
+        # This should never reach here due to the asset route, but just in case
+        raise HTTPException(status_code=404, detail="Asset not found, should handled by asset route")
+    # For all other paths (SPA routing), serve the main index.html
     return FileResponse("frontend/dist/index.html")
 
 # Test persistence
@@ -264,7 +293,16 @@ async def test_persistence(action: str):
         return TEST_FILE.read_text() if TEST_FILE.exists() else "File missing"
     return "Invalid action"
 
-# Serve React static assets
+# Custom route to serve dynamic assets with timestamp subdirectories
+@app.get("/assets/{subdir}/{filename}")
+async def serve_dynamic_assets(subdir: str, filename: str):
+    filepath = f"frontend/dist/assets/{subdir}/{filename}"
+    if os.path.exists(filepath):
+        return FileResponse(filepath)
+    else:
+        raise HTTPException(status_code=404, detail="Asset not found")
+
+# Also serve assets from the main assets directory for any direct references
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
 # Cache-busting middleware
