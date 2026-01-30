@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, PlainTextResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
@@ -15,6 +15,7 @@ from datetime import datetime
 import json
 import os
 from threading import Lock
+import re
 
 # ---- Internal imports ----
 from src.core.pipeline import build_dashboard_from_file, build_dashboard_from_df
@@ -36,14 +37,12 @@ class LoadExternalRequest(BaseModel):
     external_source: str
 
 # ---------------- EXCEPTION HANDLERS ----------------
-# NOTE: These handlers now return JSON responses suitable for the React frontend,
-# instead of rendering Jinja2 templates.
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     logger.error(f"Request validation failed: {exc.errors()}", exc_info=True)
-    return HTTPException(
+    return JSONResponse(
         status_code=422,
-        detail={
+        content={
             "message": "Request validation failed.",
             "errors": exc.errors()
         }
@@ -52,16 +51,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.exception(f"Unhandled exception: {exc}")
-    return HTTPException(
+    return JSONResponse(
         status_code=500,
-        detail={
+        content={
             "message": "An internal server error occurred.",
             "error_type": type(exc).__name__,
             "error_detail": str(exc)
         }
     )
-
-
 
 # =========================================================
 # ======================= API ==============================
@@ -70,15 +67,12 @@ async def general_exception_handler(request: Request, exc: Exception):
 async def api_upload(dataset: UploadFile = File(...)):
     trace_id = str(uuid.uuid4())
 
-    # Validate file type and sanitize filename
     if not dataset.filename:
         raise HTTPException(status_code=400, detail="No file provided.")
 
-    # Sanitize filename to prevent path traversal
     filename = dataset.filename
     if '..' in filename or filename.startswith('/'):
         raise HTTPException(status_code=400, detail="Invalid filename.")
-
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files allowed.")
 
@@ -90,7 +84,7 @@ async def api_upload(dataset: UploadFile = File(...)):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
 
-    if not state: # This case should ideally not be reached if RuntimeError is raised for critical failures
+    if not state:
         raise HTTPException(status_code=500, detail="Dashboard build failed: returned no state.")
 
     response_data = {
@@ -107,12 +101,8 @@ async def api_upload(dataset: UploadFile = File(...)):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    # Store the dashboard state for later retrieval using the trace_id
     with storage_lock:
         dashboard_storage[trace_id] = response_data
-
-    # Also store as the most recent for simple access
-    with storage_lock:
         dashboard_storage['most_recent'] = response_data
 
     return {
@@ -125,27 +115,21 @@ async def api_upload(dataset: UploadFile = File(...)):
 async def api_load_external(req: LoadExternalRequest):
     trace_id = str(uuid.uuid4())
 
-    # Sanitize and validate the external source
     if not req.external_source or not isinstance(req.external_source, str):
         raise HTTPException(status_code=400, detail="Invalid external source provided.")
 
-    # Remove any potentially dangerous characters or patterns
     external_source = req.external_source.strip()
 
-    # Validate URL format if it looks like a URL
     if external_source.startswith(("http://", "https://")):
-        # Basic URL validation
-        import re
         url_pattern = re.compile(
-            r'^https?://'  # http:// or https://
-            r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  # domain
-            r'(?:/[^\s]*)?$'  # optional path
+            r'^https?://'  
+            r'(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}'  
+            r'(?:/[^\s]*)?$'  
         )
         if not url_pattern.match(external_source):
             raise HTTPException(status_code=400, detail="Invalid URL format.")
         result = load_csv_from_url(external_source)
     else:
-        # For Kaggle datasets, validate the format (username/dataset)
         if '/' not in external_source or len(external_source.split('/')) != 2:
             raise HTTPException(status_code=400, detail="Invalid Kaggle dataset format. Expected 'username/dataset'.")
         result = load_csv_from_kaggle(external_source)
@@ -172,12 +156,8 @@ async def api_load_external(req: LoadExternalRequest):
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    # Store the dashboard state for later retrieval using the trace_id
     with storage_lock:
         dashboard_storage[trace_id] = response_data
-
-    # Also store as the most recent for simple access
-    with storage_lock:
         dashboard_storage['most_recent'] = response_data
 
     return {
@@ -186,12 +166,8 @@ async def api_load_external(req: LoadExternalRequest):
         "data": response_data,
     }
 
-
-
-# Add the missing /api/dashboard endpoint
 @app.get("/api/dashboard")
 async def api_get_dashboard():
-    # Get the most recently stored dashboard
     with storage_lock:
         dashboard_data = dashboard_storage.get('most_recent')
 
@@ -205,7 +181,6 @@ async def api_get_dashboard():
             "eda": {},
             "errors": [],
             "message": "Dashboard initializing. Data will appear when pipeline completes.",
-            # Return empty versions of all expected fields for React frontend
             "dataset_profile": {},
             "primary_chart": None,
             "category_charts": {},
@@ -216,10 +191,6 @@ async def api_get_dashboard():
             "eda_summary": {}
         }
 
-    # The dashboard_data is now expected to be JSON-serializable after pipeline changes
-    # and not contain pandas DataFrames or other complex objects.
-
-    # Return the complete data structure that React frontend expects
     return {
         "status": "ready",
         "timestamp": datetime.utcnow().isoformat(),
@@ -230,10 +201,9 @@ async def api_get_dashboard():
         },
         "kpis": dashboard_data.get("kpis", []),
         "charts": dashboard_data.get("charts", []),
-        "eda": dashboard_data.get("eda_summary", {}), # Use eda_summary directly
+        "eda": dashboard_data.get("eda_summary", {}),
         "errors": dashboard_data.get("errors", []),
         "message": None,
-        # Include all the fields that the React components expect
         "dataset_profile": dashboard_data.get("dataset_profile", {}),
         "primary_chart": dashboard_data.get("primary_chart", None),
         "category_charts": dashboard_data.get("category_charts", {}),
@@ -244,16 +214,13 @@ async def api_get_dashboard():
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
-# Add a root route to serve the React SPA
+# Serve React SPA
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     return FileResponse("frontend/dist/index.html")
 
-# Catch-all route for React Router (for client-side routing)
-# This should come after all other specific routes
 @app.get("/debug-build-files")
 async def debug_build_files():
-    import os
     dist_path = "frontend/dist"
     assets_path = "frontend/dist/assets"
 
@@ -267,6 +234,12 @@ async def debug_build_files():
     if os.path.exists(assets_path):
         result.append("\nFiles in frontend/dist/assets:")
         result.extend([f"  - {f}" for f in os.listdir(assets_path)])
+        for subdir in os.listdir(assets_path):
+            subdir_path = os.path.join(assets_path, subdir)
+            if os.path.isdir(subdir_path):
+                result.append(f"\n  Contents of {subdir}/:")
+                for item in os.listdir(subdir_path):
+                    result.append(f"    - {item}")
     else:
         result.append("frontend/dist/assets DOES NOT EXIST")
 
@@ -274,14 +247,11 @@ async def debug_build_files():
 
 @app.get("/{full_path:path}")
 async def serve_spa(full_path: str):
+    if full_path.startswith("assets/"):
+        raise HTTPException(status_code=404, detail="Not found")
     return FileResponse("frontend/dist/index.html")
 
-
-
-# =========================================================
-# ================== PERSISTENCE TEST =====================
-# =========================================================
-
+# Test persistence
 TEST_FILE = Path("persistence_test.txt")
 
 @app.get("/test-persistence/{action}", response_class=PlainTextResponse)
@@ -294,36 +264,26 @@ async def test_persistence(action: str):
         return TEST_FILE.read_text() if TEST_FILE.exists() else "File missing"
     return "Invalid action"
 
-# =========================================================
-# ================= STATIC + REACT ========================
-# =========================================================
-
-# --- START: New SPA Serving Logic with Cache Busting ---
-
-# Serve the React frontend's static assets (js, css, images, etc.)
-# This is the recommended approach for serving React SPAs with FastAPI
+# Serve React static assets
 app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
-# Add cache-busting middleware for frontend assets
+# Cache-busting middleware
 @app.middleware("http")
 async def add_cache_headers(request, call_next):
     response = await call_next(request)
 
-    # Add cache control headers for frontend assets to prevent aggressive caching
     if request.url.path.startswith('/assets/'):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-        response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
+        response.headers["ETag"] = f"\"{int(time.time())}\""
 
-    # For the main HTML file and other HTML routes, also add cache control
     if request.url.path.endswith('.html') or request.url.path == '/':
-        response.headers["Cache-Control"] = "no-cache, no-store, must revalidate, max-age=0"
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
-        response.headers["ETag"] = f"\"{int(time.time())}\""  # Add timestamp-based ETag
+        response.headers["ETag"] = f"\"{int(time.time())}\""
 
-    # For API responses, add cache control as well
     if request.url.path.startswith('/api/'):
         response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
         response.headers["Pragma"] = "no-cache"
@@ -331,12 +291,7 @@ async def add_cache_headers(request, call_next):
 
     return response
 
-# --- END: New SPA Serving Logic ---
-
-# =========================================================
-# ================== LOCAL RUN ============================
-# =========================================================
-
+# Local run
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=7860)

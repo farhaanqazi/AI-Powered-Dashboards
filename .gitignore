@@ -41,7 +41,7 @@ logs/
 *.json
 AI_SESSION_CONTEXT.md
 node_modules/
-frontend/dist/
+!frontend/dist/
 !package.json
 !package-lock.json
 !tsconfig.json
