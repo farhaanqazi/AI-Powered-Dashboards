@@ -3,7 +3,9 @@ import ChartRenderer from '../charts/ChartRenderer';
 import KPICard from '../kpi/KPICard';
 
 const OverviewTab = ({ data }) => {
+  console.log("OverviewTab received data:", data);
   const { kpis, primary_chart, category_charts, all_charts } = data;
+  console.log("Extracted values - kpis:", kpis, "primary_chart:", primary_chart, "category_charts:", category_charts, "all_charts:", all_charts);
 
   return (
     <section id="overview-section" className="analysis-section">

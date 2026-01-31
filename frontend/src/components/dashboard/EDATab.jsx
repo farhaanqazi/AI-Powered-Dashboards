@@ -1,7 +1,9 @@
 import React from 'react';
 
 const EDATab = ({ data }) => {
+  console.log("EDATab received data:", data);
   const { eda_summary } = data;
+  console.log("EDATab eda_summary:", eda_summary);
 
   if (!eda_summary) {
     return (
