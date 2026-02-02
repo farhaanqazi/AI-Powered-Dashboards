@@ -100,169 +100,226 @@ const UploadPage = () => {
       </header>
 
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-4xl mx-auto text-center mb-12">
-          <div className="inline-block px-4 py-1 bg-blue-100 text-blue-700 text-sm font-medium rounded-full mb-4">
-            <i className="fas fa-bolt mr-2"></i> AI-Powered Insights in Seconds
-          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+            {/* Left Side - Introduction & Onboarding Section */}
+            <div className="lg:pr-8">
+              <div className="bg-gray-50 rounded-2xl p-8 h-full">
+                <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4 leading-tight">
+                  Turn Your CSV Files into Clear Insights — Fast
+                </h1>
 
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-6">
-            Transform Your Data into <span className="text-blue-600">Actionable Insights</span>
-          </h1>
+                <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+                  This app helps you quickly understand, explore, and get real value from your tabular data — no complex setup, no coding required.
+                </p>
 
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto mb-8">
-            Upload any CSV file or connect to external data sources. Our AI automatically analyzes your data, identifies patterns, and generates beautiful, interactive dashboards with zero manual setup.
-          </p>
-        </div>
+                <ol className="space-y-6 mb-8">
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm mr-4 mt-0.5">
+                      1
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">Find or prepare your dataset</h3>
+                      <p className="text-gray-600">Use any CSV file — sales records, survey results, user analytics, financial data, experiment logs, or whatever numbers you want to understand better.</p>
+                    </div>
+                  </li>
 
-        {/* Main Content */}
-        <div className="max-w-2xl mx-auto">
-          {/* Upload Card */}
-          <div className="bg-white rounded-2xl shadow-sm p-8 mb-8 border border-gray-100">
-            <div className="text-center mb-6">
-              <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
-                <i className="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm mr-4 mt-0.5">
+                      2
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">Upload your file here →</h3>
+                      <p className="text-gray-600">Drag & drop your .csv file or click to browse (supports files up to 50 MB).</p>
+                    </div>
+                  </li>
+
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm mr-4 mt-0.5">
+                      3
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">Instant overview & smart analysis</h3>
+                      <p className="text-gray-600">See key statistics, distributions, trends, missing values, correlations, top values — all generated automatically in seconds.</p>
+                    </div>
+                  </li>
+
+                  <li className="flex items-start">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm mr-4 mt-0.5">
+                      4
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-gray-900 mb-1">Explore deeper & export insights</h3>
+                      <p className="text-gray-600">Filter, sort, visualize charts, ask simple questions about your data, and download cleaned results or images of your findings.</p>
+                    </div>
+                  </li>
+                </ol>
+
+                <div className="pt-4 border-t border-gray-200">
+                  <div className="flex flex-wrap gap-4 text-sm text-gray-500">
+                    <div className="flex items-center">
+                      <i className="fas fa-shield-alt text-green-500 mr-2"></i>
+                      <span>100% private — files never stored</span>
+                    </div>
+                    <div className="flex items-center">
+                      <i className="fas fa-user-plus text-green-500 mr-2"></i>
+                      <span>No sign-up required</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Upload Your Data</h2>
-              <p className="text-gray-600">Get instant insights with one click</p>
             </div>
 
-            {/* File Upload */}
-            <div className="mb-8">
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors">
-                <i className="fas fa-file-csv text-5xl text-blue-500 mb-4"></i>
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Upload CSV File</h3>
-                <p className="text-gray-500 mb-4">Drag & drop your file here or click to browse</p>
+            {/* Right Side - Upload Container */}
+            <div>
+              {/* Upload Card */}
+              <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 sticky top-8">
+                <div className="text-center mb-6">
+                  <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
+                  </div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Upload Your Data</h2>
+                  <p className="text-gray-600">Get instant insights with one click</p>
+                </div>
 
-                <form onSubmit={handleUpload} className="space-y-4">
-                  <label className="block cursor-pointer">
-                    <input
-                      type="file"
-                      accept=".csv"
-                      onChange={handleFileChange}
-                      className="hidden"
-                    />
-                    <div className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                      <i className="fas fa-folder-open mr-2"></i>
-                      Choose File
-                    </div>
-                  </label>
+                {/* File Upload */}
+                <div className="mb-8">
+                  <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors animate-pulse">
+                    <i className="fas fa-file-csv text-5xl text-blue-500 mb-4"></i>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Upload CSV File</h3>
+                    <p className="text-gray-500 mb-4">Drag & drop your file here or click to browse</p>
 
-                  {file && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg text-left">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center">
-                          <i className="fas fa-file-csv text-green-500 mr-3"></i>
-                          <div>
-                            <p className="font-medium text-gray-900 truncate max-w-xs">{file.name}</p>
-                            <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                    <form onSubmit={handleUpload} className="space-y-4">
+                      <label className="block cursor-pointer">
+                        <input
+                          type="file"
+                          accept=".csv"
+                          onChange={handleFileChange}
+                          className="hidden"
+                        />
+                        <div className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                          <i className="fas fa-folder-open mr-2"></i>
+                          Choose File
+                        </div>
+                      </label>
+
+                      {file && (
+                        <div className="mt-4 p-4 bg-gray-50 rounded-lg text-left">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center">
+                              <i className="fas fa-file-csv text-green-500 mr-3"></i>
+                              <div>
+                                <p className="font-medium text-gray-900 truncate max-w-xs">{file.name}</p>
+                                <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setFile(null)}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <i className="fas fa-times"></i>
+                            </button>
                           </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setFile(null)}
-                          className="text-gray-400 hover:text-gray-600"
-                        >
-                          <i className="fas fa-times"></i>
-                        </button>
-                      </div>
-                    </div>
-                  )}
+                      )}
 
-                  <button
-                    type="submit"
-                    disabled={loading || !file}
-                    className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                      file && !loading
-                        ? 'bg-blue-600 text-white hover:bg-blue-700'
-                        : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    }`}
-                  >
-                    {loading ? (
-                      <span className="flex items-center justify-center">
-                        <i className="fas fa-spinner animate-spin mr-2"></i> Processing...
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center">
-                        <i className="fas fa-chart-line mr-2"></i> Generate Dashboard
-                      </span>
-                    )}
-                  </button>
-                </form>
-              </div>
-            </div>
+                      <button
+                        type="submit"
+                        disabled={loading || !file}
+                        className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                          file && !loading
+                            ? 'bg-blue-600 text-white hover:bg-blue-700'
+                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {loading ? (
+                          <span className="flex items-center justify-center">
+                            <i className="fas fa-spinner animate-spin mr-2"></i> Processing...
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-center">
+                            <i className="fas fa-chart-line mr-2"></i> Generate Dashboard
+                          </span>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </div>
 
-            {/* Divider */}
-            <div className="relative mb-8">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-200"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500">or</span>
-              </div>
-            </div>
+                {/* Divider */}
+                <div className="relative mb-8">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-gray-200"></div>
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="px-4 bg-white text-gray-500">or</span>
+                  </div>
+                </div>
 
-            {/* External Source */}
-            <div>
-              <div className="text-center mb-6">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">Connect External Data</h3>
-                <p className="text-gray-600">Enter URL or Kaggle dataset identifier</p>
-              </div>
-
-              <form onSubmit={handleExternalSourceSubmit} className="space-y-4">
+                {/* External Source */}
                 <div>
-                  <input
-                    type="text"
-                    value={externalSource}
-                    onChange={(e) => setExternalSource(e.target.value)}
-                    placeholder="https://example.com/data.csv or username/dataset"
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-                  />
+                  <div className="text-center mb-6">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Connect External Data</h3>
+                    <p className="text-gray-600">Enter URL or Kaggle dataset identifier</p>
+                  </div>
+
+                  <form onSubmit={handleExternalSourceSubmit} className="space-y-4">
+                    <div>
+                      <input
+                        type="text"
+                        value={externalSource}
+                        onChange={(e) => setExternalSource(e.target.value)}
+                        placeholder="https://example.com/data.csv or username/dataset"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={loading || !externalSource.trim()}
+                      className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
+                        externalSource.trim() && !loading
+                          ? 'bg-purple-600 text-white hover:bg-purple-700'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}
+                    >
+                      {loading ? (
+                        <span className="flex items-center justify-center">
+                          <i className="fas fa-spinner animate-spin mr-2"></i> Processing...
+                        </span>
+                      ) : (
+                        <span className="flex items-center justify-center">
+                          <i className="fas fa-link mr-2"></i> Pull & Analyze
+                        </span>
+                      )}
+                    </button>
+                  </form>
                 </div>
 
-                <button
-                  type="submit"
-                  disabled={loading || !externalSource.trim()}
-                  className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                    externalSource.trim() && !loading
-                      ? 'bg-purple-600 text-white hover:bg-purple-700'
-                      : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                  }`}
-                >
-                  {loading ? (
-                    <span className="flex items-center justify-center">
-                      <i className="fas fa-spinner animate-spin mr-2"></i> Processing...
-                    </span>
-                  ) : (
-                    <span className="flex items-center justify-center">
-                      <i className="fas fa-link mr-2"></i> Pull & Analyze
-                    </span>
-                  )}
-                </button>
-              </form>
+                {/* Messages */}
+                {error && (
+                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+                    <div className="flex items-center">
+                      <i className="fas fa-exclamation-circle mr-2"></i>
+                      <span>{error}</span>
+                    </div>
+                  </div>
+                )}
+
+                {success && (
+                  <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                    <div className="flex items-center">
+                      <i className="fas fa-check-circle mr-2"></i>
+                      <span>{success}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-
-            {/* Messages */}
-            {error && (
-              <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-                <div className="flex items-center">
-                  <i className="fas fa-exclamation-circle mr-2"></i>
-                  <span>{error}</span>
-                </div>
-              </div>
-            )}
-
-            {success && (
-              <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
-                <div className="flex items-center">
-                  <i className="fas fa-check-circle mr-2"></i>
-                  <span>{success}</span>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Features */}
-          <div className="grid md:grid-cols-3 gap-6 mb-12">
+          {/* Features - moved below for mobile responsiveness */}
+          <div className="grid md:grid-cols-3 gap-6 mt-12">
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">
               <div className="h-12 w-12 rounded-lg bg-blue-100 flex items-center justify-center mx-auto mb-4">
                 <i className="fas fa-brain text-blue-600"></i>
@@ -288,7 +345,6 @@ const UploadPage = () => {
             </div>
           </div>
         </div>
-      </div>
 
       {/* Footer */}
       <footer className="bg-white border-t border-gray-200 py-8">

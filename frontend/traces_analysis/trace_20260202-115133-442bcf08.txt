@@ -1,0 +1,30 @@
+Trace ID: 20260202-115133-442bcf08
+Dataset: tansactions_kaggle.csv
+Shape: [500000, 12] (sampled to 500000 rows for processing)
+
+Timestamps (from trace):
+- initial_state: 2026-02-02T11:51:36.307835
+- custom_event_layer_1_complete: 2026-02-02T11:51:39.915473
+- custom_event_layer_2_complete: 2026-02-02T11:52:19.322336
+- custom_event_layer_3_complete: 2026-02-02T11:52:19.739964
+- kpi_generation: 2026-02-02T11:52:19.979644
+- chart_selection: 2026-02-02T11:52:19.980082
+- pipeline_end: 2026-02-02T11:52:41.464411
+Processing duration: 65.16 seconds (~65 s)
+
+Pipeline summary:
+- Data parsing: dataset had amount values like "$4.50" which were classified as text; date formats used dd-mm-YYYY HH:MM and classifier warned about date inference.
+- Layer 1: syntactic profiling complete for 12 columns.
+- Layer 2: semantic classification: date identified as datetime, zip as numeric (but could be categorical), amount as text.
+- Layer 3: no relational insights found.
+- KPI generation: reported KPI "zip" mean = 51581.33 (std ±29402.29) — likely not a useful numeric KPI.
+- Chart selection: suggested time-series over date vs zip/mcc/client_id and distributions for numeric-looking variables.
+- Pipeline ended with final_status: SUCCESS
+
+Findings & recommendations:
+1) **Currency parsing:** The `amount` column contains currency symbols ("$") and is classified as text. Add a preprocessing step to detect currency symbols and normalize to numeric values (strip currency + parse) and record currency in metadata.
+2) **Zip code heuristic:** As above, postal codes should be treated as categorical/identifiers (do not compute mean). Use name heuristics and value-distribution heuristics (fixed-length integers, small distinct counts relative to rows) to classify correctly.
+3) **Date parsing warnings persistent:** Many traces show date parsing fallbacks; add multi-format detection and record chosen format and confidence in trace metadata; make dayfirst behavior configurable per dataset or auto-detect reliably.
+4) **Sampling note:** For large datasets sampling to 500k is fine but should be recorded with seed and prominently noted in downstream KPIs and insights that they were computed on a sample.
+
+Saved: frontend/traces_analysis/trace_20260202-115133-442bcf08.txt
