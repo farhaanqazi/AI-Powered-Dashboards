@@ -72,6 +72,9 @@ const UploadPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      <div style={{ background: 'red', color: 'white', padding: '20px' }}>
+        LANDING PAGE JSX MARKER
+      </div>
       {/* Header */}
       <header className="bg-white shadow-sm">
         <div className="container mx-auto px-4 py-4">
