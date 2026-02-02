@@ -79,6 +79,70 @@ def collect_entries_from_trace_dir(trace_dir: str) -> List[Dict[str, Any]]:
     return all_entries
 
 
+# --- Hugging Face Spaces log fetch helper ---
+def _try_import_requests():
+    try:
+        import requests
+        return requests
+    except Exception:
+        return None
+
+
+def fetch_space_logs(space: str, token: Optional[str] = None, timeout: int = 10) -> List[str]:
+    """Try fetching logs from a Hugging Face Space.
+
+    Attempts several endpoints and returns raw text lines (not parsed JSON).
+    If the space is private, provide a token (or set HF_TOKEN env var).
+    """
+    requests_mod = _try_import_requests()
+
+    # Normalize space argument: accept 'owner/space' or full URL
+    if space.startswith("http"):
+        # Extract owner/space from URL
+        m = re.search(r"/spaces/([^/]+/[^/\s]+)", space)
+        if m:
+            space_path = m.group(1)
+        else:
+            space_path = space
+    else:
+        space_path = space
+
+    candidate_urls = [
+        f"https://huggingface.co/spaces/{space_path}/logs",
+        f"https://huggingface.co/spaces/{space_path}/+/logs",
+        f"https://huggingface.co/api/spaces/{space_path}/logs",
+    ]
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    # Try using requests if available
+    for url in candidate_urls:
+        try:
+            if requests_mod:
+                resp = requests_mod.get(url, headers=headers or None, timeout=timeout)
+                if resp.status_code == 200 and resp.text:
+                    return resp.text.splitlines()
+            else:
+                # Fallback to urllib
+                from urllib.request import Request, urlopen
+                req = Request(url)
+                if token:
+                    req.add_header("Authorization", f"Bearer {token}")
+                with urlopen(req, timeout=timeout) as r:
+                    text = r.read().decode("utf-8", errors="ignore")
+                    if text:
+                        return text.splitlines()
+        except Exception:
+            # Try next endpoint
+            continue
+
+    # As a last resort, try the Hugging Face Hub API to list runs (if available)
+    # and gather logs from run outputs (best-effort, non-critical)
+    return []
+
+
 def group_by_trace_id(entries: List[Dict[str, Any]]) -> Dict[str, List[Dict[str, Any]]]:
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
     for e in entries:
@@ -196,6 +260,8 @@ def main(argv: Optional[List[str]] = None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--trace-dir", default=DEFAULT_TRACE_DIR, help="Directory with trace .jsonl files")
     parser.add_argument("--logs-file", default=None, help="A log file (stdout) to parse for PIPELINE_TRACE lines")
+    parser.add_argument("--hf-space", default=None, help="Hugging Face Space (owner/space or URL) to fetch logs from")
+    parser.add_argument("--hf-token", default=os.environ.get("HF_TOKEN"), help="Hugging Face token or set HF_TOKEN env var")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Where to write analyses")
     parser.add_argument("--quiet", action="store_true", help="Less verbose output")
 
@@ -217,6 +283,19 @@ def main(argv: Optional[List[str]] = None):
             with open(args.logs_file, 'r', encoding='utf-8') as f:
                 lines = f.readlines()
             entries.extend(parse_log_lines(lines))
+
+    if args.hf_space:
+        if not args.quiet:
+            print(f"Fetching logs from Hugging Face Space: {args.hf_space}")
+        try:
+            hf_lines = fetch_space_logs(args.hf_space, args.hf_token)
+            if hf_lines:
+                entries.extend(parse_log_lines(hf_lines))
+            else:
+                if not args.quiet:
+                    print("No logs fetched from HF Space or fetch failed.")
+        except Exception as e:
+            print(f"Failed to fetch logs from HF Space: {e}")
 
     if not entries:
         print("No trace entries found. Make sure TRACE_TO_STDOUT is false (to write files) or pass --logs-file with exported logs.")
