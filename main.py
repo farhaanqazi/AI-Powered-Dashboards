@@ -227,14 +227,14 @@ async def serve_dynamic_assets(full_path: str):
     else:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-# Serve splash page as main entry point
-@app.get("/", response_class=HTMLResponse)
-async def read_root():
+# Serve splash page
+@app.get("/splash", response_class=HTMLResponse)
+async def read_splash():
     return FileResponse("frontend/dist/splash.html")
 
-# Serve main application after splash
-@app.get("/app", response_class=HTMLResponse)
-async def read_app():
+# Serve React SPA
+@app.get("/", response_class=HTMLResponse)
+async def read_root():
     return FileResponse("frontend/dist/index.html")
 
 @app.get("/debug-build-files")
