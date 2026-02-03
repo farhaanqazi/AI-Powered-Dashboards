@@ -227,17 +227,12 @@ async def serve_dynamic_assets(full_path: str):
     else:
         raise HTTPException(status_code=404, detail="Asset not found")
 
-# Serve React SPA
+# Serve React SPA (handles all frontend routing)
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    return FileResponse("frontend/dist/splash.html")
-
-# Serve main application
-@app.get("/app", response_class=HTMLResponse)
-async def read_app():
     return FileResponse("frontend/dist/index.html")
 
-# Serve splash page separately as well
+# Serve splash page separately
 @app.get("/splash", response_class=HTMLResponse)
 async def read_splash():
     return FileResponse("frontend/dist/splash.html")
