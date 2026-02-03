@@ -98,9 +98,13 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
     """
     trace_id = tracer.record_initial_state(df, source_name=original_filename)
     state = None
+    errors: List[str] = []
     
     try:
-        if df is None: raise ValueError("Input DataFrame cannot be None")
+        if df is None:
+            msg = "Input DataFrame cannot be None"
+            errors.append(msg)
+            raise ValueError(msg)
 
         df = _reshape_if_wide_timeseries(df)
         if df.empty:
@@ -120,29 +124,68 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
 
         # --- 4-LAYER ANALYSIS PIPELINE ---
         # Layer 1: Get raw facts
-        syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
-        tracer.record_custom_event(trace_id, "layer_1_complete", {"profiled_columns": list(syntactic_profiles.keys())})
+        try:
+            syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
+            tracer.record_custom_event(trace_id, "layer_1_complete", {"profiled_columns": list(syntactic_profiles.keys())})
+        except Exception as e:
+            msg = f"Layer 1 failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
 
         # Layer 2: Assign semantic meaning
-        enriched_profiles = run_semantic_classification(syntactic_profiles, df)
-        tracer.record_custom_event(trace_id, "layer_2_complete", {"roles": {n: p.role for n, p in enriched_profiles.items()}})
+        try:
+            enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+            tracer.record_custom_event(trace_id, "layer_2_complete", {"roles": {n: p.role for n, p in enriched_profiles.items()}})
+        except Exception as e:
+            msg = f"Layer 2 failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
         
         # Layer 3: Find relationships
-        relational_insights = run_relational_analysis(df, enriched_profiles)
-        tracer.record_custom_event(trace_id, "layer_3_complete", {"insights_found": len(relational_insights)})
+        try:
+            relational_insights = run_relational_analysis(df, enriched_profiles)
+            tracer.record_custom_event(trace_id, "layer_3_complete", {"insights_found": len(relational_insights)})
+        except Exception as e:
+            msg = f"Layer 3 failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
 
         # Detect dataset grain (event-level vs entity-level)
         dataset_grain = _detect_dataset_grain(enriched_profiles, df)
 
         # Run EDA analysis to generate insights
-        eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+        try:
+            eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+            eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
+            if eda_errors:
+                errors.extend([f"EDA: {err}" for err in eda_errors])
+        except Exception as e:
+            msg = f"EDA failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            eda_summary = {}
 
         # Layer 4: Decide what to show
-        kpis = determine_kpis(enriched_profiles, relational_insights)
-        tracer.record_kpi_generation(trace_id, kpis)
+        try:
+            kpis = determine_kpis(enriched_profiles, relational_insights)
+            tracer.record_kpi_generation(trace_id, kpis)
+        except Exception as e:
+            msg = f"KPI generation failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
 
-        chart_specs = select_charts(enriched_profiles, relational_insights)
-        tracer.record_chart_selection(trace_id, chart_specs)
+        try:
+            chart_specs = select_charts(enriched_profiles, relational_insights)
+            tracer.record_chart_selection(trace_id, chart_specs)
+        except Exception as e:
+            msg = f"Chart selection failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
 
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
@@ -159,7 +202,14 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             "columns": [p.__dict__ for p in enriched_profiles.values()]
         }
 
-        all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
+        try:
+            all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
+        except Exception as e:
+            msg = f"Chart rendering failed: {e}"
+            errors.append(msg)
+            logger.exception(msg)
+            raise
+
         primary_chart = next((c for c in all_charts if c.get('type') == 'bar'), None)
 
         state = DashboardState(
@@ -171,7 +221,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             category_charts={},
             all_charts=all_charts,
             original_filename=original_filename,
-            errors=[],
+            errors=errors,
             critical_totals={},
             critical_full_dataset_aggregates={},
             eda_summary=eda_summary
@@ -188,27 +238,38 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
     finally:
         if trace_id:
             status = "SUCCESS" if state and not state.errors else "FAILURE"
-            errors_to_log = state.errors if state and state.errors else []
+            errors_to_log: List[str] = []
+            if state and state.errors:
+                errors_to_log = list(state.errors)
             if not state:
                 status = "CRITICAL_FAILURE"
+                if errors:
+                    errors_to_log.extend(errors)
                 errors_to_log.append("Pipeline failed to return a state object.")
             tracer.record_pipeline_end(trace_id, status=status, errors=errors_to_log)
 
 
-def build_dashboard_from_file(file_storage, max_cols: Optional[int] = 50,
-                             original_filename: Optional[str] = None) -> Optional[DashboardState]:
+def build_dashboard_from_file(
+    file_storage,
+    max_cols: Optional[int] = 50,
+    original_filename: Optional[str] = None,
+    encoding: Optional[str] = None,
+) -> Optional[DashboardState]:
     """
     Orchestrates the full dashboard build from an uploaded file.
     """
     from src.data.parser import load_csv_from_file
     
-    load_result = load_csv_from_file(file_storage)
+    load_result = load_csv_from_file(file_storage, encoding=encoding)
     if not load_result.success or load_result.df is None:
         logger.error(f"Failed to load CSV from file: {load_result.detail}")
         return None
 
-    return build_dashboard_from_df(
+    state = build_dashboard_from_df(
         df=load_result.df,
         max_cols=max_cols,
         original_filename=original_filename
     )
+    if state is not None:
+        state.warnings = load_result.warnings or []
+    return state

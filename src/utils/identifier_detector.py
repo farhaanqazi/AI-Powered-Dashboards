@@ -60,6 +60,7 @@ def is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool,
         "id", "uuid", "guid", "key", "code", "sku", "passport", "licence", "license", # Strong identifiers
         "account_number", "customer_number", "order_number", "product_number", "item_number", "transaction_number", # Number-based identifiers
         "invoice_number", "booking_id", "session_id", "token_id", "hash_id", # Specific IDs
+        "zip", "zipcode", "postal", "postcode", "acct", "iban" # Non-aggregatable identifiers
     ]
 
     matching_keywords = [kw for kw in id_keywords if kw in name_lower]

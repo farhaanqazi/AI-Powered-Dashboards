@@ -65,7 +65,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ======================= API ==============================
 
 @app.post("/api/upload")
-async def api_upload(dataset: UploadFile = File(...)):
+async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename:
@@ -81,7 +81,7 @@ async def api_upload(dataset: UploadFile = File(...)):
     file_stream = io.BytesIO(contents)
 
     try:
-        state = build_dashboard_from_file(file_stream, original_filename=dataset.filename)
+        state = build_dashboard_from_file(file_stream, original_filename=dataset.filename, encoding=encoding)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
 
@@ -97,6 +97,7 @@ async def api_upload(dataset: UploadFile = File(...)):
         "all_charts": state.all_charts,
         "original_filename": dataset.filename,
         "errors": getattr(state, "errors", []),
+        "warnings": getattr(state, "warnings", []),
         "critical_totals": getattr(state, "critical_totals", {}),
         "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
         "eda_summary": getattr(state, "eda_summary", {})
@@ -143,6 +144,9 @@ async def api_load_external(req: LoadExternalRequest):
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
 
+    if state is not None:
+        state.warnings = result.warnings or []
+
     response_data = {
         "dataset_profile": state.dataset_profile,
         "kpis": state.kpis,
@@ -152,6 +156,7 @@ async def api_load_external(req: LoadExternalRequest):
         "all_charts": state.all_charts,
         "original_filename": req.external_source,
         "errors": getattr(state, "errors", []),
+        "warnings": getattr(state, "warnings", []),
         "critical_totals": getattr(state, "critical_totals", {}),
         "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
         "eda_summary": getattr(state, "eda_summary", {})
@@ -181,6 +186,7 @@ async def api_get_dashboard():
             "charts": [],
             "eda": {},
             "errors": [],
+            "warnings": [],
             "message": "Dashboard initializing. Data will appear when pipeline completes.",
             "dataset_profile": {},
             "primary_chart": None,
@@ -204,6 +210,7 @@ async def api_get_dashboard():
         "charts": dashboard_data.get("charts", []),
         "eda": dashboard_data.get("eda_summary", {}),
         "errors": dashboard_data.get("errors", []),
+        "warnings": dashboard_data.get("warnings", []),
         "message": None,
         "dataset_profile": dashboard_data.get("dataset_profile", {}),
         "primary_chart": dashboard_data.get("primary_chart", None),

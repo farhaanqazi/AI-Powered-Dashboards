@@ -14,6 +14,14 @@ from src.analysis.data_structures import EnrichedProfile
 
 logger = logging.getLogger(__name__)
 
+def _get_field(obj: Any, key: str, default: Any = None) -> Any:
+    """
+    Safely get a field from either a dict-like object or an attribute-based object.
+    """
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
 def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProfile], relational_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Performs comprehensive EDA analysis on the dataset.
@@ -26,36 +34,62 @@ def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProf
     Returns:
         Dictionary containing EDA insights
     """
+    errors: List[str] = []
+
     try:
         # Generate key indicators
-        key_indicators = _generate_key_indicators(df, enriched_profiles)
+        try:
+            key_indicators = _generate_key_indicators(df, enriched_profiles)
+        except Exception as e:
+            errors.append(f"key_indicators_failed: {e}")
+            key_indicators = []
 
         # Identify patterns and relationships
-        patterns_and_relationships = _identify_patterns_and_relationships(df, enriched_profiles, relational_insights)
+        try:
+            patterns_and_relationships = _identify_patterns_and_relationships(df, enriched_profiles, relational_insights)
+        except Exception as e:
+            errors.append(f"patterns_and_relationships_failed: {e}")
+            patterns_and_relationships = {}
 
         # Generate potential use cases
-        use_cases = _generate_use_cases(enriched_profiles)
+        try:
+            use_cases = _generate_use_cases(enriched_profiles)
+        except Exception as e:
+            errors.append(f"use_cases_failed: {e}")
+            use_cases = []
 
         # Generate recommendations
-        recommendations = _generate_recommendations(enriched_profiles, patterns_and_relationships)
+        try:
+            recommendations = _generate_recommendations(enriched_profiles, patterns_and_relationships)
+        except Exception as e:
+            errors.append(f"recommendations_failed: {e}")
+            recommendations = []
 
         # Generate critical totals if applicable
-        critical_totals = _generate_critical_totals(df, enriched_profiles)
+        try:
+            critical_totals = _generate_critical_totals(df, enriched_profiles)
+        except Exception as e:
+            errors.append(f"critical_totals_failed: {e}")
+            critical_totals = {}
 
         eda_summary = {
             "key_indicators": key_indicators,
             "patterns_and_relationships": patterns_and_relationships,
             "use_cases": use_cases,
             "recommendations": recommendations,
-            "critical_totals": critical_totals
+            "critical_totals": critical_totals,
+            "errors": errors,
         }
 
         logger.info(f"EDA analysis completed with {len(key_indicators)} key indicators, "
                    f"{len(patterns_and_relationships.get('correlations', []))} correlations, "
                    f"and {len(use_cases)} use cases identified.")
 
+        if errors:
+            logger.warning(f"EDA analysis completed with {len(errors)} errors: {errors}")
+
         return eda_summary
-        
+
     except Exception as e:
         logger.error(f"Error during EDA analysis: {e}")
         return {
@@ -63,7 +97,8 @@ def run_eda_analysis(df: pd.DataFrame, enriched_profiles: Dict[str, EnrichedProf
             "patterns_and_relationships": {},
             "use_cases": [],
             "recommendations": [],
-            "critical_totals": {}
+            "critical_totals": {},
+            "errors": [f"eda_fatal_error: {e}"],
         }
 
 
@@ -144,13 +179,15 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
 
     # Extract correlations from relational insights
     for insight in relational_insights:
-        if insight.get('type') == 'correlation':  # insight is still a dict from the analysis layer
-            details = insight.get('details', {})
-            if 'correlation_coefficient' in details:
+        insight_type = _get_field(insight, "type")
+        if insight_type == 'correlation':
+            details = _get_field(insight, "details", {}) or {}
+            columns = _get_field(insight, "columns", []) or []
+            if len(columns) >= 2 and 'correlation_coefficient' in details:
                 patterns['correlations'].append({
-                    "variable1": insight['columns'][0],
-                    "variable2": insight['columns'][1],
-                    "correlation": details['correlation_coefficient'],
+                    "variable1": columns[0],
+                    "variable2": columns[1],
+                    "correlation": details.get('correlation_coefficient'),
                     "p_value": details.get('p_value', None),
                     "strength": details.get('strength', 'moderate')
                 })

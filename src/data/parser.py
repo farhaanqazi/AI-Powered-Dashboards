@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 import logging
-from typing import Optional, Union, NamedTuple
+from typing import Optional, Union, NamedTuple, List, Tuple
 from urllib.parse import urlparse
 import requests
 from requests.adapters import HTTPAdapter
@@ -19,8 +19,37 @@ class LoadResult(NamedTuple):
     df: Optional[pd.DataFrame] = None
     error_code: Optional[str] = None
     detail: Optional[str] = None
+    warnings: Optional[List[str]] = None
 
-def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_rows: int = 500000) -> LoadResult:
+def _try_detect_encoding(sample: bytes) -> Tuple[Optional[str], Optional[float]]:
+    try:
+        import chardet
+    except Exception:
+        return None, None
+
+    try:
+        result = chardet.detect(sample)
+        return result.get("encoding"), result.get("confidence")
+    except Exception:
+        return None, None
+
+def _read_sample_bytes(file_storage, size: int = 65536) -> bytes:
+    try:
+        if hasattr(file_storage, "seek"):
+            file_storage.seek(0)
+        data = file_storage.read(size)
+        if hasattr(file_storage, "seek"):
+            file_storage.seek(0)
+        return data or b""
+    except Exception:
+        return b""
+
+def load_csv_from_file(
+    file_storage,
+    max_file_size: int = MAX_FILE_SIZE,
+    max_rows: int = 500000,
+    encoding: Optional[str] = None,
+) -> LoadResult:
     """
     Load a CSV file from Flask file storage with validation and error handling.
 
@@ -31,6 +60,7 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_row
 
     Returns: LoadResult containing success status, DataFrame, and error details.
     """
+    warnings: List[str] = []
     try:
         # Make sure we're at the start of the file
         if hasattr(file_storage, "seek"):
@@ -44,13 +74,28 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_row
         #     logger.error(f"File size {file_storage.content_length} exceeds limit {max_file_size}")
         #     return LoadResult(success=False, error_code="FILE_TOO_LARGE", detail="File size exceeds maximum allowed.")
 
-        # Try standard UTF-8 read first with additional parameters for robustness
+        # Determine encoding (user override takes precedence)
+        detected_encoding = None
+        confidence = None
+        if encoding:
+            detected_encoding = encoding
+        else:
+            sample = _read_sample_bytes(file_storage)
+            detected_encoding, confidence = _try_detect_encoding(sample)
+            if detected_encoding is None:
+                warnings.append("Encoding detection unavailable; defaulting to UTF-8.")
+                detected_encoding = "utf-8"
+            elif confidence is not None and confidence < 0.6:
+                warnings.append(f"Low encoding confidence ({confidence:.2f}) for '{detected_encoding}'.")
+
+        # Try reading with detected/override encoding first
         try:
-            # Try with automatic delimiter detection
-            df = pd.read_csv(file_storage,
-                           encoding='utf-8',
-                           engine='python',
-                           on_bad_lines='skip')  # Skip problematic lines instead of failing
+            df = pd.read_csv(
+                file_storage,
+                encoding=detected_encoding,
+                engine='python',
+                on_bad_lines='skip'
+            )
 
             # Clean up column names - remove problematic characters and handle unnamed columns
             df.columns = [str(col).strip().replace(' ', '_').replace('-', '_') for col in df.columns]
@@ -74,18 +119,24 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_row
                 df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
                 logger.info(f"Sampled dataset now has {len(df)} rows")
 
-            return LoadResult(success=True, df=df)
+            return LoadResult(success=True, df=df, warnings=warnings)
         except UnicodeDecodeError as e:
-            logger.warning(f"Unicode error with UTF-8, retrying with latin1: {e}")
-            # Retry with a more forgiving encoding
+            if encoding:
+                logger.error(f"Unicode error with provided encoding '{encoding}': {e}")
+                return LoadResult(success=False, error_code="ENCODING_ERROR", detail=f"Failed to decode with encoding '{encoding}': {e}")
+
+            warnings.append(f"Unicode error with '{detected_encoding}', retrying with latin1.")
+            logger.warning(f"Unicode error with {detected_encoding}, retrying with latin1: {e}")
             if hasattr(file_storage, "seek"):
                 file_storage.seek(0)
             elif hasattr(file_storage, "stream") and hasattr(file_storage.stream, "seek"):
                 file_storage.stream.seek(0)
-            df = pd.read_csv(file_storage,
-                           encoding="latin1",
-                           engine='python',
-                           on_bad_lines='skip')
+            df = pd.read_csv(
+                file_storage,
+                encoding="latin1",
+                engine='python',
+                on_bad_lines='skip'
+            )
 
             # Clean up column names - remove problematic characters and handle unnamed columns
             df.columns = [str(col).strip().replace(' ', '_').replace('-', '_') for col in df.columns]
@@ -109,20 +160,20 @@ def load_csv_from_file(file_storage, max_file_size: int = MAX_FILE_SIZE, max_row
                 df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
                 logger.info(f"Sampled dataset now has {len(df)} rows")
 
-            return LoadResult(success=True, df=df)
+            return LoadResult(success=True, df=df, warnings=warnings)
         except pd.errors.EmptyDataError:
             logger.error("CSV file is empty")
-            return LoadResult(success=False, error_code="EMPTY_FILE", detail="The uploaded file is empty.")
+            return LoadResult(success=False, error_code="EMPTY_FILE", detail="The uploaded file is empty.", warnings=warnings)
         except pd.errors.ParserError as e:
             logger.error(f"Parser error while reading CSV: {e}")
-            return LoadResult(success=False, error_code="PARSER_ERROR", detail=f"Could not parse the CSV file: {str(e)}")
+            return LoadResult(success=False, error_code="PARSER_ERROR", detail=f"Could not parse the CSV file: {str(e)}", warnings=warnings)
         except Exception as e:
             logger.error(f"Unexpected error during CSV parsing: {e}")
-            return LoadResult(success=False, error_code="UNEXPECTED_ERROR", detail=f"An unexpected error occurred: {str(e)}")
+            return LoadResult(success=False, error_code="UNEXPECTED_ERROR", detail=f"An unexpected error occurred: {str(e)}", warnings=warnings)
 
     except Exception as e:
         logger.exception(f"Unexpected error reading file object: {e}")
-        return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}")
+        return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}", warnings=warnings)
 
 
 def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> LoadResult:
@@ -149,6 +200,7 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
         logger.error(f"Error parsing URL: {e}")
         return LoadResult(success=False, error_code="URL_PARSE_ERROR", detail="Could not parse the URL.")
 
+    warnings: List[str] = []
     try:
         logger.info(f"Loading CSV from URL: {url}")
 
@@ -171,9 +223,18 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
              logger.error(f"Response from URL is empty: {url}")
              return LoadResult(success=False, error_code="EMPTY_RESPONSE", detail="The URL returned an empty response.")
 
+        # Detect encoding from content
+        detected_encoding, confidence = _try_detect_encoding(response.content or b"")
+        if detected_encoding is None:
+            detected_encoding = response.apparent_encoding or "utf-8"
+            warnings.append("Encoding detection unavailable; defaulting to response apparent encoding or UTF-8.")
+        elif confidence is not None and confidence < 0.6:
+            warnings.append(f"Low encoding confidence ({confidence:.2f}) for '{detected_encoding}'.")
+
         # Read CSV from response content
         import io
-        df = pd.read_csv(io.StringIO(response.text))
+        text = response.content.decode(detected_encoding, errors="replace")
+        df = pd.read_csv(io.StringIO(text))
         logger.info(f"Successfully loaded CSV from URL with {len(df)} rows and {len(df.columns)} columns")
 
         # Perform sampling if dataframe is too large
@@ -182,29 +243,29 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
             df = df.sample(n=max_rows, random_state=42).reset_index(drop=True)
             logger.info(f"Sampled dataset now has {len(df)} rows")
 
-        return LoadResult(success=True, df=df)
+        return LoadResult(success=True, df=df, warnings=warnings)
     except pd.errors.EmptyDataError:
         logger.error(f"CSV from URL is empty: {url}")
-        return LoadResult(success=False, error_code="EMPTY_CSV_URL", detail="The CSV file at the URL is empty.")
+        return LoadResult(success=False, error_code="EMPTY_CSV_URL", detail="The CSV file at the URL is empty.", warnings=warnings)
     except pd.errors.ParserError as e:
         logger.error(f"Parser error loading CSV from URL {url}: {e}")
-        return LoadResult(success=False, error_code="URL_PARSER_ERROR", detail=f"Could not parse the CSV file from the URL: {str(e)}")
+        return LoadResult(success=False, error_code="URL_PARSER_ERROR", detail=f"Could not parse the CSV file from the URL: {str(e)}", warnings=warnings)
     except requests.exceptions.HTTPError as e:
         logger.error(f"HTTP error loading CSV from URL {url}: {e}")
         status_code = e.response.status_code if e.response else "Unknown"
-        return LoadResult(success=False, error_code="HTTP_ERROR", detail=f"HTTP {status_code} error occurred while fetching the URL: {str(e)}")
+        return LoadResult(success=False, error_code="HTTP_ERROR", detail=f"HTTP {status_code} error occurred while fetching the URL: {str(e)}", warnings=warnings)
     except requests.exceptions.ConnectionError as e:
         logger.error(f"Connection error loading CSV from URL {url}: {e}")
-        return LoadResult(success=False, error_code="CONNECTION_ERROR", detail="Could not connect to the URL. Please check the address and your network connection.")
+        return LoadResult(success=False, error_code="CONNECTION_ERROR", detail="Could not connect to the URL. Please check the address and your network connection.", warnings=warnings)
     except requests.exceptions.Timeout as e:
         logger.error(f"Timeout error loading CSV from URL {url}: {e}")
-        return LoadResult(success=False, error_code="TIMEOUT_ERROR", detail=f"The request timed out after {timeout} seconds.")
+        return LoadResult(success=False, error_code="TIMEOUT_ERROR", detail=f"The request timed out after {timeout} seconds.", warnings=warnings)
     except requests.exceptions.RequestException as e: # Catch other requests-related errors
         logger.error(f"Request error loading CSV from URL {url}: {e}")
-        return LoadResult(success=False, error_code="REQUEST_ERROR", detail=f"A network request error occurred: {str(e)}")
+        return LoadResult(success=False, error_code="REQUEST_ERROR", detail=f"A network request error occurred: {str(e)}", warnings=warnings)
     except Exception as e:
         logger.exception(f"Unexpected error loading CSV from URL {url}: {e}")
-        return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}")
+        return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}", warnings=warnings)
 
 
 def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60, max_rows: int = 500000) -> LoadResult:

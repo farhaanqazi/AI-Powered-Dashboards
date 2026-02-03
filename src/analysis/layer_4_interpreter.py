@@ -36,7 +36,8 @@ def _calculate_kpi_score(profile: EnrichedProfile) -> float:
         # Only boost if the field is likely aggregatable
         # Check if it's not an identifier-like numeric field
         name_lower = profile.name.lower()
-        id_keywords = ["id", "key", "code", "no", "number", "index", "account", "user", "customer", "product", "item", "order"]
+        id_keywords = ["id", "key", "code", "no", "number", "index", "account", "user", "customer", "product", "item", "order",
+                       "zip", "zipcode", "postal", "postcode", "acct", "iban"]
 
         if any(keyword in name_lower for keyword in id_keywords):
             # This is likely an identifier, not aggregatable
