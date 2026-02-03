@@ -85,31 +85,6 @@ const DashboardPage = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       <div className="container mx-auto px-4 py-6">
-        {/* Header */}
-        <header className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md">
-                <i className="fas fa-chart-network"></i>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-gray-900">Data Insights Dashboard</h1>
-                <p className="text-gray-600">Analyzing your dataset for actionable insights</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <button className="btn btn-outline btn-sm border-gray-300 text-gray-700 hover:bg-gray-50">
-                <i className="fas fa-download mr-2"></i> Export
-              </button>
-              <button
-                onClick={() => navigate('/')}
-                className="btn btn-primary btn-sm bg-blue-600 hover:bg-blue-700 text-white"
-              >
-                <i className="fas fa-upload mr-2"></i> New Dataset
-              </button>
-            </div>
-          </div>
-        </header>
 
         {/* Stats Cards */}
         {dashboardData && (
