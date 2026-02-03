@@ -12,12 +12,7 @@ const Header = () => {
             <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
               <i className="fas fa-chart-network"></i>
             </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-900">DataInsight</h1>
-              <p className="text-xs text-gray-500">AI-Powered Analytics</p>
-            </div>
-          </div>
-
+      </div>      
           {location.pathname === '/' && (
             <div className="hidden md:flex items-center space-x-3">
               <a href="#features" className="text-sm text-gray-600 hover:text-blue-600 font-medium transition">Features</a>
