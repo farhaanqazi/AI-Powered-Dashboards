@@ -38,6 +38,13 @@ const ChartRenderer = ({ chartData }) => {
     };
   };
 
+  const shouldUseHorizontalBars = (labels) => {
+    const full = labels.map(l => String(l ?? ''));
+    const longLabel = full.some(l => l.length > 12);
+    const manyLabels = full.length > 8;
+    return longLabel || manyLabels;
+  };
+
   // Convert the backend data format to Plotly-compatible format
   let plotlyData = [];
   let layout = chartData.layout || {};
@@ -71,21 +78,29 @@ const ChartRenderer = ({ chartData }) => {
   else if (chartType === 'bar') {
     // For bar charts
     const xValues = chartData.data.x || [];
+    const useHorizontal = shouldUseHorizontalBars(xValues);
     const xAxis = buildCategoryAxis(xValues);
     plotlyData = [{
-      x: xValues,
-      y: chartData.data.y || [],
+      x: useHorizontal ? (chartData.data.y || []) : xValues,
+      y: useHorizontal ? xValues : (chartData.data.y || []),
       type: 'bar',
+      orientation: useHorizontal ? 'h' : 'v',
       marker: { color: '#3b82f6' },
       hovertext: xValues,
-      hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
+      hovertemplate: useHorizontal
+        ? '%{y}<br>%{x}<extra></extra>'
+        : '%{hovertext}<br>%{y}<extra></extra>',
     }];
 
     layout = {
       ...layout,
       title: title,
-      xaxis: { title: chartData.data.xaxis?.title || 'Categories', ...xAxis },
-      yaxis: { title: chartData.data.yaxis?.title || 'Values' },
+      xaxis: useHorizontal
+        ? { title: chartData.data.yaxis?.title || 'Values' }
+        : { title: chartData.data.xaxis?.title || 'Categories', ...xAxis },
+      yaxis: useHorizontal
+        ? { title: chartData.data.xaxis?.title || 'Categories', ...xAxis }
+        : { title: chartData.data.yaxis?.title || 'Values' },
       height: 400,
       margin: { t: 40, b: 60, l: 60, r: 40 },
       paper_bgcolor: 'transparent',
@@ -153,22 +168,30 @@ const ChartRenderer = ({ chartData }) => {
       // For bar charts (categories and counts)
       const xValues = chartData.data.map(item => item.category || item.bin_range || item.x);
       const yValues = chartData.data.map(item => item.count || item.value || item.y);
+      const useHorizontal = shouldUseHorizontalBars(xValues);
       const xAxis = buildCategoryAxis(xValues);
 
       plotlyData = [{
-        x: xValues,
-        y: yValues,
+        x: useHorizontal ? yValues : xValues,
+        y: useHorizontal ? xValues : yValues,
         type: 'bar',
+        orientation: useHorizontal ? 'h' : 'v',
         marker: { color: '#3b82f6' },
         hovertext: xValues,
-        hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
+        hovertemplate: useHorizontal
+          ? '%{y}<br>%{x}<extra></extra>'
+          : '%{hovertext}<br>%{y}<extra></extra>',
       }];
 
       layout = {
         ...layout,
         title: title,
-        xaxis: { title: chartData.x_column || 'Category', ...xAxis },
-        yaxis: { title: 'Count' },
+        xaxis: useHorizontal
+          ? { title: 'Count' }
+          : { title: chartData.x_column || 'Category', ...xAxis },
+        yaxis: useHorizontal
+          ? { title: chartData.x_column || 'Category', ...xAxis }
+          : { title: 'Count' },
         height: 400,
         margin: { t: 40, b: 60, l: 60, r: 40 },
         paper_bgcolor: 'transparent',
@@ -179,22 +202,30 @@ const ChartRenderer = ({ chartData }) => {
       // For histograms (ranges and counts)
       const xValues = chartData.data.map(item => item.bin_range || item.category || item.x);
       const yValues = chartData.data.map(item => item.count || item.value || item.y);
+      const useHorizontal = shouldUseHorizontalBars(xValues);
       const xAxis = buildCategoryAxis(xValues);
 
       plotlyData = [{
-        x: xValues,
-        y: yValues,
+        x: useHorizontal ? yValues : xValues,
+        y: useHorizontal ? xValues : yValues,
         type: 'bar',
+        orientation: useHorizontal ? 'h' : 'v',
         marker: { color: '#8b5cf6' },
         hovertext: xValues,
-        hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
+        hovertemplate: useHorizontal
+          ? '%{y}<br>%{x}<extra></extra>'
+          : '%{hovertext}<br>%{y}<extra></extra>',
       }];
 
       layout = {
         ...layout,
         title: title,
-        xaxis: { title: chartData.x_column || 'Range', ...xAxis },
-        yaxis: { title: 'Frequency' },
+        xaxis: useHorizontal
+          ? { title: 'Frequency' }
+          : { title: chartData.x_column || 'Range', ...xAxis },
+        yaxis: useHorizontal
+          ? { title: chartData.x_column || 'Range', ...xAxis }
+          : { title: 'Frequency' },
         height: 400,
         margin: { t: 40, b: 60, l: 60, r: 40 },
         paper_bgcolor: 'transparent',
