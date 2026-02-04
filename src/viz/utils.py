@@ -643,17 +643,17 @@ def _build_time_series_data(
         type="time_series"
     )
 
-        result = {
-            "title": chart_payload.title,
-            "x_column": x_column,
-            "y_column": y_column,
-            "data": chart_payload.data,
-            "type": chart_payload.type,
-            "agg_func": agg_func
-        }
-        if clip_meta.get("clipped"):
-            result["viz_adjustments"] = {"y": clip_meta}
-        return result
+    result = {
+        "title": chart_payload.title,
+        "x_column": x_column,
+        "y_column": y_column,
+        "data": chart_payload.data,
+        "type": chart_payload.type,
+        "agg_func": agg_func
+    }
+    if clip_meta.get("clipped"):
+        result["viz_adjustments"] = {"y": clip_meta}
+    return result
 
 
 def _build_scatter_data(
