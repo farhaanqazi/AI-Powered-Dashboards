@@ -26,11 +26,14 @@ const ChartRenderer = ({ chartData }) => {
     const full = labels.map(l => String(l ?? ''));
     const truncated = full.map(l => truncateLabel(l));
     const needsTruncate = truncated.some((t, i) => t !== full[i]);
+    const needsRotate = needsTruncate || full.some(l => l.length > 8) || full.length > 6;
+    const tickFontSize = needsRotate ? 10 : 12;
     return {
       tickmode: 'array',
       tickvals: full,
       ticktext: truncated,
-      tickangle: needsTruncate ? -30 : 0,
+      tickangle: needsRotate ? -35 : 0,
+      tickfont: { size: tickFontSize },
       automargin: true,
     };
   };
