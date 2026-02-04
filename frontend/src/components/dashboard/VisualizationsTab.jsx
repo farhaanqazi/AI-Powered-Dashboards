@@ -1,8 +1,29 @@
 import React from 'react';
 import ChartRenderer from '../charts/ChartRenderer';
 
-const VisualizationsTab = ({ data }) => {
-  const { eda_summary } = data;
+const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
+  const safeData = data || {};
+  const { eda_summary } = safeData;
+
+  if (loading) {
+    return (
+      <section id="visualizations-section" className="analysis-section">
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      </section>
+    );
+  }
+
+  if (error) {
+    return (
+      <section id="visualizations-section" className="analysis-section">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">
+          {error}
+        </div>
+      </section>
+    );
+  }
 
   if (!eda_summary || !eda_summary.patterns_and_relationships) {
     return (
@@ -30,7 +51,7 @@ const VisualizationsTab = ({ data }) => {
       <div className="space-y-8">
         {/* Correlation Heatmap */}
         {correlations && correlations.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <i className="fas fa-link text-purple-500 mr-2"></i> Correlation Heatmap
@@ -56,6 +77,7 @@ const VisualizationsTab = ({ data }) => {
                     yaxis: { title: 'Variables' }
                   }
                 }}
+                key={`correlation-heatmap-${refreshKey || 0}`}
               />
             </div>
           </div>
@@ -63,7 +85,7 @@ const VisualizationsTab = ({ data }) => {
 
         {/* Key Indicators */}
         {key_indicators && key_indicators.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <i className="fas fa-chart-bar text-blue-500 mr-2"></i> Key Indicators
@@ -87,6 +109,7 @@ const VisualizationsTab = ({ data }) => {
                     yaxis: { title: 'Value' }
                   }
                 }}
+                key={`key-indicators-${refreshKey || 0}`}
               />
             </div>
           </div>
@@ -94,7 +117,7 @@ const VisualizationsTab = ({ data }) => {
 
         {/* Trend Analysis */}
         {trends && trends.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <i className="fas fa-chart-line text-green-500 mr-2"></i> Trend Analysis
@@ -119,6 +142,7 @@ const VisualizationsTab = ({ data }) => {
                     yaxis: { title: 'Value' }
                   }
                 }}
+                key={`trends-${refreshKey || 0}`}
               />
             </div>
           </div>
@@ -126,7 +150,7 @@ const VisualizationsTab = ({ data }) => {
 
         {/* Outlier Visualization */}
         {outliers && outliers.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <i className="fas fa-exclamation-triangle text-red-500 mr-2"></i> Outlier Visualization
@@ -148,6 +172,7 @@ const VisualizationsTab = ({ data }) => {
                     yaxis: { title: 'Outlier Count' }
                   }
                 }}
+                key={`outliers-${refreshKey || 0}`}
               />
             </div>
           </div>
@@ -155,7 +180,7 @@ const VisualizationsTab = ({ data }) => {
 
         {/* Use Cases Overview */}
         {use_cases && use_cases.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
                 <i className="fas fa-briefcase text-amber-500 mr-2"></i> Use Cases Overview
@@ -177,6 +202,7 @@ const VisualizationsTab = ({ data }) => {
                     title: 'Use Cases Distribution'
                   }
                 }}
+                key={`use-cases-${refreshKey || 0}`}
               />
             </div>
           </div>

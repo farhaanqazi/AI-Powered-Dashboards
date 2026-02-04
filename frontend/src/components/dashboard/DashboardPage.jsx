@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getDashboardData } from '../../services/api';
+import { useDashboardStore } from '../../dashboardStore';
 import OverviewTab from './OverviewTab';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
@@ -8,29 +8,26 @@ import ColumnsTab from './ColumnsTab';
 
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
-  const [dashboardData, setDashboardData] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data: dashboardData, loading, error, refresh, lastUpdated } = useDashboardStore();
+  const hasMounted = useRef(false);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        const data = await getDashboardData();
-        console.log("DASHBOARD PAGE RENDER");
-        console.log("DASHBOARD DATA RAW:", data);
-        setDashboardData(data);
-      } catch (err) {
-        console.log("DASHBOARD FETCH ERROR:", err);
-        setError('Failed to load dashboard data');
-        console.error('Error fetching dashboard data:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    refresh();
+  }, [refresh]);
 
-    fetchDashboardData();
-  }, []);
+  useEffect(() => {
+    if (hasMounted.current) {
+      refresh();
+    } else {
+      hasMounted.current = true;
+    }
+  }, [activeTab, refresh]);
+
+  useEffect(() => {
+    // Ensure Plotly charts resize when switching tabs
+    window.dispatchEvent(new Event('resize'));
+  }, [activeTab, lastUpdated]);
 
   const renderTabContent = () => {
     if (loading) {
@@ -70,15 +67,15 @@ const DashboardPage = () => {
 
     switch (activeTab) {
       case 'overview':
-        return <OverviewTab data={dashboardData} />;
+        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
       case 'eda':
-        return <EDATab data={dashboardData} />;
+        return <EDATab data={dashboardData} loading={loading} error={error} />;
       case 'visualizations':
-        return <VisualizationsTab data={dashboardData} />;
+        return <VisualizationsTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
       case 'column_profiling':
         return <ColumnsTab data={dashboardData} />;
       default:
-        return <OverviewTab data={dashboardData} />;
+        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
     }
   };
 

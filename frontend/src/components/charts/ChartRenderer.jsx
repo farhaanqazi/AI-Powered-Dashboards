@@ -16,6 +16,25 @@ const ChartRenderer = ({ chartData }) => {
     );
   }
 
+  const truncateLabel = (label, maxLen = 14) => {
+    const str = String(label ?? '');
+    if (str.length <= maxLen) return str;
+    return `${str.slice(0, maxLen - 3)}...`;
+  };
+
+  const buildCategoryAxis = (labels) => {
+    const full = labels.map(l => String(l ?? ''));
+    const truncated = full.map(l => truncateLabel(l));
+    const needsTruncate = truncated.some((t, i) => t !== full[i]);
+    return {
+      tickmode: 'array',
+      tickvals: full,
+      ticktext: truncated,
+      tickangle: needsTruncate ? -30 : 0,
+      automargin: true,
+    };
+  };
+
   // Convert the backend data format to Plotly-compatible format
   let plotlyData = [];
   let layout = chartData.layout || {};
@@ -48,17 +67,21 @@ const ChartRenderer = ({ chartData }) => {
   }
   else if (chartType === 'bar') {
     // For bar charts
+    const xValues = chartData.data.x || [];
+    const xAxis = buildCategoryAxis(xValues);
     plotlyData = [{
-      x: chartData.data.x || [],
+      x: xValues,
       y: chartData.data.y || [],
       type: 'bar',
-      marker: { color: '#3b82f6' }
+      marker: { color: '#3b82f6' },
+      hovertext: xValues,
+      hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
     }];
 
     layout = {
       ...layout,
       title: title,
-      xaxis: { title: chartData.data.xaxis?.title || 'Categories' },
+      xaxis: { title: chartData.data.xaxis?.title || 'Categories', ...xAxis },
       yaxis: { title: chartData.data.yaxis?.title || 'Values' },
       height: 400,
       margin: { t: 40, b: 60, l: 60, r: 40 },
@@ -127,18 +150,21 @@ const ChartRenderer = ({ chartData }) => {
       // For bar charts (categories and counts)
       const xValues = chartData.data.map(item => item.category || item.bin_range || item.x);
       const yValues = chartData.data.map(item => item.count || item.value || item.y);
+      const xAxis = buildCategoryAxis(xValues);
 
       plotlyData = [{
         x: xValues,
         y: yValues,
         type: 'bar',
-        marker: { color: '#3b82f6' }
+        marker: { color: '#3b82f6' },
+        hovertext: xValues,
+        hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
       }];
 
       layout = {
         ...layout,
         title: title,
-        xaxis: { title: chartData.x_column || 'Category' },
+        xaxis: { title: chartData.x_column || 'Category', ...xAxis },
         yaxis: { title: 'Count' },
         height: 400,
         margin: { t: 40, b: 60, l: 60, r: 40 },
@@ -150,18 +176,21 @@ const ChartRenderer = ({ chartData }) => {
       // For histograms (ranges and counts)
       const xValues = chartData.data.map(item => item.bin_range || item.category || item.x);
       const yValues = chartData.data.map(item => item.count || item.value || item.y);
+      const xAxis = buildCategoryAxis(xValues);
 
       plotlyData = [{
         x: xValues,
         y: yValues,
         type: 'bar',
-        marker: { color: '#8b5cf6' }
+        marker: { color: '#8b5cf6' },
+        hovertext: xValues,
+        hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
       }];
 
       layout = {
         ...layout,
         title: title,
-        xaxis: { title: chartData.x_column || 'Range' },
+        xaxis: { title: chartData.x_column || 'Range', ...xAxis },
         yaxis: { title: 'Frequency' },
         height: 400,
         margin: { t: 40, b: 60, l: 60, r: 40 },
@@ -179,7 +208,8 @@ const ChartRenderer = ({ chartData }) => {
         y: yValues,
         type: 'scatter',
         mode: 'lines+markers',
-        line: { color: '#10b981' }
+        line: { color: '#10b981' },
+        hovertemplate: '%{x}<br>%{y}<extra></extra>',
       }];
 
       layout = {
@@ -221,18 +251,21 @@ const ChartRenderer = ({ chartData }) => {
       // Default case - try to render as bar chart
       const xValues = chartData.data.map(item => item.category || item.bin_range || item.date || item.x || '');
       const yValues = chartData.data.map(item => item.count || item.value || item.y || 0);
+      const xAxis = buildCategoryAxis(xValues);
 
       plotlyData = [{
         x: xValues,
         y: yValues,
         type: 'bar',
-        marker: { color: '#6b7280' }
+        marker: { color: '#6b7280' },
+        hovertext: xValues,
+        hovertemplate: '%{hovertext}<br>%{y}<extra></extra>',
       }];
 
       layout = {
         ...layout,
         title: title || 'Chart',
-        xaxis: { title: 'X' },
+        xaxis: { title: 'X', ...xAxis },
         yaxis: { title: 'Y' },
         height: 400,
         margin: { t: 40, b: 60, l: 60, r: 40 },
@@ -356,7 +389,7 @@ const ChartRenderer = ({ chartData }) => {
           scale: 2
         }
       }}
-      style={{ width: '100%', height: '100%' }}
+      style={{ width: '100%', height: '100%', overflow: 'hidden' }}
     />
   );
 };
