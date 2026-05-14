@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +19,11 @@ from threading import Lock
 import re
 
 # ---- Internal imports ----
-from src.core.pipeline import build_dashboard_from_file, build_dashboard_from_df
+from src.core.pipeline import (
+    build_dashboard_from_file,
+    build_dashboard_from_df,
+    build_dashboard_from_file_generator,
+)
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
 
 # ---------------- LOGGING ----------------
@@ -117,6 +121,77 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
         "trace_id": trace_id,
         "data": response_data,
     }
+
+@app.post("/api/upload/stream")
+async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None)):
+    if not dataset.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+
+    filename = dataset.filename
+    if '..' in filename or filename.startswith('/'):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files allowed.")
+
+    contents = await dataset.read()
+    trace_id = str(uuid.uuid4())
+
+    def event_source():
+        file_stream = io.BytesIO(contents)
+        try:
+            for event in build_dashboard_from_file_generator(
+                file_stream, original_filename=filename, encoding=encoding
+            ):
+                phase = event.get("phase")
+                if phase == "done":
+                    state = event.get("state")
+                    if state is None:
+                        payload = {"phase": "error", "message": "Pipeline returned no state.", "percent": 100}
+                        yield f"data: {json.dumps(payload)}\n\n"
+                        return
+                    response_data = {
+                        "dataset_profile": state.dataset_profile,
+                        "kpis": state.kpis,
+                        "charts": state.charts,
+                        "primary_chart": state.primary_chart,
+                        "category_charts": getattr(state, "category_charts", {}),
+                        "all_charts": state.all_charts,
+                        "original_filename": filename,
+                        "errors": getattr(state, "errors", []),
+                        "warnings": getattr(state, "warnings", []),
+                        "critical_totals": getattr(state, "critical_totals", {}),
+                        "critical_full_dataset_aggregates": getattr(state, "critical_full_dataset_aggregates", {}),
+                        "eda_summary": getattr(state, "eda_summary", {}),
+                    }
+                    with storage_lock:
+                        dashboard_storage[trace_id] = response_data
+                        dashboard_storage['most_recent'] = response_data
+                    final = {
+                        "phase": "done",
+                        "message": event.get("message", "Complete"),
+                        "percent": 100,
+                        "trace_id": trace_id,
+                        "data": response_data,
+                    }
+                    yield f"data: {json.dumps(final)}\n\n"
+                    return
+                else:
+                    yield f"data: {json.dumps(event)}\n\n"
+        except Exception as e:
+            logger.exception("Upload stream pipeline failed")
+            err = {"phase": "error", "message": f"Server error: {e}", "percent": 100}
+            yield f"data: {json.dumps(err)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
 
 @app.post("/api/load_external")
 async def api_load_external(req: LoadExternalRequest):

@@ -25,7 +25,7 @@ const EDATab = ({ data }) => {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {eda_summary.key_indicators.slice(0, 5).map((indicator, index) => (
-                <div key={index} className="bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg p-4 border border-yellow-100">
+                <div key={index} className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <p className="font-medium text-gray-900">{indicator.indicator}</p>
                   <p className="text-sm text-gray-600">{indicator.description}</p>
                 </div>

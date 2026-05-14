@@ -259,7 +259,7 @@ def build_dashboard_from_file(
     Orchestrates the full dashboard build from an uploaded file.
     """
     from src.data.parser import load_csv_from_file
-    
+
     load_result = load_csv_from_file(file_storage, encoding=encoding)
     if not load_result.success or load_result.df is None:
         logger.error(f"Failed to load CSV from file: {load_result.detail}")
@@ -273,3 +273,160 @@ def build_dashboard_from_file(
     if state is not None:
         state.warnings = load_result.warnings or []
     return state
+
+
+def build_dashboard_from_file_generator(
+    file_storage,
+    max_cols: Optional[int] = 50,
+    original_filename: Optional[str] = None,
+    encoding: Optional[str] = None,
+):
+    """
+    Generator variant of build_dashboard_from_file that yields phase events
+    for SSE-style streaming. Final event has phase='done' with the
+    DashboardState attached.
+    """
+    from src.data.parser import load_csv_from_file
+
+    yield {"phase": "reading", "message": "Reading CSV file...", "percent": 5}
+    load_result = load_csv_from_file(file_storage, encoding=encoding)
+    if not load_result.success or load_result.df is None:
+        yield {
+            "phase": "error",
+            "message": f"Failed to load CSV: {load_result.detail}",
+            "percent": 100,
+        }
+        return
+
+    state = None
+    for event in build_dashboard_from_df_generator(
+        df=load_result.df, max_cols=max_cols, original_filename=original_filename
+    ):
+        if event.get("phase") == "done":
+            state = event.get("state")
+        else:
+            yield event
+
+    if state is None:
+        yield {"phase": "error", "message": "Pipeline returned no state.", "percent": 100}
+        return
+
+    state.warnings = load_result.warnings or []
+    yield {"phase": "done", "message": "Complete", "percent": 100, "state": state}
+
+
+def build_dashboard_from_df_generator(
+    df: pd.DataFrame,
+    max_cols: Optional[int] = 50,
+    original_filename: Optional[str] = "dataframe_input",
+):
+    """
+    Generator variant of build_dashboard_from_df that yields phase events
+    between each of the 4 analysis layers. Final event has phase='done'
+    with the constructed DashboardState in event['state'].
+
+    Each event: {"phase": str, "message": str, "percent": int}
+    Final event also includes: {"state": DashboardState}
+    Error event: {"phase": "error", "message": str, "percent": 100}
+    """
+    trace_id = tracer.record_initial_state(df, source_name=original_filename)
+    state: Optional[DashboardState] = None
+    errors: List[str] = []
+
+    try:
+        if df is None:
+            yield {"phase": "error", "message": "Input DataFrame is None.", "percent": 100}
+            return
+
+        yield {"phase": "preparing", "message": "Reshaping data if needed...", "percent": 10}
+        df = _reshape_if_wide_timeseries(df)
+        if df.empty:
+            empty_state = DashboardState(
+                dataset_profile={}, profile=[], kpis=[], charts=[], primary_chart=None,
+                category_charts={}, all_charts=[], critical_totals={},
+                critical_full_dataset_aggregates={}, eda_summary={},
+            )
+            yield {"phase": "done", "message": "Empty dataset", "percent": 100, "state": empty_state}
+            return
+
+        yield {"phase": "profiling", "message": "Profiling columns...", "percent": 20}
+        syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
+        tracer.record_custom_event(trace_id, "layer_1_complete",
+                                   {"profiled_columns": list(syntactic_profiles.keys())})
+
+        yield {"phase": "classifying", "message": "Classifying column roles...", "percent": 35}
+        enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+        tracer.record_custom_event(trace_id, "layer_2_complete",
+                                   {"roles": {n: p.role for n, p in enriched_profiles.items()}})
+
+        yield {"phase": "relating", "message": "Finding correlations and relationships...", "percent": 50}
+        relational_insights = run_relational_analysis(df, enriched_profiles)
+        tracer.record_custom_event(trace_id, "layer_3_complete",
+                                   {"insights_found": len(relational_insights)})
+
+        dataset_grain = _detect_dataset_grain(enriched_profiles, df)
+
+        yield {"phase": "eda", "message": "Running exploratory data analysis...", "percent": 65}
+        try:
+            eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+            eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
+            if eda_errors:
+                errors.extend([f"EDA: {err}" for err in eda_errors])
+        except Exception as e:
+            errors.append(f"EDA failed: {e}")
+            logger.exception("EDA failure")
+            eda_summary = {}
+
+        yield {"phase": "kpis", "message": "Computing KPIs and selecting charts...", "percent": 80}
+        kpis = determine_kpis(enriched_profiles, relational_insights)
+        tracer.record_kpi_generation(trace_id, kpis)
+        chart_specs = select_charts(enriched_profiles, relational_insights)
+        tracer.record_chart_selection(trace_id, chart_specs)
+
+        yield {"phase": "rendering", "message": "Building charts...", "percent": 92}
+        role_counts: Dict[str, int] = {}
+        for profile in enriched_profiles.values():
+            role_counts[profile.role] = role_counts.get(profile.role, 0) + 1
+
+        dataset_profile_for_viz = {
+            "n_rows": len(df),
+            "n_cols": len(enriched_profiles),
+            "role_counts": role_counts,
+            "dataset_grain": dataset_grain,
+            "columns": [p.__dict__ for p in enriched_profiles.values()],
+        }
+        all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
+        primary_chart = next((c for c in all_charts if c.get("type") == "bar"), None)
+
+        state = DashboardState(
+            dataset_profile=dataset_profile_for_viz,
+            profile=[],
+            kpis=kpis,
+            charts=chart_specs,
+            primary_chart=primary_chart,
+            category_charts={},
+            all_charts=all_charts,
+            original_filename=original_filename,
+            errors=errors,
+            critical_totals={},
+            critical_full_dataset_aggregates={},
+            eda_summary=eda_summary,
+        )
+        yield {"phase": "done", "message": "Dashboard ready", "percent": 100, "state": state}
+
+    except Exception as e:
+        logger.exception("Pipeline (generator) failed")
+        yield {"phase": "error", "message": f"Pipeline failed: {e}", "percent": 100}
+
+    finally:
+        if trace_id:
+            status = "SUCCESS" if state and not state.errors else "FAILURE"
+            errors_to_log: List[str] = []
+            if state and state.errors:
+                errors_to_log = list(state.errors)
+            if not state:
+                status = "CRITICAL_FAILURE"
+                if errors:
+                    errors_to_log.extend(errors)
+                errors_to_log.append("Pipeline (generator) failed to return a state object.")
+            tracer.record_pipeline_end(trace_id, status=status, errors=errors_to_log)

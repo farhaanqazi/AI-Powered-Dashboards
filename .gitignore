@@ -46,3 +46,36 @@ node_modules/
 !package-lock.json
 !tsconfig.json
 !vite.config.json
+
+# Local scratch / AI agent assets (skills, handoffs, mirrored repos)
+_local/
+
+# IDE / agent state
+.claude/
+.cursor/
+
+# Scratch planning / session files
+plan.txt
+plan_*.txt
+*.scratch.md
+SESSION_CONTEXT_CURRENT.md
+
+# Test / lint / type caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Frontend build / test artifacts (keep tracked traces; ignore CSV-named per-run dumps)
+frontend/traces_analysis/*.csv__*.txt
+frontend/playwright-report/
+frontend/test-results/
+frontend/.vite/
+
+# Editor / backup files
+*.bak
+*.orig
+*.tmp
+*~

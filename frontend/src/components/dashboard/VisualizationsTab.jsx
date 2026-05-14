@@ -46,11 +46,44 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
   const key_indicators = eda_summary.key_indicators || [];
   const recommendations = eda_summary.recommendations || [];
 
+  // Transform correlation pairs into a correlation matrix for heatmap
+  const buildCorrelationMatrix = (correlations) => {
+    if (!correlations || correlations.length === 0) return null;
+
+    const vars = new Set();
+    correlations.forEach(corr => {
+      vars.add(corr.variable1);
+      vars.add(corr.variable2);
+    });
+
+    const varArray = Array.from(vars).sort();
+    const n = varArray.length;
+    const varIndex = Object.fromEntries(varArray.map((v, i) => [v, i]));
+
+    // Initialize correlation matrix with 1.0 on diagonal, 0 elsewhere
+    const z = Array(n).fill(0).map(() => Array(n).fill(0));
+    varArray.forEach((v, i) => z[i][i] = 1.0);
+
+    // Fill in correlation values (symmetric matrix)
+    correlations.forEach(corr => {
+      const i = varIndex[corr.variable1];
+      const j = varIndex[corr.variable2];
+      if (i !== undefined && j !== undefined) {
+        z[i][j] = corr.correlation;
+        z[j][i] = corr.correlation; // Symmetric
+      }
+    });
+
+    return { z, variables: varArray };
+  };
+
+  const correlationMatrix = buildCorrelationMatrix(correlations);
+
   return (
     <section id="visualizations-section" className="analysis-section">
       <div className="space-y-8">
         {/* Correlation Heatmap */}
-        {correlations && correlations.length > 0 && (
+        {correlationMatrix && (
           <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-gray-900 flex items-center">
@@ -65,14 +98,16 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
                   title: 'Variable Correlations',
                   type: 'heatmap',
                   data: {
-                    z: correlations.map(corr => [corr.correlation]),
-                    x: correlations.map(corr => corr.variable1),
-                    y: correlations.map(corr => corr.variable2),
+                    z: correlationMatrix.z,
+                    x: correlationMatrix.variables,
+                    y: correlationMatrix.variables,
                     type: 'heatmap',
-                    colorscale: 'Viridis'
+                    colorscale: 'RdBu',
+                    zmin: -1,
+                    zmax: 1
                   },
                   layout: {
-                    title: 'Variable Correlations',
+                    title: 'Correlation Matrix',
                     xaxis: { title: 'Variables' },
                     yaxis: { title: 'Variables' }
                   }

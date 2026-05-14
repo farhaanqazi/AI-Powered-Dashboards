@@ -607,26 +607,56 @@ def _build_time_series_data(
         logger.info(f"Y column '{y_column}' has less than 2 unique values over time, skipping time series")
         return None
 
-    # Group by date if there are duplicate dates
-    if x_final.duplicated().any():
-        agg_func_lower = agg_func.lower()
-        valid_agg_funcs = {'sum', 'mean', 'count', 'min', 'max', 'std', 'median'}
-        if agg_func_lower not in valid_agg_funcs:
-            logger.warning(f"Invalid aggregation function '{agg_func}' for time series, defaulting to 'mean'.")
-            agg_func_lower = 'mean'
+    agg_func_lower = agg_func.lower()
+    valid_agg_funcs = {'sum', 'mean', 'count', 'min', 'max', 'std', 'median'}
+    if agg_func_lower not in valid_agg_funcs:
+        logger.warning(f"Invalid aggregation function '{agg_func}' for time series, defaulting to 'mean'.")
+        agg_func_lower = 'mean'
 
-        try:
+    n_points = len(combined)
+    resample_rule = None
+    if n_points > 10000:
+        span = x_final.max() - x_final.min()
+        if span >= pd.Timedelta(days=365 * 3):
+            resample_rule = 'W'
+        elif span >= pd.Timedelta(days=60):
+            resample_rule = 'D'
+        elif span >= pd.Timedelta(days=2):
+            resample_rule = 'H'
+        elif span >= pd.Timedelta(hours=2):
+            resample_rule = '5min'
+        else:
+            resample_rule = '30s'
+        logger.info(
+            f"Time series '{x_column}' vs '{y_column}': {n_points} points "
+            f"-> resampling at '{resample_rule}' (span={span})"
+        )
+
+    downsample_meta: Dict[str, Any] = {}
+    try:
+        if resample_rule is not None:
+            indexed = pd.DataFrame({'_y': y_final.values}, index=pd.DatetimeIndex(x_final.values))
+            resampled = indexed['_y'].resample(resample_rule).agg(agg_func_lower).dropna()
+            dates = [dt.isoformat() for dt in resampled.index]
+            values = [float(val) for val in resampled.values]
+            downsample_meta = {
+                "downsampled": True,
+                "rule": resample_rule,
+                "original_points": n_points,
+                "downsampled_points": len(dates),
+                "agg_func": agg_func_lower,
+            }
+        elif x_final.duplicated().any():
             grouped = y_final.groupby(x_final).agg(agg_func_lower)
             dates = [dt.isoformat() for dt in grouped.index]
             values = [float(val) for val in grouped.values]
-        except Exception as e:
-            logger.error(f"Error in aggregation for time series {x_column} vs {y_column}: {e}")
-            return None
-    else:
-        # Sort by date
-        sorted_combined = combined.sort_values(x_column)
-        dates = [dt.isoformat() for dt in sorted_combined.iloc[:, 0]]
-        values = [float(val) for val in sorted_combined.iloc[:, 1]]
+        else:
+            sorted_combined = combined.sort_values(x_column)
+            dates = [dt.isoformat() for dt in sorted_combined.iloc[:, 0]]
+            values = [float(val) for val in sorted_combined.iloc[:, 1]]
+    except Exception as e:
+        logger.error(f"Error preparing time series data for {x_column} vs {y_column}: {e}")
+        return None
 
     if not dates:
         logger.warning(f"No valid dates for time series between '{x_column}' and '{y_column}'")
@@ -653,8 +683,13 @@ def _build_time_series_data(
         "type": chart_payload.type,
         "agg_func": agg_func
     }
+    adjustments: Dict[str, Any] = {}
     if clip_meta.get("clipped"):
-        result["viz_adjustments"] = {"y": clip_meta}
+        adjustments["y"] = clip_meta
+    if downsample_meta:
+        adjustments["downsample"] = downsample_meta
+    if adjustments:
+        result["viz_adjustments"] = adjustments
     return result
 
 
@@ -724,6 +759,11 @@ def _build_scatter_data(
         logger.warning(f"Insufficient or mismatched valid data points for scatter plot between '{x_column}' and '{y_column}' after cleaning for NaN/Inf")
         return None
 
+    # **ADAPTIVE CHARTING: Use 2D histogram for large datasets to prevent overplotting**
+    if len(x_values) > 10000:
+        logger.info(f"Large dataset detected ({len(x_values)} points). Using 2D histogram instead of scatter.")
+        return _build_2d_histogram_data(df, x_column, y_column, dataset_profile)
+
     table_data = [
         {"x": x_val, "y": y_val}
         for x_val, y_val in zip(x_values, y_values)
@@ -752,6 +792,69 @@ def _build_scatter_data(
         }
 
     return result
+
+
+def _build_2d_histogram_data(
+    df: pd.DataFrame,
+    x_column: str,
+    y_column: str,
+    dataset_profile: Optional[Dict[str, Any]] = None,
+    nbins: int = 30
+) -> Optional[Dict[str, Any]]:
+    """
+    Builds 2D density histogram for large point clouds (>10k points).
+    Prevents overplotting by binning data and showing density via heatmap.
+    """
+    if x_column not in df.columns or y_column not in df.columns:
+        logger.warning(f"One of columns '{x_column}' or '{y_column}' not found for 2D histogram")
+        return None
+
+    # Convert to numeric and clean
+    x_numeric = pd.to_numeric(df[x_column], errors='coerce')
+    y_numeric = pd.to_numeric(df[y_column], errors='coerce')
+    combined = pd.concat([x_numeric, y_numeric], axis=1).dropna()
+
+    if combined.empty or len(combined) < 3:
+        return None
+
+    x_final = combined.iloc[:, 0]
+    y_final = combined.iloc[:, 1]
+
+    # Winsorize to handle outliers for better density visualization
+    x_final, _ = _maybe_clip_series_for_viz(x_final)
+    y_final, _ = _maybe_clip_series_for_viz(y_final)
+
+    # Create 2D histogram
+    h, x_edges, y_edges = np.histogram2d(x_final, y_final, bins=nbins)
+
+    # Transpose so it's (y_bin, x_bin) for proper heatmap rendering
+    z = h.T.tolist()
+
+    # Create bin labels (midpoints)
+    x_labels = [f"{x_edges[i]:.2f}-{x_edges[i+1]:.2f}" for i in range(len(x_edges)-1)]
+    y_labels = [f"{y_edges[i]:.2f}-{y_edges[i+1]:.2f}" for i in range(len(y_edges)-1)]
+
+    # Reverse y_labels to match Plotly's orientation
+    y_labels = y_labels[::-1]
+
+    return {
+        "title": f"Density: {x_column.replace('_', ' ').title()} vs {y_column.replace('_', ' ').title()}",
+        "x_column": x_column,
+        "y_column": y_column,
+        "type": "heatmap",
+        "data": {
+            "z": z,
+            "x": x_labels,
+            "y": y_labels,
+            "type": "heatmap",
+            "colorscale": "Viridis"
+        },
+        "layout": {
+            "title": f"Density Distribution ({len(x_final)} points binned)",
+            "xaxis": {"title": x_column.replace('_', ' ').title()},
+            "yaxis": {"title": y_column.replace('_', ' ').title()}
+        }
+    }
 
 
 def _build_pie_data(
