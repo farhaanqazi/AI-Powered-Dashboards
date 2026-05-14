@@ -1,6 +1,23 @@
 import { create } from 'zustand';
 import { getDashboardData } from './services/api';
 
+const GUEST_KEY = 'dataInsight:guestMode';
+const GUEST_SID_KEY = 'dataInsight:guestSessionId';
+const readGuest = () => {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem(GUEST_KEY) === '1'; }
+  catch { return false; }
+};
+const ensureGuestSessionId = () => {
+  try {
+    let sid = localStorage.getItem(GUEST_SID_KEY);
+    if (!sid) {
+      sid = (crypto?.randomUUID?.() || `g-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+      localStorage.setItem(GUEST_SID_KEY, sid);
+    }
+    return sid;
+  } catch { return 'anonymous'; }
+};
+
 export const useDashboardStore = create((set, get) => ({
   data: null,
   loading: false,
@@ -8,6 +25,16 @@ export const useDashboardStore = create((set, get) => ({
   lastUpdated: 0,
   exporting: false,
   exportHandler: null,
+  isGuest: readGuest(),
+  enableGuest: () => {
+    try { localStorage.setItem(GUEST_KEY, '1'); } catch {}
+    ensureGuestSessionId();
+    set({ isGuest: true });
+  },
+  disableGuest: () => {
+    try { localStorage.removeItem(GUEST_KEY); } catch {}
+    set({ isGuest: false });
+  },
   setExportHandler: (fn) => set({ exportHandler: fn }),
   async runExport() {
     const fn = get().exportHandler;

@@ -1,6 +1,28 @@
 import React from 'react';
 import ChartRenderer from '../charts/ChartRenderer';
 
+const ChartPanel = ({ icon, iconColor, title, badgeTone, badgeLabel, eyebrow, children, height = 'h-96' }) => (
+  <div className="glass-card p-6 chart-card">
+    <div className="flex items-start justify-between mb-5 gap-4">
+      <div className="min-w-0">
+        {eyebrow && (
+          <span className="block text-[10px] uppercase tracking-[0.32em] text-slate-400 mb-1">
+            {eyebrow}
+          </span>
+        )}
+        <h2 className="text-base md:text-lg font-semibold text-slate-100 flex items-center gap-3">
+          <span className="section-icon"><i className={`fas ${icon}`} style={{ color: iconColor }} /></span>
+          <span className="truncate">{title}</span>
+        </h2>
+      </div>
+      <span className={`neon-badge ${badgeTone} flex-shrink-0`}>{badgeLabel}</span>
+    </div>
+    <div className={`chart-container chart-shell ${height}`}>
+      {children}
+    </div>
+  </div>
+);
+
 const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
   const safeData = data || {};
   const { eda_summary } = safeData;
@@ -9,7 +31,7 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
     return (
       <section id="visualizations-section" className="analysis-section">
         <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          <div className="dash-spinner" />
         </div>
       </section>
     );
@@ -18,9 +40,7 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
   if (error) {
     return (
       <section id="visualizations-section" className="analysis-section">
-        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">
-          {error}
-        </div>
+        <div className="glass-soft p-5 text-rose-200 border-rose-400/30">{error}</div>
       </section>
     );
   }
@@ -28,231 +48,221 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
   if (!eda_summary || !eda_summary.patterns_and_relationships) {
     return (
       <section id="visualizations-section" className="analysis-section">
-        <div className="bg-gray-50 rounded-xl p-8 text-center border-2 border-dashed border-gray-200">
-          <i className="fas fa-chart-bar text-gray-400 text-2xl mb-3"></i>
-          <p className="text-gray-500">Advanced visualizations not available for this dataset.</p>
+        <div className="empty-state">
+          <i className="fas fa-chart-bar empty-icon" />
+          <p>Advanced visualizations not available for this dataset.</p>
         </div>
       </section>
     );
   }
 
-  // Extract data from the EDA summary to create actual chart data
   const patterns_and_relationships = eda_summary.patterns_and_relationships || {};
   const correlations = patterns_and_relationships.correlations || [];
   const trends = patterns_and_relationships.trends || [];
   const outliers = patterns_and_relationships.outliers || [];
-  const anomalies = patterns_and_relationships.anomalies || [];
   const use_cases = eda_summary.use_cases || [];
   const key_indicators = eda_summary.key_indicators || [];
-  const recommendations = eda_summary.recommendations || [];
 
-  // Transform correlation pairs into a correlation matrix for heatmap
   const buildCorrelationMatrix = (correlations) => {
     if (!correlations || correlations.length === 0) return null;
-
     const vars = new Set();
-    correlations.forEach(corr => {
-      vars.add(corr.variable1);
-      vars.add(corr.variable2);
-    });
-
+    correlations.forEach(c => { vars.add(c.variable1); vars.add(c.variable2); });
     const varArray = Array.from(vars).sort();
     const n = varArray.length;
     const varIndex = Object.fromEntries(varArray.map((v, i) => [v, i]));
-
-    // Initialize correlation matrix with 1.0 on diagonal, 0 elsewhere
     const z = Array(n).fill(0).map(() => Array(n).fill(0));
     varArray.forEach((v, i) => z[i][i] = 1.0);
-
-    // Fill in correlation values (symmetric matrix)
-    correlations.forEach(corr => {
-      const i = varIndex[corr.variable1];
-      const j = varIndex[corr.variable2];
-      if (i !== undefined && j !== undefined) {
-        z[i][j] = corr.correlation;
-        z[j][i] = corr.correlation; // Symmetric
-      }
+    correlations.forEach(c => {
+      const i = varIndex[c.variable1];
+      const j = varIndex[c.variable2];
+      if (i !== undefined && j !== undefined) { z[i][j] = c.correlation; z[j][i] = c.correlation; }
     });
-
     return { z, variables: varArray };
   };
 
   const correlationMatrix = buildCorrelationMatrix(correlations);
 
+  const noViz =
+    (!correlations || correlations.length === 0) &&
+    (!trends || trends.length === 0) &&
+    (!outliers || outliers.length === 0) &&
+    (!use_cases || use_cases.length === 0) &&
+    (!key_indicators || key_indicators.length === 0);
+
   return (
     <section id="visualizations-section" className="analysis-section">
-      <div className="space-y-8">
+      {/* Section intro */}
+      <div className="mb-6 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">Visualization Gallery</div>
+          <h2 className="text-xl md:text-2xl font-semibold text-slate-100">
+            Patterns the model surfaced
+          </h2>
+          <p className="text-sm text-slate-400 mt-1 max-w-xl">
+            Each panel highlights a different kind of signal — correlations, trends, anomalies, and the use cases this data unlocks.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="metric-chip">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-sky-400 shadow-[0_0_8px_#60a5fa]" />
+            {[correlationMatrix, key_indicators?.length, trends?.length, outliers?.length, use_cases?.length].filter(Boolean).length} active panels
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-6">
         {/* Correlation Heatmap */}
         {correlationMatrix && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-link text-purple-500 mr-2"></i> Correlation Heatmap
-              </h2>
-              <span className="badge bg-purple-100 text-purple-700 text-xs px-3 py-1 rounded-full">Correlation</span>
-            </div>
-            <div className="chart-container h-96">
-              <ChartRenderer
-                chartData={{
-                  id: 'correlation-heatmap',
-                  title: 'Variable Correlations',
+          <ChartPanel
+            eyebrow="Variable relationships"
+            icon="fa-link"
+            iconColor="#d8b4fe"
+            title="Correlation Heatmap"
+            badgeTone="neon-purple"
+            badgeLabel="Correlation"
+          >
+            <ChartRenderer
+              chartData={{
+                id: 'correlation-heatmap',
+                title: '',
+                type: 'heatmap',
+                data: {
+                  z: correlationMatrix.z,
+                  x: correlationMatrix.variables,
+                  y: correlationMatrix.variables,
                   type: 'heatmap',
-                  data: {
-                    z: correlationMatrix.z,
-                    x: correlationMatrix.variables,
-                    y: correlationMatrix.variables,
-                    type: 'heatmap',
-                    colorscale: 'RdBu',
-                    zmin: -1,
-                    zmax: 1
-                  },
-                  layout: {
-                    title: 'Correlation Matrix',
-                    xaxis: { title: 'Variables' },
-                    yaxis: { title: 'Variables' }
-                  }
-                }}
-                key={`correlation-heatmap-${refreshKey || 0}`}
-              />
-            </div>
-          </div>
+                  zmin: -1,
+                  zmax: 1,
+                },
+                layout: {
+                  xaxis: { title: 'Variables' },
+                  yaxis: { title: 'Variables' },
+                },
+              }}
+              key={`correlation-heatmap-${refreshKey || 0}`}
+            />
+          </ChartPanel>
         )}
 
         {/* Key Indicators */}
         {key_indicators && key_indicators.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-chart-bar text-blue-500 mr-2"></i> Key Indicators
-              </h2>
-              <span className="badge bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full">Significance</span>
-            </div>
-            <div className="chart-container h-96">
-              <ChartRenderer
-                chartData={{
-                  id: 'key-indicators-chart',
-                  title: 'Key Indicators',
+          <ChartPanel
+            eyebrow="Top signals"
+            icon="fa-chart-bar"
+            iconColor="#93c5fd"
+            title="Key Indicators"
+            badgeTone="neon-blue"
+            badgeLabel="Significance"
+          >
+            <ChartRenderer
+              chartData={{
+                id: 'key-indicators-chart',
+                title: '',
+                type: 'bar',
+                data: {
+                  x: key_indicators.map(ki => ki.indicator || ki.label),
+                  y: key_indicators.map(ki => ki.value || ki.score),
                   type: 'bar',
-                  data: {
-                    x: key_indicators.map(ki => ki.indicator || ki.label),
-                    y: key_indicators.map(ki => ki.value || ki.score),
-                    type: 'bar'
-                  },
-                  layout: {
-                    title: 'Key Indicators',
-                    xaxis: { title: 'Indicator' },
-                    yaxis: { title: 'Value' }
-                  }
-                }}
-                key={`key-indicators-${refreshKey || 0}`}
-              />
-            </div>
-          </div>
+                },
+                layout: {
+                  xaxis: { title: 'Indicator' },
+                  yaxis: { title: 'Value' },
+                },
+              }}
+              key={`key-indicators-${refreshKey || 0}`}
+            />
+          </ChartPanel>
         )}
 
         {/* Trend Analysis */}
         {trends && trends.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-chart-line text-green-500 mr-2"></i> Trend Analysis
-              </h2>
-              <span className="badge bg-green-100 text-green-700 text-xs px-3 py-1 rounded-full">Time Series</span>
-            </div>
-            <div className="chart-container h-96">
-              <ChartRenderer
-                chartData={{
-                  id: 'trends-chart',
-                  title: 'Trend Analysis',
+          <ChartPanel
+            eyebrow="Movement over time"
+            icon="fa-chart-line"
+            iconColor="#6ee7b7"
+            title="Trend Analysis"
+            badgeTone="neon-emerald"
+            badgeLabel="Time series"
+          >
+            <ChartRenderer
+              chartData={{
+                id: 'trends-chart',
+                title: '',
+                type: 'scatter',
+                data: {
+                  x: trends.map(t => t.datetime_column || t.period),
+                  y: trends.map(t => t.numeric_column || t.value),
                   type: 'scatter',
-                  data: {
-                    x: trends.map(t => t.datetime_column || t.period),
-                    y: trends.map(t => t.numeric_column || t.value),
-                    type: 'scatter',
-                    mode: 'lines+markers'
-                  },
-                  layout: {
-                    title: 'Trend Analysis',
-                    xaxis: { title: 'Time Period' },
-                    yaxis: { title: 'Value' }
-                  }
-                }}
-                key={`trends-${refreshKey || 0}`}
-              />
-            </div>
-          </div>
+                  mode: 'lines+markers',
+                },
+                layout: {
+                  xaxis: { title: 'Time Period' },
+                  yaxis: { title: 'Value' },
+                },
+              }}
+              key={`trends-${refreshKey || 0}`}
+            />
+          </ChartPanel>
         )}
 
-        {/* Outlier Visualization */}
+        {/* Outliers */}
         {outliers && outliers.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-exclamation-triangle text-red-500 mr-2"></i> Outlier Visualization
-              </h2>
-              <span className="badge bg-red-100 text-red-700 text-xs px-3 py-1 rounded-full">Anomaly</span>
-            </div>
-            <div className="chart-container h-96">
-              <ChartRenderer
-                chartData={{
-                  id: 'outliers-chart',
-                  title: 'Outlier Distribution',
+          <ChartPanel
+            eyebrow="Distribution tails"
+            icon="fa-triangle-exclamation"
+            iconColor="#fda4af"
+            title="Outlier Visualization"
+            badgeTone="neon-rose"
+            badgeLabel="Anomaly"
+          >
+            <ChartRenderer
+              chartData={{
+                id: 'outliers-chart',
+                title: '',
+                type: 'box',
+                data: {
+                  y: outliers.map(o => o.outlier_count || o.value),
                   type: 'box',
-                  data: {
-                    y: outliers.map(o => o.outlier_count || o.value),
-                    type: 'box'
-                  },
-                  layout: {
-                    title: 'Outlier Distribution',
-                    yaxis: { title: 'Outlier Count' }
-                  }
-                }}
-                key={`outliers-${refreshKey || 0}`}
-              />
-            </div>
-          </div>
+                },
+                layout: { yaxis: { title: 'Outlier Count' } },
+              }}
+              key={`outliers-${refreshKey || 0}`}
+            />
+          </ChartPanel>
         )}
 
-        {/* Use Cases Overview */}
+        {/* Use cases */}
         {use_cases && use_cases.length > 0 && (
-          <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 chart-card">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900 flex items-center">
-                <i className="fas fa-briefcase text-amber-500 mr-2"></i> Use Cases Overview
-              </h2>
-              <span className="badge bg-amber-100 text-amber-700 text-xs px-3 py-1 rounded-full">Business</span>
-            </div>
-            <div className="chart-container h-96">
-              <ChartRenderer
-                chartData={{
-                  id: 'use-cases-chart',
-                  title: 'Use Cases Distribution',
+          <ChartPanel
+            eyebrow="Where this data shines"
+            icon="fa-briefcase"
+            iconColor="#fcd34d"
+            title="Use Cases Overview"
+            badgeTone="neon-amber"
+            badgeLabel="Business"
+          >
+            <ChartRenderer
+              chartData={{
+                id: 'use-cases-chart',
+                title: '',
+                type: 'pie',
+                data: {
+                  labels: use_cases.map(uc => uc.use_case || uc.title),
+                  values: use_cases.map(uc => uc.confidence || uc.score || 1),
                   type: 'pie',
-                  data: {
-                    labels: use_cases.map(uc => uc.use_case || uc.title),
-                    values: use_cases.map(uc => uc.confidence || uc.score || 1),
-                    type: 'pie'
-                  },
-                  layout: {
-                    title: 'Use Cases Distribution'
-                  }
-                }}
-                key={`use-cases-${refreshKey || 0}`}
-              />
-            </div>
-          </div>
+                },
+                layout: {},
+              }}
+              key={`use-cases-${refreshKey || 0}`}
+            />
+          </ChartPanel>
         )}
 
-        {/* Show message if no visualizations are available */}
-        {(!correlations || correlations.length === 0) &&
-         (!trends || trends.length === 0) &&
-         (!outliers || outliers.length === 0) &&
-         (!use_cases || use_cases.length === 0) &&
-         (!key_indicators || key_indicators.length === 0) && (
-          <div className="bg-gray-50 rounded-xl p-8 text-center border-2 border-dashed border-gray-200">
-            <i className="fas fa-info-circle text-gray-400 text-2xl mb-3"></i>
-            <p className="text-gray-500">No advanced visualizations available for this dataset.</p>
-            <p className="text-sm text-gray-400 mt-2">The EDA analysis did not detect significant patterns that warrant specialized visualizations.</p>
+        {noViz && (
+          <div className="empty-state">
+            <i className="fas fa-info-circle empty-icon" />
+            <p>No advanced visualizations available for this dataset.</p>
+            <p className="text-xs text-slate-500 mt-2">The EDA analysis did not detect significant patterns that warrant specialized visualizations.</p>
           </div>
         )}
       </div>

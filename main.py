@@ -28,7 +28,7 @@ from src.core.pipeline import (
     build_dashboard_from_file_generator,
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
-from src.auth import require_clerk_user
+from src.auth import require_clerk_user, allow_clerk_or_guest
 
 # ---------------- LOGGING ----------------
 try:
@@ -78,7 +78,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ======================= API ==============================
 
 @app.post("/api/upload")
-async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(require_clerk_user)):
+async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename:
@@ -118,7 +118,7 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
 
     with storage_lock:
         dashboard_storage[trace_id] = response_data
-        dashboard_storage['most_recent'] = response_data
+        dashboard_storage[user['session_key']] = response_data
 
     return {
         "status": "success",
@@ -127,7 +127,7 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
     }
 
 @app.post("/api/upload/stream")
-async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(require_clerk_user)):
+async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     if not dataset.filename:
         raise HTTPException(status_code=400, detail="No file provided.")
 
@@ -198,7 +198,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
 
 
 @app.post("/api/load_external")
-async def api_load_external(req: LoadExternalRequest, user=Depends(require_clerk_user)):
+async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
     if not req.external_source or not isinstance(req.external_source, str):
@@ -248,7 +248,7 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(require_clerk
 
     with storage_lock:
         dashboard_storage[trace_id] = response_data
-        dashboard_storage['most_recent'] = response_data
+        dashboard_storage[user['session_key']] = response_data
 
     return {
         "status": "success",
@@ -257,9 +257,9 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(require_clerk
     }
 
 @app.get("/api/dashboard")
-async def api_get_dashboard(user=Depends(require_clerk_user)):
+async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
     with storage_lock:
-        dashboard_data = dashboard_storage.get('most_recent')
+        dashboard_data = dashboard_storage.get(user['session_key'])
 
     if not dashboard_data:
         return {

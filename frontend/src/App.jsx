@@ -6,10 +6,13 @@ import ProcessingPage from './components/upload/ProcessingPage';
 import DashboardPage from './components/dashboard/DashboardPage';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
+import { useDashboardStore } from './dashboardStore';
 import './styles/design-system.css';
 import './styles/App.css';
 
 function Protected({ children }) {
+  const isGuest = useDashboardStore((s) => s.isGuest);
+  if (isGuest) return children;
   return (
     <>
       <SignedIn>{children}</SignedIn>
@@ -157,7 +160,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-gray-50">
+    <div className="min-h-screen flex flex-col bg-slate-950">
       {showSplash && <SplashScreen />}
       {!showSplash && (
         <>

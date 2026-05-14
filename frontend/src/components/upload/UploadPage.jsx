@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser } from '@clerk/clerk-react';
+import { useDashboardStore } from '../../dashboardStore';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes)) return '';
@@ -15,6 +16,10 @@ const UploadPage = () => {
   const [externalSource, setExternalSource] = useState('');
   const [error, setError] = useState('');
   const navigate = useNavigate();
+  const isGuest = useDashboardStore((s) => s.isGuest);
+  const enableGuest = useDashboardStore((s) => s.enableGuest);
+  const { isSignedIn } = useUser();
+  const allowed = isSignedIn || isGuest;
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -115,28 +120,49 @@ const UploadPage = () => {
             <div>
               {/* Upload Card */}
               <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 sticky top-8">
-                <SignedOut>
-                  <div className="text-center py-8">
-                    <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 text-white text-2xl">
-                      <i className="fas fa-lock"></i>
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in to get started</h2>
-                    <p className="text-gray-600 mb-6">Create a free account or sign in to upload your CSV and generate insights.</p>
-                    <div className="flex flex-col gap-3">
-                      <SignUpButton mode="modal">
-                        <button className="w-full py-3 px-4 rounded-lg font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-colors shadow-sm">
-                          <i className="fas fa-user-plus mr-2"></i> Create free account
+                {!allowed && (
+                  <SignedOut>
+                    <div className="text-center py-8">
+                      <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 text-white text-2xl">
+                        <i className="fas fa-lock"></i>
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in to get started</h2>
+                      <p className="text-gray-600 mb-6">Create a free account or sign in to upload your CSV and generate insights.</p>
+                      <div className="flex flex-col gap-3">
+                        <SignUpButton mode="modal">
+                          <button className="w-full py-3 px-4 rounded-lg font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-colors shadow-sm">
+                            <i className="fas fa-user-plus mr-2"></i> Create free account
+                          </button>
+                        </SignUpButton>
+                        <SignInButton mode="modal">
+                          <button className="w-full py-3 px-4 rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">
+                            <i className="fas fa-sign-in-alt mr-2"></i> Sign in
+                          </button>
+                        </SignInButton>
+                        <div className="relative my-1">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-200"></div>
+                          </div>
+                          <div className="relative flex justify-center text-xs">
+                            <span className="px-3 bg-white text-gray-400 uppercase tracking-wider">or</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={enableGuest}
+                          className="w-full py-3 px-4 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition-colors border border-dashed border-gray-300"
+                        >
+                          <i className="fas fa-user-secret mr-2 text-gray-500"></i> Continue as a guest
                         </button>
-                      </SignUpButton>
-                      <SignInButton mode="modal">
-                        <button className="w-full py-3 px-4 rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">
-                          <i className="fas fa-sign-in-alt mr-2"></i> Sign in
-                        </button>
-                      </SignInButton>
+                        <p className="text-xs text-gray-400 mt-1">
+                          Guest mode keeps everything in your browser. Sign in later to save your work.
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                </SignedOut>
-                <SignedIn>
+                  </SignedOut>
+                )}
+                {allowed && (
+                <>
                 <div className="text-center mb-6">
                   <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
@@ -257,7 +283,8 @@ const UploadPage = () => {
                     </div>
                   </div>
                 )}
-                </SignedIn>
+                </>
+                )}
               </div>
             </div>
           </div>

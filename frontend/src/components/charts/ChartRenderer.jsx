@@ -6,6 +6,19 @@ const Plot = createPlotlyComponent(Plotly);
 
 const TRUNCATE_LEN = 18;
 
+// Dark-theme palette aligned with .dash-shell futuristic theme
+const DARK_THEME = {
+  font: '#cbd5e1',
+  tick: '#94a3b8',
+  axisLine: 'rgba(148,163,184,0.20)',
+  grid: 'rgba(148,163,184,0.10)',
+  zero: 'rgba(148,163,184,0.25)',
+  title: '#f1f5f9',
+};
+
+// Neon-friendly categorical palette
+const CAT_PALETTE = ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#c4b5fd', '#5eead4', '#fda4af'];
+
 const truncateLabel = (label, maxLen = 14) => {
   const str = String(label ?? '');
   if (str.length <= maxLen) return str;
@@ -32,8 +45,11 @@ const buildCategoryAxis = (labels) => {
     tickvals: full,
     ticktext: truncated,
     tickangle: angle,
-    tickfont: { size: fontSize, color: '#64748b' },
+    tickfont: { size: fontSize, color: DARK_THEME.tick },
     automargin: true,
+    linecolor: DARK_THEME.axisLine,
+    gridcolor: DARK_THEME.grid,
+    zerolinecolor: DARK_THEME.zero,
   };
 };
 
@@ -45,8 +61,11 @@ const horizontalCategoryAxis = (labels) => {
     tickvals: full,
     ticktext: truncated,
     tickangle: 0,
-    tickfont: { size: 11, color: '#64748b' },
+    tickfont: { size: 11, color: DARK_THEME.tick },
     automargin: true,
+    linecolor: DARK_THEME.axisLine,
+    gridcolor: DARK_THEME.grid,
+    zerolinecolor: DARK_THEME.zero,
   };
 };
 
@@ -66,14 +85,57 @@ const shouldUseLogScale = (values) => {
   return max / median > 100;
 };
 
-const baseLayout = (title, extras = {}) => ({
-  title,
-  height: 400,
-  margin: { t: 40, b: 60, l: 60, r: 40 },
-  paper_bgcolor: 'transparent',
-  plot_bgcolor: 'transparent',
-  ...extras,
+const themedAxis = (extra = {}) => ({
+  tickfont: { size: 11, color: DARK_THEME.tick },
+  titlefont: { color: DARK_THEME.tick, size: 12 },
+  linecolor: DARK_THEME.axisLine,
+  gridcolor: DARK_THEME.grid,
+  zerolinecolor: DARK_THEME.zero,
+  automargin: true,
+  ...extra,
 });
+
+const baseLayout = (title, extras = {}) => {
+  const titleObj = typeof title === 'string'
+    ? { text: title, font: { color: DARK_THEME.title, size: 14 } }
+    : (title || undefined);
+
+  // Merge axis defaults if caller supplied them
+  const mergeAxis = (override) => {
+    if (!override) return themedAxis();
+    const { title: t, ...rest } = override;
+    const merged = themedAxis(rest);
+    if (t) {
+      merged.title = typeof t === 'string' ? { text: t, font: { color: DARK_THEME.tick, size: 12 } } : t;
+    }
+    return merged;
+  };
+
+  const { xaxis, yaxis, ...restExtras } = extras;
+
+  return {
+    title: titleObj,
+    height: 400,
+    margin: { t: 50, b: 60, l: 60, r: 40 },
+    paper_bgcolor: 'transparent',
+    plot_bgcolor: 'transparent',
+    font: { color: DARK_THEME.font, family: 'Inter, ui-sans-serif, system-ui, sans-serif' },
+    colorway: CAT_PALETTE,
+    hoverlabel: {
+      bgcolor: 'rgba(15,23,42,0.92)',
+      bordercolor: 'rgba(96,165,250,0.45)',
+      font: { color: '#f1f5f9', size: 12 },
+    },
+    legend: {
+      font: { color: DARK_THEME.font, size: 11 },
+      bgcolor: 'rgba(15,23,42,0.0)',
+      bordercolor: 'rgba(148,163,184,0.15)',
+    },
+    xaxis: mergeAxis(xaxis),
+    yaxis: mergeAxis(yaxis),
+    ...restExtras,
+  };
+};
 
 const pickX = (item) => item.x ?? item.category ?? item.bin_range ?? item.date ?? '';
 const pickY = (item) => item.y ?? item.count ?? item.value ?? item.agg_value ?? 0;
@@ -89,7 +151,10 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
     y: useHorizontal ? xValues : yValues,
     type: 'bar',
     orientation: useHorizontal ? 'h' : 'v',
-    marker: { color },
+    marker: {
+      color,
+      line: { color: 'rgba(255,255,255,0.10)', width: 0.5 },
+    },
     hovertext: xValues,
     hovertemplate: useHorizontal
       ? '%{y}<br>%{x:,}<extra></extra>'
@@ -113,10 +178,10 @@ const ChartRenderer = ({ chartData }) => {
   if (!chartData || chartData.data == null) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
-        <div className="text-gray-400 mb-4">
+        <div className="text-slate-500 mb-4">
           <i className="fas fa-chart-bar text-4xl"></i>
         </div>
-        <p className="text-gray-500">No chart data available</p>
+        <p className="text-slate-400">No chart data available</p>
       </div>
     );
   }
@@ -131,15 +196,28 @@ const ChartRenderer = ({ chartData }) => {
 
   if (chartType === 'heatmap') {
     const src = dataObj || {};
+    // Cool neon diverging scale for dark theme (rose -> deep -> emerald)
+    const neonDiverging = [
+      [0.0, '#f472b6'],
+      [0.25, '#a78bfa'],
+      [0.5, '#1e293b'],
+      [0.75, '#22d3ee'],
+      [1.0, '#34d399'],
+    ];
     plotlyData = [{
       z: src.z || [],
       x: src.x || [],
       y: src.y || [],
       type: 'heatmap',
-      colorscale: src.colorscale || 'RdBu',
+      colorscale: src.colorscale && src.colorscale !== 'RdBu' ? src.colorscale : neonDiverging,
       zmin: src.zmin,
       zmax: src.zmax,
       zmid: src.zmid,
+      colorbar: {
+        tickfont: { color: DARK_THEME.tick, size: 10 },
+        outlinewidth: 0,
+        thickness: 14,
+      },
     }];
     layout = baseLayout(title, {
       ...layout,
@@ -160,7 +238,7 @@ const ChartRenderer = ({ chartData }) => {
     }
     const xTitle = chartData.x_column || dataObj?.xaxis?.title || 'Category';
     const yTitle = chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
-    const color = chartType === 'histogram' || chartType === 'distribution' ? '#8b5cf6' : '#3b82f6';
+    const color = chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa';
     ({ data: plotlyData, layout } = renderCategoricalSeries(xValues, yValues, {
       title, color, layoutExtras: layout, xTitle, yTitle,
     }));
@@ -181,7 +259,12 @@ const ChartRenderer = ({ chartData }) => {
       y: yValues,
       type: 'scatter',
       mode: dataObj?.mode || 'markers',
-      marker: { color: '#f59e0b', size: 6, opacity: 0.65 },
+      marker: {
+        color: '#fbbf24',
+        size: 7,
+        opacity: 0.8,
+        line: { color: 'rgba(15,23,42,0.8)', width: 1 },
+      },
       hovertemplate: '%{x}<br>%{y}<extra></extra>',
     }];
     layout = baseLayout(title, {
@@ -206,8 +289,10 @@ const ChartRenderer = ({ chartData }) => {
       y: yValues,
       type: 'scatter',
       mode: xValues.length > 2000 ? 'lines' : 'lines+markers',
-      line: { color: '#10b981' },
-      marker: { color: '#10b981', size: 5 },
+      line: { color: '#34d399', width: 2.5, shape: 'spline', smoothing: 0.6 },
+      marker: { color: '#34d399', size: 6, line: { color: 'rgba(15,23,42,0.8)', width: 1 } },
+      fill: 'tozeroy',
+      fillcolor: 'rgba(52,211,153,0.10)',
       hovertemplate: '%{x}<br>%{y}<extra></extra>',
     }];
     layout = baseLayout(title, {
@@ -217,19 +302,25 @@ const ChartRenderer = ({ chartData }) => {
     });
   }
   else if (chartType === 'box' || chartType === 'box_plot') {
+    const boxStyle = {
+      marker: { color: '#fb7185', outliercolor: '#f43f5e', line: { width: 1, color: 'rgba(15,23,42,0.6)' } },
+      line: { color: '#f87171' },
+      fillcolor: 'rgba(248,113,113,0.18)',
+      boxpoints: 'outliers',
+    };
     if (dataIsArray && chartData.data.length > 0 && Array.isArray(chartData.data[0]?.values)) {
-      plotlyData = chartData.data.map(group => ({
+      plotlyData = chartData.data.map((group, idx) => ({
         y: group.values,
         type: 'box',
         name: String(group.category ?? ''),
-        boxpoints: 'outliers',
-        marker: { color: '#ef4444' },
+        ...boxStyle,
+        marker: { ...boxStyle.marker, color: CAT_PALETTE[idx % CAT_PALETTE.length] },
       }));
     } else if (dataIsArray) {
       const yVals = chartData.data.map(pickY);
-      plotlyData = [{ y: yVals, type: 'box', marker: { color: '#ef4444' }, boxpoints: 'outliers' }];
+      plotlyData = [{ y: yVals, type: 'box', ...boxStyle }];
     } else if (dataObj) {
-      plotlyData = [{ y: dataObj.y || [], type: 'box', marker: { color: '#ef4444' }, boxpoints: 'outliers' }];
+      plotlyData = [{ y: dataObj.y || [], type: 'box', ...boxStyle }];
     }
     layout = baseLayout(title, {
       ...layout,
@@ -252,7 +343,13 @@ const ChartRenderer = ({ chartData }) => {
       labels,
       values,
       type: 'pie',
+      hole: 0.55,
       textinfo: 'label+percent',
+      textfont: { color: '#f1f5f9', size: 11 },
+      marker: {
+        colors: CAT_PALETTE,
+        line: { color: 'rgba(2,6,23,0.85)', width: 2 },
+      },
       hovertemplate: '%{label}<br>%{value} (%{percent})<extra></extra>',
     }];
     layout = baseLayout(title, { ...layout, margin: { t: 40, b: 40, l: 40, r: 40 } });
@@ -272,10 +369,10 @@ const ChartRenderer = ({ chartData }) => {
     } else {
       return (
         <div className="flex flex-col items-center justify-center h-full text-center p-8">
-          <div className="text-gray-400 mb-4">
+          <div className="text-slate-500 mb-4">
             <i className="fas fa-chart-bar text-4xl"></i>
           </div>
-          <p className="text-gray-500">Unsupported chart type: {String(chartType)}</p>
+          <p className="text-slate-400">Unsupported chart type: {String(chartType)}</p>
         </div>
       );
     }

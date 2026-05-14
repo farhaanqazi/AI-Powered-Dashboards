@@ -6,6 +6,20 @@ import OverviewTab from './OverviewTab';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
 import ColumnsTab from './ColumnsTab';
+import '../../styles/dashboard-futuristic.css';
+
+const TABS = [
+  { key: 'overview',          label: 'Overview',     icon: 'fa-chart-line' },
+  { key: 'eda',               label: 'EDA Insights', icon: 'fa-brain' },
+  { key: 'visualizations',    label: 'Visual Gallery', icon: 'fa-chart-bar' },
+  { key: 'column_profiling',  label: 'Columns',      icon: 'fa-table' },
+];
+
+const isMonetary = (key) => {
+  const k = key.toLowerCase();
+  return ['amount','revenue','cost','expense','profit','fee','charge','payment','income','value']
+    .some(t => k.includes(t));
+};
 
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -15,10 +29,9 @@ const DashboardPage = () => {
   const navigate = useNavigate();
   const captureRef = useRef(null);
   const activeTabRef = useRef(activeTab);
+  const particleRootRef = useRef(null);
 
-  useEffect(() => {
-    activeTabRef.current = activeTab;
-  }, [activeTab]);
+  useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
   useEffect(() => {
     setExportHandler(async () => {
@@ -35,55 +48,60 @@ const DashboardPage = () => {
     return () => setExportHandler(null);
   }, [setExportHandler]);
 
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
+  useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
-    if (hasMounted.current) {
-      refresh();
-    } else {
-      hasMounted.current = true;
-    }
+    if (hasMounted.current) refresh();
+    else hasMounted.current = true;
   }, [activeTab, refresh]);
 
   useEffect(() => {
-    // Ensure Plotly charts resize when switching tabs
     window.dispatchEvent(new Event('resize'));
   }, [activeTab, lastUpdated]);
+
+  // Seed particles once
+  useEffect(() => {
+    const root = particleRootRef.current;
+    if (!root || root.dataset.seeded === '1') return;
+    root.dataset.seeded = '1';
+    const N = 40;
+    for (let i = 0; i < N; i++) {
+      const p = document.createElement('div');
+      p.className = 'dash-particle';
+      const size = Math.random() * 2.5 + 1;
+      p.style.width = size + 'px';
+      p.style.height = size + 'px';
+      p.style.left = (Math.random() * 100) + '%';
+      p.style.bottom = '-10px';
+      p.style.animationDuration = (Math.random() * 18 + 16) + 's';
+      p.style.animationDelay = (Math.random() * 12) + 's';
+      p.style.opacity = (Math.random() * 0.45 + 0.15).toFixed(2);
+      root.appendChild(p);
+    }
+  }, []);
 
   const renderTabContent = () => {
     if (loading) {
       return (
         <div className="flex justify-center items-center py-20">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          <div className="dash-spinner" />
         </div>
       );
     }
-
     if (error) {
       return (
-        <div className="alert alert-error shadow-lg bg-red-50 border border-red-200 rounded-xl mb-6">
-          <div className="flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="stroke-current flex-shrink-0 h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span className="text-red-700">{error}</span>
-          </div>
+        <div className="glass-soft p-5 flex items-center gap-3 text-rose-200 border-rose-400/30">
+          <i className="fas fa-triangle-exclamation text-rose-300 text-lg" />
+          <span>{error}</span>
         </div>
       );
     }
-
     if (!dashboardData) {
       return (
-        <div className="text-center py-20">
-          <div className="text-gray-400 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-          </div>
-          <h3 className="text-xl font-semibold text-gray-700 mb-2">No Dashboard Data Available</h3>
-          <p className="text-gray-500">Please upload a dataset to generate insights</p>
+        <div className="empty-state">
+          <i className="fas fa-chart-bar empty-icon" />
+          <h3 className="text-lg font-semibold text-slate-100 mb-1">No Dashboard Data Available</h3>
+          <p className="text-sm">Please upload a dataset to generate insights.</p>
         </div>
       );
     }
@@ -102,151 +120,152 @@ const DashboardPage = () => {
     }
   };
 
+  const profile = dashboardData?.dataset_profile;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div ref={captureRef} className="container mx-auto px-4 py-6">
+    <div className="dash-shell">
+      {/* Aurora gradient mesh */}
+      <div className="dash-aurora dash-aurora-a" />
+      <div className="dash-aurora dash-aurora-b" />
+      <div className="dash-aurora dash-aurora-c" />
+      <div className="dash-aurora dash-aurora-d" />
+      <div className="dash-grid" />
+      <div ref={particleRootRef} className="pointer-events-none absolute inset-0" />
 
-        {/* Stats Cards */}
+      <div ref={captureRef} className="relative z-10 container mx-auto px-4 py-8 max-w-7xl">
+
+        {/* Page header */}
+        <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400 mb-2">
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+                Mission Control
+              </span>
+            </div>
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+              <span className="bg-gradient-to-r from-sky-300 via-fuchsia-300 to-amber-200 bg-clip-text text-transparent">
+                Dataset Intelligence
+              </span>
+            </h1>
+            <p className="mt-2 text-sm text-slate-400 max-w-xl">
+              A live, AI-generated view across the entire dataset — statistics, distributions, correlations and patterns.
+            </p>
+          </div>
+
+          {profile && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="metric-chip">
+                <i className="fas fa-database text-sky-300" />
+                {profile.n_rows?.toLocaleString() || 0} rows
+              </span>
+              <span className="metric-chip">
+                <i className="fas fa-grip-vertical text-fuchsia-300" />
+                {profile.n_cols || 0} columns
+              </span>
+              {lastUpdated && (
+                <span className="metric-chip">
+                  <i className="fas fa-bolt text-amber-300" />
+                  Updated {new Date(lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Stats grid */}
         {dashboardData && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-blue-100 text-blue-600 mr-4">
-                  <i className="fas fa-table"></i>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Rows</p>
-                  <p className="text-2xl font-bold text-gray-900">{dashboardData.dataset_profile?.n_rows?.toLocaleString() || 0}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-purple-100 text-purple-600 mr-4">
-                  <i className="fas fa-columns"></i>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Total Columns</p>
-                  <p className="text-2xl font-bold text-gray-900">{dashboardData.dataset_profile?.n_cols || 0}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-green-100 text-green-600 mr-4">
-                  <i className="fas fa-calculator"></i>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Numeric Fields</p>
-                  <p className="text-2xl font-bold text-gray-900">{dashboardData.dataset_profile?.role_counts?.numeric || 0}</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-100">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-amber-100 text-amber-600 mr-4">
-                  <i className="fas fa-tags"></i>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500">Categorical Fields</p>
-                  <p className="text-2xl font-bold text-gray-900">{dashboardData.dataset_profile?.role_counts?.categorical || 0}</p>
-                </div>
-              </div>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7 dash-section-enter">
+            <StatTile
+              tone="blue"
+              icon="fa-table"
+              label="Total Rows"
+              value={profile?.n_rows?.toLocaleString() || 0}
+            />
+            <StatTile
+              tone="purple"
+              icon="fa-grip-vertical"
+              label="Total Columns"
+              value={profile?.n_cols || 0}
+            />
+            <StatTile
+              tone="emerald"
+              icon="fa-calculator"
+              label="Numeric Fields"
+              value={profile?.role_counts?.numeric || 0}
+            />
+            <StatTile
+              tone="amber"
+              icon="fa-tags"
+              label="Categorical Fields"
+              value={profile?.role_counts?.categorical || 0}
+            />
           </div>
         )}
 
         {/* Critical Totals */}
         {dashboardData?.critical_totals && Object.keys(dashboardData.critical_totals).length > 0 && (
-          <div className="bg-white rounded-2xl shadow-sm p-6 mb-6 border border-gray-100">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900">Key Financial Metrics</h2>
-              <span className="badge badge-soft bg-blue-100 text-blue-700 text-xs px-3 py-1 rounded-full">Pre-sampling</span>
+          <div className="glass-card p-6 mb-7 dash-section-enter">
+            <div className="flex items-center justify-between mb-5">
+              <div>
+                <span className="section-eyebrow text-[11px] tracking-[0.32em] text-slate-400 uppercase block mb-1">
+                  Headline metrics
+                </span>
+                <h2 className="text-xl font-semibold text-slate-100 flex items-center gap-3">
+                  <span className="section-icon"><i className="fas fa-coins text-amber-300" /></span>
+                  Key Financial Metrics
+                </h2>
+              </div>
+              <span className="neon-badge neon-amber">Pre-sampling</span>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {Object.entries(dashboardData.critical_totals).map(([key, value]) => (
-                <div key={key} className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl p-4 border border-gray-200">
-                  <p className="text-sm text-gray-600 mb-1">{key.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</p>
-                  <p className={`text-lg font-bold ${
-                    key.toLowerCase().includes('amount') || key.toLowerCase().includes('revenue') ||
-                    key.toLowerCase().includes('cost') || key.toLowerCase().includes('expense') ||
-                    key.toLowerCase().includes('profit') || key.toLowerCase().includes('fee') ||
-                    key.toLowerCase().includes('charge') || key.toLowerCase().includes('payment') ||
-                    key.toLowerCase().includes('income') || key.toLowerCase().includes('value')
-                    ? 'text-green-600' : 'text-blue-600'
-                  }`}>
-                    {key.toLowerCase().includes('amount') || key.toLowerCase().includes('revenue') ||
-                     key.toLowerCase().includes('cost') || key.toLowerCase().includes('expense') ||
-                     key.toLowerCase().includes('profit') || key.toLowerCase().includes('fee') ||
-                     key.toLowerCase().includes('charge') || key.toLowerCase().includes('payment') ||
-                     key.toLowerCase().includes('income') || key.toLowerCase().includes('value') ? (
-                      `$${typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}`
-                    ) : (
-                      typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value
-                    )}
-                  </p>
+                <div key={key} className="kpi-tile">
+                  <div className="kpi-label">{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                  <div className={`kpi-value ${isMonetary(key) ? 'text-emerald-300' : 'text-sky-300'}`}>
+                    {isMonetary(key)
+                      ? `$${typeof value === 'number' ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : value}`
+                      : typeof value === 'number'
+                          ? value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                          : value}
+                  </div>
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* Navigation Tabs */}
-        <div className="bg-white rounded-2xl shadow-sm p-1 mb-6 border border-gray-100">
-          <div className="flex space-x-1">
+        {/* Tabs */}
+        <div className="dash-tabs mb-6 dash-section-enter">
+          {TABS.map(t => (
             <button
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center ${
-                activeTab === 'overview'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveTab('overview')}
+              key={t.key}
+              className={`dash-tab ${activeTab === t.key ? 'is-active' : ''}`}
+              onClick={() => setActiveTab(t.key)}
             >
-              <i className="fas fa-chart-line mr-2"></i> Overview
+              <i className={`fas ${t.icon}`} />
+              <span>{t.label}</span>
+              <span className="tab-dot" />
             </button>
-            <button
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center ${
-                activeTab === 'eda'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveTab('eda')}
-            >
-              <i className="fas fa-brain mr-2"></i> EDA Insights
-            </button>
-            <button
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center ${
-                activeTab === 'visualizations'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveTab('visualizations')}
-            >
-              <i className="fas fa-chart-bar mr-2"></i> Visual Gallery
-            </button>
-            <button
-              className={`flex-1 py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 flex items-center justify-center ${
-                activeTab === 'column_profiling'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-              }`}
-              onClick={() => setActiveTab('column_profiling')}
-            >
-              <i className="fas fa-table mr-2"></i> Columns
-            </button>
-          </div>
+          ))}
         </div>
 
-        {/* Tab Content */}
-        <div className="bg-white rounded-2xl shadow-sm p-6 border border-gray-100">
+        {/* Tab content */}
+        <div key={activeTab} className="glass-card p-6 md:p-7 dash-section-enter">
           {renderTabContent()}
         </div>
       </div>
     </div>
   );
 };
+
+const StatTile = ({ tone, icon, label, value }) => (
+  <div className={`stat-tile stat-${tone}`}>
+    <div className="stat-glow" />
+    <div className="stat-icon"><i className={`fas ${icon}`} /></div>
+    <div className="stat-label">{label}</div>
+    <div className="stat-value">{value}</div>
+  </div>
+);
 
 export default DashboardPage;

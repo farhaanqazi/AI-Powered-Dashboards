@@ -10,9 +10,26 @@ async function getClerkToken() {
   }
 }
 
+function isGuestMode() {
+  try { return localStorage.getItem('dataInsight:guestMode') === '1'; }
+  catch { return false; }
+}
+
+function guestSessionId() {
+  try { return localStorage.getItem('dataInsight:guestSessionId') || ''; }
+  catch { return ''; }
+}
+
 async function authHeaders() {
   const token = await getClerkToken();
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  if (token) return { Authorization: `Bearer ${token}` };
+  if (isGuestMode()) {
+    return {
+      'X-Guest-Mode': '1',
+      'X-Guest-Session-Id': guestSessionId(),
+    };
+  }
+  return {};
 }
 
 const api = axios.create({
