@@ -20,13 +20,14 @@ export const uploadFile = async (file) => {
   return response.data;
 };
 
-export const uploadFileStream = async (file, onPhase) => {
+export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
   const formData = new FormData();
   formData.append('dataset', file);
 
   const response = await fetch(`${API_BASE_URL}/upload/stream`, {
     method: 'POST',
     body: formData,
+    signal,
   });
 
   if (!response.ok || !response.body) {

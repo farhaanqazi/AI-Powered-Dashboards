@@ -40,9 +40,9 @@ function SplashScreen() {
       </button>
 
       <div className="text-center z-10 px-4">
-        <div className="text-4xl md:text-5xl font-bold mb-4">
+        <div className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 tracking-wide">
           <span className="bg-gradient-to-r from-blue-400 via-purple-500 to-teal-400 bg-clip-text text-transparent">
-            Farburgh
+            AI POWERED DASHBOARD
           </span>
         </div>
         <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">

@@ -1,6 +1,15 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { uploadFileStream, loadExternalSource } from '../../services/api';
+import ProcessingScreen from './ProcessingScreen';
+
+const formatFileSize = (bytes) => {
+  if (!Number.isFinite(bytes)) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
 
 const UploadPage = () => {
   const [file, setFile] = useState(null);
@@ -8,16 +17,17 @@ const UploadPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [phaseKey, setPhaseKey] = useState('');
   const [phaseMessage, setPhaseMessage] = useState('');
-  const [percent, setPercent] = useState(0);
+  const abortRef = useRef(null);
   const navigate = useNavigate();
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     setError('');
     setSuccess('');
+    setPhaseKey('');
     setPhaseMessage('');
-    setPercent(0);
   };
 
   const handleUpload = async (e) => {
@@ -30,22 +40,39 @@ const UploadPage = () => {
     setLoading(true);
     setError('');
     setSuccess('');
-    setPhaseMessage('Connecting...');
-    setPercent(2);
+    setPhaseKey('reading');
+    setPhaseMessage('Connecting to server...');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
-      await uploadFileStream(file, (evt) => {
-        if (evt.message) setPhaseMessage(evt.message);
-        if (typeof evt.percent === 'number') setPercent(evt.percent);
-      });
-      setSuccess('Analysis complete. Redirecting to dashboard...');
-      setTimeout(() => navigate('/dashboard'), 800);
+      await uploadFileStream(
+        file,
+        (evt) => {
+          if (evt.phase) setPhaseKey(evt.phase);
+          if (evt.message) setPhaseMessage(evt.message);
+        },
+        { signal: controller.signal },
+      );
+      navigate('/dashboard');
     } catch (err) {
-      setError(err.message || 'Upload failed');
-      setPercent(0);
+      if (err.name === 'AbortError') {
+        setError('Upload cancelled.');
+      } else {
+        setError(err.message || 'Upload failed');
+      }
+      setPhaseKey('');
       setPhaseMessage('');
     } finally {
+      abortRef.current = null;
       setLoading(false);
+    }
+  };
+
+  const handleCancel = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
     }
   };
 
@@ -75,6 +102,14 @@ const UploadPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+      {loading && file && (
+        <ProcessingScreen
+          file={file}
+          phase={phaseKey}
+          message={phaseMessage}
+          onCancel={handleCancel}
+        />
+      )}
       <div className="container mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
             {/* Left Side - Introduction & Onboarding Section */}
@@ -185,7 +220,7 @@ const UploadPage = () => {
                               <i className="fas fa-file-csv text-green-500 mr-3"></i>
                               <div>
                                 <p className="font-medium text-gray-900 truncate max-w-xs">{file.name}</p>
-                                <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
+                                <p className="text-sm text-gray-500">{formatFileSize(file.size)}</p>
                               </div>
                             </div>
                             <button
@@ -208,31 +243,10 @@ const UploadPage = () => {
                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                       >
-                        {loading ? (
-                          <span className="flex items-center justify-center">
-                            <i className="fas fa-spinner animate-spin mr-2"></i> {phaseMessage || 'Processing...'}
-                          </span>
-                        ) : (
-                          <span className="flex items-center justify-center">
-                            <i className="fas fa-chart-line mr-2"></i> Generate Dashboard
-                          </span>
-                        )}
+                        <span className="flex items-center justify-center">
+                          <i className="fas fa-chart-line mr-2"></i> Generate Dashboard
+                        </span>
                       </button>
-
-                      {loading && (
-                        <div className="mt-3 text-left">
-                          <div className="flex justify-between items-center text-xs text-gray-600 mb-1">
-                            <span className="font-medium">{phaseMessage || 'Working...'}</span>
-                            <span className="tabular-nums">{Math.round(percent)}%</span>
-                          </div>
-                          <div className="h-2 w-full rounded-full bg-gray-100 overflow-hidden">
-                            <div
-                              className="h-full bg-blue-500 transition-[width] duration-300 ease-out"
-                              style={{ width: `${Math.max(2, Math.min(100, percent))}%` }}
-                            />
-                          </div>
-                        </div>
-                      )}
                     </form>
                   </div>
                 </div>
