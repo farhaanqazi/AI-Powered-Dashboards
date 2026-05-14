@@ -1,0 +1,19 @@
+# Don't copy these to Docker
+frontend/node_modules
+frontend/dist
+frontend/.vite
+.git
+.gitignore
+__pycache__
+*.pyc
+.pytest_cache
+.vscode
+.idea
+
+# DO copy these
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/vite.config.js
+!frontend/src
+!frontend/public
+!frontend/index.html
