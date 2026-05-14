@@ -10,6 +10,12 @@ const TABS = [
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
+const PDF_BG = '#0b1226';
+
+function findShell() {
+  return document.querySelector('.dash-shell');
+}
+
 async function captureTab({ tab, setActiveTab, getCaptureEl }) {
   setActiveTab(tab.key);
   await wait(200);
@@ -22,13 +28,29 @@ async function captureTab({ tab, setActiveTab, getCaptureEl }) {
   return html2canvas(el, {
     scale: 2,
     useCORS: true,
-    backgroundColor: '#ffffff',
+    backgroundColor: PDF_BG,
     logging: false,
     windowWidth: el.scrollWidth,
     windowHeight: el.scrollHeight,
   });
 }
 
+function fillPageBg(pdf, pageW, pageH) {
+  // Dark page background to match dark dashboard theme
+  pdf.setFillColor(11, 18, 38); // #0b1226
+  pdf.rect(0, 0, pageW, pageH, 'F');
+}
+
+function drawTitle(pdf, text, margin) {
+  pdf.setFontSize(13);
+  pdf.setTextColor(241, 245, 249); // slate-100
+  pdf.text(text, margin, margin + 4);
+}
+
+// Caller is responsible for positioning on the correct page before calling
+// this function (e.g. via pdf.addPage()). This function always fills the
+// current page background and draws the title, then renders the canvas —
+// adding additional pages itself only when the canvas needs slicing.
 function addCanvasPaged(pdf, canvas, { title, margin, pageW, pageH }) {
   const usableW = pageW - margin * 2;
   const imgW = usableW;
@@ -37,18 +59,15 @@ function addCanvasPaged(pdf, canvas, { title, margin, pageW, pageH }) {
   const contentY = margin + titleH;
   const availableH = pageH - contentY - margin;
 
-  const drawTitle = (text) => {
-    pdf.setFontSize(13);
-    pdf.setTextColor(33, 33, 33);
-    pdf.text(text, margin, margin + 4);
-  };
+  fillPageBg(pdf, pageW, pageH);
 
   if (imgH <= availableH) {
-    drawTitle(title);
+    drawTitle(pdf, title, margin);
     pdf.addImage(canvas, 'PNG', margin, contentY, imgW, imgH, undefined, 'FAST');
     return;
   }
 
+  // Slice tall canvases across multiple pages
   const sliceHpx = Math.floor((availableH * canvas.width) / imgW);
   let y = 0;
   let first = true;
@@ -58,11 +77,14 @@ function addCanvasPaged(pdf, canvas, { title, margin, pageW, pageH }) {
     slice.width = canvas.width;
     slice.height = h;
     const ctx = slice.getContext('2d');
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = PDF_BG;
     ctx.fillRect(0, 0, slice.width, slice.height);
     ctx.drawImage(canvas, 0, y, canvas.width, h, 0, 0, canvas.width, h);
-    if (!first) pdf.addPage();
-    drawTitle(first ? title : `${title} (cont.)`);
+    if (!first) {
+      pdf.addPage();
+      fillPageBg(pdf, pageW, pageH);
+    }
+    drawTitle(pdf, first ? title : `${title} (cont.)`, margin);
     const sliceImgH = (h * imgW) / canvas.width;
     pdf.addImage(slice, 'PNG', margin, contentY, imgW, sliceImgH, undefined, 'FAST');
     first = false;
@@ -84,14 +106,22 @@ export async function exportDashboardToPDF({
   const pageH = pdf.internal.pageSize.getHeight();
   const margin = 24;
 
-  let firstTab = true;
-  for (const tab of TABS) {
-    const canvas = await captureTab({ tab, setActiveTab, getCaptureEl });
-    if (!canvas) continue;
-    if (!firstTab) pdf.addPage();
-    firstTab = false;
-    addCanvasPaged(pdf, canvas, { title: tab.label, margin, pageW, pageH });
-  }
+  // Toggle export mode: html2canvas can't render backdrop-filter / mask-image
+  // / background-clip:text, so we swap to solid fills via a CSS class.
+  const shell = findShell();
+  shell?.classList.add('dash-export-mode');
 
-  pdf.save(filename);
+  try {
+    let firstTab = true;
+    for (const tab of TABS) {
+      const canvas = await captureTab({ tab, setActiveTab, getCaptureEl });
+      if (!canvas) continue;
+      if (!firstTab) pdf.addPage(); // page break between tabs; the initial page already exists
+      addCanvasPaged(pdf, canvas, { title: tab.label, margin, pageW, pageH });
+      firstTab = false;
+    }
+    pdf.save(filename);
+  } finally {
+    shell?.classList.remove('dash-export-mode');
+  }
 }

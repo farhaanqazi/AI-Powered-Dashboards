@@ -125,6 +125,50 @@ export const loadExternalSource = async (source) => {
   return response.data;
 };
 
+export const validateExternalSource = async (source) => {
+  const response = await api.post('/validate_external', { external_source: source });
+  return response.data;
+};
+
+export const sniffCsvFile = async (file) => {
+  if (!file) return { ok: false, error: 'No file provided.' };
+  if (file.size === 0) return { ok: false, error: 'File is empty.' };
+  if (!/\.csv$/i.test(file.name)) return { ok: false, error: 'File must have a .csv extension.' };
+
+  const head = await file.slice(0, 8192).text();
+  const stripped = head.trimStart();
+  if (/^<!DOCTYPE|^<html|^<HTML|^<\?xml/.test(stripped)) {
+    return { ok: false, error: 'File looks like HTML or XML, not CSV.' };
+  }
+  if (head.includes('\x00')) {
+    return { ok: false, error: 'File appears to be binary, not text CSV.' };
+  }
+
+  const lines = head.split(/\r?\n/).filter((l) => l.length > 0);
+  if (lines.length < 2) {
+    return { ok: false, error: 'File needs at least a header row and one data row.' };
+  }
+
+  const delimiters = [',', '\t', ';', '|'];
+  const best = delimiters
+    .map((d) => ({ d, c: lines[0].split(d).length }))
+    .sort((a, b) => b.c - a.c)[0];
+  if (best.c < 2) {
+    return { ok: false, error: 'No CSV delimiter (comma, tab, or semicolon) found in header row.' };
+  }
+
+  const headerCount = best.c;
+  const dataCount = lines[1].split(best.d).length;
+  if (Math.abs(dataCount - headerCount) > Math.max(2, Math.floor(headerCount * 0.3))) {
+    return {
+      ok: false,
+      error: `Header has ${headerCount} columns but row 2 has ${dataCount}. File may not be well-formed CSV.`,
+    };
+  }
+
+  return { ok: true };
+};
+
 export const getDashboardData = async () => {
   const response = await api.get('/dashboard');
   return response.data;

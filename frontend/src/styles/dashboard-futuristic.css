@@ -478,3 +478,55 @@
 .dash-shell .dash-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
 .dash-shell .dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 9999px; }
 .dash-shell .dash-scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* ============================================================
+   Export mode — applied during PDF capture (html2canvas).
+   html2canvas does NOT support: backdrop-filter, mask-image,
+   background-clip: text, mix-blend-mode. Swap those for solid
+   fills and inline colors so the rendered PNG matches the UI.
+   ============================================================ */
+.dash-shell.dash-export-mode { background: #0b1226 !important; }
+.dash-shell.dash-export-mode .dash-aurora,
+.dash-shell.dash-export-mode .dash-grid,
+.dash-shell.dash-export-mode .dash-particle,
+.dash-shell.dash-export-mode .modebar { display: none !important; }
+
+.dash-shell.dash-export-mode .glass-card,
+.dash-shell.dash-export-mode .glass-soft,
+.dash-shell.dash-export-mode .stat-tile,
+.dash-shell.dash-export-mode .kpi-tile,
+.dash-shell.dash-export-mode .dash-tabs,
+.dash-shell.dash-export-mode .dash-input,
+.dash-shell.dash-export-mode .chart-shell,
+.dash-shell.dash-export-mode .dash-table thead th {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.dash-shell.dash-export-mode .glass-card {
+  background: rgba(15,23,42,0.92) !important;
+  border-color: rgba(96,165,250,0.25) !important;
+  box-shadow: none !important;
+}
+.dash-shell.dash-export-mode .glass-card::before { display: none !important; }
+.dash-shell.dash-export-mode .glass-soft { background: rgba(15,23,42,0.85) !important; }
+.dash-shell.dash-export-mode .stat-tile,
+.dash-shell.dash-export-mode .kpi-tile { background: rgba(15,23,42,0.88) !important; }
+.dash-shell.dash-export-mode .stat-tile .stat-glow { display: none !important; }
+
+/* Replace background-clip: text gradients with solid color */
+.dash-shell.dash-export-mode .stat-value,
+.dash-shell.dash-export-mode [class*="bg-clip-text"] {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+          background-clip: initial !important;
+  -webkit-text-fill-color: #f8fafc !important;
+  color: #f8fafc !important;
+}
+
+/* Disable animations during capture */
+.dash-shell.dash-export-mode *,
+.dash-shell.dash-export-mode *::before,
+.dash-shell.dash-export-mode *::after {
+  animation: none !important;
+  transition: none !important;
+}

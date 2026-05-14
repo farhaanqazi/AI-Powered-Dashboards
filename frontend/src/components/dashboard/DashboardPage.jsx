@@ -21,6 +21,33 @@ const isMonetary = (key) => {
     .some(t => k.includes(t));
 };
 
+const cleanDatasetName = (raw) => {
+  if (!raw) return 'Untitled dataset';
+  // strip url path / extension, normalise separators
+  const last = String(raw).split(/[\\/]/).pop() || raw;
+  const noExt = last.replace(/\.(csv|tsv|xlsx?|json)$/i, '');
+  const spaced = noExt.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!spaced) return 'Untitled dataset';
+  return spaced.replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
+const buildDescription = (data) => {
+  if (!data) return '';
+  const useCase = data?.eda_summary?.use_cases?.[0]?.description;
+  if (useCase && typeof useCase === 'string' && useCase.length > 8) return useCase;
+  const profile = data?.dataset_profile;
+  if (!profile) return '';
+  const rc = profile.role_counts || {};
+  const parts = [];
+  if (rc.numeric)     parts.push(`${rc.numeric} numeric`);
+  if (rc.categorical) parts.push(`${rc.categorical} categorical`);
+  if (rc.datetime)    parts.push(`${rc.datetime} datetime`);
+  if (rc.text)        parts.push(`${rc.text} text`);
+  if (rc.identifier)  parts.push(`${rc.identifier} identifier`);
+  const breakdown = parts.length ? ` — ${parts.join(', ')} fields` : '';
+  return `${(profile.n_rows ?? 0).toLocaleString()} rows × ${profile.n_cols ?? 0} columns${breakdown}.`;
+};
+
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const { data: dashboardData, loading, error, refresh, lastUpdated } = useDashboardStore();
@@ -121,6 +148,7 @@ const DashboardPage = () => {
   };
 
   const profile = dashboardData?.dataset_profile;
+  const hasData = !!dashboardData?.original_filename;
 
   return (
     <div className="dash-shell">
@@ -134,34 +162,40 @@ const DashboardPage = () => {
 
       <div ref={captureRef} className="relative z-10 container mx-auto px-4 py-8 max-w-7xl">
 
-        {/* Page header */}
+        {/* Page header — dataset name + AI-generated one-liner */}
         <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400 mb-2">
-              <span className="inline-flex items-center gap-2">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
-                Mission Control
-              </span>
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-[0.35em] text-slate-400 mb-2 flex items-center gap-2">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
+              {hasData ? 'Active dataset' : 'Mission Control'}
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
+            <h1 className="text-3xl md:text-4xl font-bold tracking-tight truncate" title={dashboardData?.original_filename || ''}>
               <span className="bg-gradient-to-r from-sky-300 via-fuchsia-300 to-amber-200 bg-clip-text text-transparent">
-                Dataset Intelligence
+                {hasData ? cleanDatasetName(dashboardData.original_filename) : 'Dataset Intelligence'}
               </span>
             </h1>
-            <p className="mt-2 text-sm text-slate-400 max-w-xl">
-              A live, AI-generated view across the entire dataset — statistics, distributions, correlations and patterns.
+            <p className="mt-2 text-sm text-slate-400 max-w-2xl">
+              {hasData
+                ? buildDescription(dashboardData) || 'A live, AI-generated view across the entire dataset.'
+                : 'A live, AI-generated view across the entire dataset — statistics, distributions, correlations and patterns.'}
             </p>
+            {hasData && (
+              <p className="mt-1 text-xs text-slate-500 truncate" title={dashboardData.original_filename}>
+                <i className="fas fa-file-csv mr-1.5 text-slate-500" />
+                {dashboardData.original_filename}
+              </p>
+            )}
           </div>
 
-          {profile && (
-            <div className="flex items-center gap-2 flex-wrap">
+          {hasData && (
+            <div className="flex items-center gap-2 flex-wrap flex-shrink-0">
               <span className="metric-chip">
                 <i className="fas fa-database text-sky-300" />
-                {profile.n_rows?.toLocaleString() || 0} rows
+                {profile?.n_rows?.toLocaleString() || 0} rows
               </span>
               <span className="metric-chip">
                 <i className="fas fa-grip-vertical text-fuchsia-300" />
-                {profile.n_cols || 0} columns
+                {profile?.n_cols || 0} columns
               </span>
               {lastUpdated && (
                 <span className="metric-chip">
@@ -174,7 +208,7 @@ const DashboardPage = () => {
         </div>
 
         {/* Stats grid */}
-        {dashboardData && (
+        {hasData && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7 dash-section-enter">
             <StatTile
               tone="blue"

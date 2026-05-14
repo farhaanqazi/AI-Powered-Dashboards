@@ -197,6 +197,69 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
     )
 
 
+@app.post("/api/validate_external")
+async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
+    """Cheap pre-flight: confirm the source is reachable and looks like CSV before
+    the user is sent to /processing. Returns 200 on success, 400 with a specific
+    detail on failure."""
+    if not req.external_source or not isinstance(req.external_source, str):
+        raise HTTPException(status_code=400, detail="Please enter a URL or Kaggle dataset identifier.")
+    src = req.external_source.strip()
+    if not src:
+        raise HTTPException(status_code=400, detail="Please enter a URL or Kaggle dataset identifier.")
+
+    if src.startswith(("http://", "https://")):
+        url_pattern = re.compile(r'^https?://(?:[a-zA-Z0-9-]+\.)+[a-zA-Z]{2,}(?:/[^\s]*)?$')
+        if not url_pattern.match(src):
+            raise HTTPException(status_code=400, detail="That doesn't look like a valid URL.")
+        if 'kaggle.com/datasets/' in src.lower():
+            slug = src.lower().split('kaggle.com/datasets/', 1)[1].rstrip('/').split('?')[0]
+            suggested = slug if slug.count('/') == 1 else slug.rsplit('/', 1)[0] if '/' in slug else slug
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"That's a Kaggle dataset page URL, not a CSV download link. "
+                    f"Use the dataset identifier directly — try entering: '{suggested}'"
+                ),
+            )
+        try:
+            r = requests.get(src, stream=True, timeout=10, allow_redirects=True)
+        except requests.RequestException as e:
+            raise HTTPException(status_code=400, detail=f"Couldn't reach that URL: {e}")
+        try:
+            if r.status_code >= 400:
+                raise HTTPException(status_code=400, detail=f"URL returned HTTP {r.status_code}.")
+            ctype = (r.headers.get('Content-Type') or '').lower()
+            if any(t in ctype for t in ('text/html', 'application/xhtml', 'application/xml', 'text/xml')):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"URL returned '{ctype.split(';')[0]}', not a CSV. Make sure it points to a raw CSV file.",
+                )
+            chunk = b''
+            for piece in r.iter_content(chunk_size=4096):
+                chunk += piece
+                if len(chunk) >= 4096:
+                    break
+            text = chunk[:4096].decode('utf-8', errors='replace').lstrip()
+            if text.startswith(('<!DOCTYPE', '<html', '<HTML', '<?xml')):
+                raise HTTPException(
+                    status_code=400,
+                    detail="URL returns HTML, not CSV. Make sure the link points to a raw CSV file (not the page that hosts it).",
+                )
+        finally:
+            r.close()
+        return {"ok": True}
+
+    # Kaggle slug path
+    parts = src.split('/')
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise HTTPException(
+            status_code=400,
+            detail="Kaggle dataset must be in the format 'username/dataset' (e.g., 'rtatman/188-million-us-wildfires').",
+        )
+    return {"ok": True}
+
+
 @app.post("/api/load_external")
 async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())

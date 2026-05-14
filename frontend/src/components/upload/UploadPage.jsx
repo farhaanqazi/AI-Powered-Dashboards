@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser } from '@clerk/clerk-react';
 import { useDashboardStore } from '../../dashboardStore';
+import { validateExternalSource, sniffCsvFile } from '../../services/api';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes)) return '';
@@ -15,6 +16,7 @@ const UploadPage = () => {
   const [file, setFile] = useState(null);
   const [externalSource, setExternalSource] = useState('');
   const [error, setError] = useState('');
+  const [validating, setValidating] = useState(null); // 'file' | 'external' | null
   const navigate = useNavigate();
   const isGuest = useDashboardStore((s) => s.isGuest);
   const enableGuest = useDashboardStore((s) => s.enableGuest);
@@ -26,22 +28,46 @@ const UploadPage = () => {
     setError('');
   };
 
-  const handleUpload = (e) => {
+  const handleUpload = async (e) => {
     e.preventDefault();
+    setError('');
     if (!file) {
-      setError('Please select a CSV file to upload');
+      setError('Please select a CSV file to upload.');
       return;
     }
-    navigate('/processing', { state: { kind: 'file', file } });
+    setValidating('file');
+    try {
+      const result = await sniffCsvFile(file);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      navigate('/processing', { state: { kind: 'file', file } });
+    } catch (err) {
+      setError(err?.message || 'Could not validate the file.');
+    } finally {
+      setValidating(null);
+    }
   };
 
-  const handleExternalSourceSubmit = (e) => {
+  const handleExternalSourceSubmit = async (e) => {
     e.preventDefault();
-    if (!externalSource.trim()) {
-      setError('Please enter a URL or Kaggle dataset identifier');
+    setError('');
+    const source = externalSource.trim();
+    if (!source) {
+      setError('Please enter a URL or Kaggle dataset identifier.');
       return;
     }
-    navigate('/processing', { state: { kind: 'external', source: externalSource.trim() } });
+    setValidating('external');
+    try {
+      await validateExternalSource(source);
+      navigate('/processing', { state: { kind: 'external', source } });
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err?.response?.data?.message;
+      setError(detail || err?.message || 'Could not validate that source.');
+    } finally {
+      setValidating(null);
+    }
   };
 
   return (
@@ -215,15 +241,20 @@ const UploadPage = () => {
 
                       <button
                         type="submit"
-                        disabled={!file}
+                        disabled={!file || validating !== null}
+                        aria-busy={validating === 'file'}
                         className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                          file
+                          file && validating === null
                             ? 'bg-blue-600 text-white hover:bg-blue-700'
                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
                       >
                         <span className="flex items-center justify-center">
-                          <i className="fas fa-chart-line mr-2"></i> Generate Dashboard
+                          {validating === 'file' ? (
+                            <><i className="fas fa-circle-notch fa-spin mr-2"></i> Validating…</>
+                          ) : (
+                            <><i className="fas fa-chart-line mr-2"></i> Generate Dashboard</>
+                          )}
                         </span>
                       </button>
                     </form>
@@ -260,15 +291,20 @@ const UploadPage = () => {
 
                     <button
                       type="submit"
-                      disabled={!externalSource.trim()}
+                      disabled={!externalSource.trim() || validating !== null}
+                      aria-busy={validating === 'external'}
                       className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                        externalSource.trim()
+                        externalSource.trim() && validating === null
                           ? 'bg-purple-600 text-white hover:bg-purple-700'
                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                     >
                       <span className="flex items-center justify-center">
-                        <i className="fas fa-link mr-2"></i> Pull & Analyze
+                        {validating === 'external' ? (
+                          <><i className="fas fa-circle-notch fa-spin mr-2"></i> Validating source…</>
+                        ) : (
+                          <><i className="fas fa-link mr-2"></i> Pull & Analyze</>
+                        )}
                       </span>
                     </button>
                   </form>
@@ -276,10 +312,10 @@ const UploadPage = () => {
 
                 {/* Messages */}
                 {error && (
-                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
-                    <div className="flex items-center">
-                      <i className="fas fa-exclamation-circle mr-2"></i>
-                      <span>{error}</span>
+                  <div className="mt-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700" role="alert">
+                    <div className="flex items-start">
+                      <i className="fas fa-exclamation-circle mt-0.5 mr-2 flex-shrink-0"></i>
+                      <span className="break-words">{error}</span>
                     </div>
                   </div>
                 )}

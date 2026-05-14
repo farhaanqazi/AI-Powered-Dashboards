@@ -1,10 +1,11 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react';
 import { useDashboardStore } from '../../dashboardStore';
 
 const Header = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const exporting = useDashboardStore((s) => s.exporting);
   const exportHandler = useDashboardStore((s) => s.exportHandler);
   const runExport = useDashboardStore((s) => s.runExport);
@@ -50,22 +51,31 @@ const Header = () => {
               </button>
             )}
             {location.pathname === '/dashboard' && (
-              <button
-                onClick={runExport}
-                disabled={exportDisabled}
-                aria-busy={exporting}
-                className={`${ghostBtn} disabled:opacity-60 disabled:cursor-not-allowed`}
-              >
-                {exporting ? (
-                  <>
-                    <i className="fas fa-circle-notch fa-spin"></i> Exporting...
-                  </>
-                ) : (
-                  <>
-                    <i className="fas fa-download"></i> Export PDF
-                  </>
-                )}
-              </button>
+              <>
+                <button
+                  onClick={() => navigate('/')}
+                  className={ghostBtn}
+                  title="Upload a different dataset"
+                >
+                  <i className="fas fa-arrow-left"></i> New dataset
+                </button>
+                <button
+                  onClick={runExport}
+                  disabled={exportDisabled}
+                  aria-busy={exporting}
+                  className={`${ghostBtn} disabled:opacity-60 disabled:cursor-not-allowed`}
+                >
+                  {exporting ? (
+                    <>
+                      <i className="fas fa-circle-notch fa-spin"></i> Exporting...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-download"></i> Export PDF
+                    </>
+                  )}
+                </button>
+              </>
             )}
 
             <SignedOut>
