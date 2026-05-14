@@ -1,11 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/react';
 import UploadPage from './components/upload/UploadPage';
+import ProcessingPage from './components/upload/ProcessingPage';
 import DashboardPage from './components/dashboard/DashboardPage';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import './styles/design-system.css';
 import './styles/App.css';
+
+function Protected({ children }) {
+  return (
+    <>
+      <SignedIn>{children}</SignedIn>
+      <SignedOut>
+        <RedirectToSignIn />
+      </SignedOut>
+    </>
+  );
+}
 
 function SplashScreen() {
   const [isVisible, setIsVisible] = useState(true);
@@ -152,7 +165,8 @@ function App() {
           <main className="flex-grow">
             <Routes>
               <Route path="/" element={<UploadPage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/processing" element={<Protected><ProcessingPage /></Protected>} />
+              <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
             </Routes>
           </main>
           <Footer />

@@ -1,7 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { uploadFileStream, loadExternalSource } from '../../services/api';
-import ProcessingScreen from './ProcessingScreen';
+import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/react';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes)) return '';
@@ -14,102 +13,34 @@ const formatFileSize = (bytes) => {
 const UploadPage = () => {
   const [file, setFile] = useState(null);
   const [externalSource, setExternalSource] = useState('');
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [phaseKey, setPhaseKey] = useState('');
-  const [phaseMessage, setPhaseMessage] = useState('');
-  const abortRef = useRef(null);
   const navigate = useNavigate();
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     setError('');
-    setSuccess('');
-    setPhaseKey('');
-    setPhaseMessage('');
   };
 
-  const handleUpload = async (e) => {
+  const handleUpload = (e) => {
     e.preventDefault();
     if (!file) {
       setError('Please select a CSV file to upload');
       return;
     }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-    setPhaseKey('reading');
-    setPhaseMessage('Connecting to server...');
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      await uploadFileStream(
-        file,
-        (evt) => {
-          if (evt.phase) setPhaseKey(evt.phase);
-          if (evt.message) setPhaseMessage(evt.message);
-        },
-        { signal: controller.signal },
-      );
-      navigate('/dashboard');
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        setError('Upload cancelled.');
-      } else {
-        setError(err.message || 'Upload failed');
-      }
-      setPhaseKey('');
-      setPhaseMessage('');
-    } finally {
-      abortRef.current = null;
-      setLoading(false);
-    }
+    navigate('/processing', { state: { kind: 'file', file } });
   };
 
-  const handleCancel = () => {
-    if (abortRef.current) {
-      abortRef.current.abort();
-    }
-  };
-
-  const handleExternalSourceSubmit = async (e) => {
+  const handleExternalSourceSubmit = (e) => {
     e.preventDefault();
     if (!externalSource.trim()) {
       setError('Please enter a URL or Kaggle dataset identifier');
       return;
     }
-
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    try {
-      await loadExternalSource(externalSource);
-      setSuccess('Dataset loaded successfully! Redirecting to dashboard...');
-      setTimeout(() => {
-        navigate('/dashboard');
-      }, 1500);
-    } catch (err) {
-      setError(err.response?.data?.detail || err.message || 'Failed to load external source');
-    } finally {
-      setLoading(false);
-    }
+    navigate('/processing', { state: { kind: 'external', source: externalSource.trim() } });
   };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {loading && file && (
-        <ProcessingScreen
-          file={file}
-          phase={phaseKey}
-          message={phaseMessage}
-          onCancel={handleCancel}
-        />
-      )}
       <div className="container mx-auto px-4 py-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
             {/* Left Side - Introduction & Onboarding Section */}
@@ -184,6 +115,28 @@ const UploadPage = () => {
             <div>
               {/* Upload Card */}
               <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 sticky top-8">
+                <SignedOut>
+                  <div className="text-center py-8">
+                    <div className="h-16 w-16 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-4 text-white text-2xl">
+                      <i className="fas fa-lock"></i>
+                    </div>
+                    <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in to get started</h2>
+                    <p className="text-gray-600 mb-6">Create a free account or sign in to upload your CSV and generate insights.</p>
+                    <div className="flex flex-col gap-3">
+                      <SignUpButton mode="modal">
+                        <button className="w-full py-3 px-4 rounded-lg font-medium bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 transition-colors shadow-sm">
+                          <i className="fas fa-user-plus mr-2"></i> Create free account
+                        </button>
+                      </SignUpButton>
+                      <SignInButton mode="modal">
+                        <button className="w-full py-3 px-4 rounded-lg font-medium border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors">
+                          <i className="fas fa-sign-in-alt mr-2"></i> Sign in
+                        </button>
+                      </SignInButton>
+                    </div>
+                  </div>
+                </SignedOut>
+                <SignedIn>
                 <div className="text-center mb-6">
                   <div className="h-16 w-16 rounded-full bg-blue-100 flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-cloud-upload-alt text-blue-600 text-2xl"></i>
@@ -236,9 +189,9 @@ const UploadPage = () => {
 
                       <button
                         type="submit"
-                        disabled={loading || !file}
+                        disabled={!file}
                         className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                          file && !loading
+                          file
                             ? 'bg-blue-600 text-white hover:bg-blue-700'
                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}
@@ -281,22 +234,16 @@ const UploadPage = () => {
 
                     <button
                       type="submit"
-                      disabled={loading || !externalSource.trim()}
+                      disabled={!externalSource.trim()}
                       className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                        externalSource.trim() && !loading
+                        externalSource.trim()
                           ? 'bg-purple-600 text-white hover:bg-purple-700'
                           : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                     >
-                      {loading ? (
-                        <span className="flex items-center justify-center">
-                          <i className="fas fa-spinner animate-spin mr-2"></i> Processing...
-                        </span>
-                      ) : (
-                        <span className="flex items-center justify-center">
-                          <i className="fas fa-link mr-2"></i> Pull & Analyze
-                        </span>
-                      )}
+                      <span className="flex items-center justify-center">
+                        <i className="fas fa-link mr-2"></i> Pull & Analyze
+                      </span>
                     </button>
                   </form>
                 </div>
@@ -310,15 +257,7 @@ const UploadPage = () => {
                     </div>
                   </div>
                 )}
-
-                {success && (
-                  <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
-                    <div className="flex items-center">
-                      <i className="fas fa-check-circle mr-2"></i>
-                      <span>{success}</span>
-                    </div>
-                  </div>
-                )}
+                </SignedIn>
               </div>
             </div>
           </div>

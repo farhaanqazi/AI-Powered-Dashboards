@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardStore } from '../../dashboardStore';
+import { exportDashboardToPDF } from '../../services/pdfExport';
 import OverviewTab from './OverviewTab';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
@@ -9,8 +10,30 @@ import ColumnsTab from './ColumnsTab';
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const { data: dashboardData, loading, error, refresh, lastUpdated } = useDashboardStore();
+  const setExportHandler = useDashboardStore((s) => s.setExportHandler);
   const hasMounted = useRef(false);
   const navigate = useNavigate();
+  const captureRef = useRef(null);
+  const activeTabRef = useRef(activeTab);
+
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+
+  useEffect(() => {
+    setExportHandler(async () => {
+      const original = activeTabRef.current;
+      try {
+        await exportDashboardToPDF({
+          setActiveTab,
+          getCaptureEl: () => captureRef.current,
+        });
+      } finally {
+        setActiveTab(original);
+      }
+    });
+    return () => setExportHandler(null);
+  }, [setExportHandler]);
 
   useEffect(() => {
     refresh();
@@ -81,7 +104,7 @@ const DashboardPage = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      <div className="container mx-auto px-4 py-6">
+      <div ref={captureRef} className="container mx-auto px-4 py-6">
 
         {/* Stats Cards */}
         {dashboardData && (

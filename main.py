@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +18,9 @@ import os
 from threading import Lock
 import re
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # ---- Internal imports ----
 from src.core.pipeline import (
     build_dashboard_from_file,
@@ -25,6 +28,7 @@ from src.core.pipeline import (
     build_dashboard_from_file_generator,
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
+from src.auth import require_clerk_user
 
 # ---------------- LOGGING ----------------
 try:
@@ -74,7 +78,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ======================= API ==============================
 
 @app.post("/api/upload")
-async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None)):
+async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(require_clerk_user)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename:
@@ -123,7 +127,7 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
     }
 
 @app.post("/api/upload/stream")
-async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None)):
+async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(require_clerk_user)):
     if not dataset.filename:
         raise HTTPException(status_code=400, detail="No file provided.")
 
@@ -194,7 +198,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
 
 
 @app.post("/api/load_external")
-async def api_load_external(req: LoadExternalRequest):
+async def api_load_external(req: LoadExternalRequest, user=Depends(require_clerk_user)):
     trace_id = str(uuid.uuid4())
 
     if not req.external_source or not isinstance(req.external_source, str):
@@ -253,7 +257,7 @@ async def api_load_external(req: LoadExternalRequest):
     }
 
 @app.get("/api/dashboard")
-async def api_get_dashboard():
+async def api_get_dashboard(user=Depends(require_clerk_user)):
     with storage_lock:
         dashboard_data = dashboard_storage.get('most_recent')
 

@@ -79,3 +79,4 @@ frontend/.vite/
 *.orig
 *.tmp
 *~
+supplement/

@@ -1,10 +1,28 @@
 import axios from 'axios';
 
-// Using relative paths for proxy in vite.config.js
 const API_BASE_URL = '/api';
+
+async function getClerkToken() {
+  try {
+    return (await window.Clerk?.session?.getToken()) || null;
+  } catch {
+    return null;
+  }
+}
+
+async function authHeaders() {
+  const token = await getClerkToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+});
+
+api.interceptors.request.use(async (config) => {
+  const headers = await authHeaders();
+  config.headers = { ...config.headers, ...headers };
+  return config;
 });
 
 export const uploadFile = async (file) => {
@@ -27,6 +45,7 @@ export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
   const response = await fetch(`${API_BASE_URL}/upload/stream`, {
     method: 'POST',
     body: formData,
+    headers: await authHeaders(),
     signal,
   });
 
