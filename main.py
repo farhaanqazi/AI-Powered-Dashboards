@@ -169,7 +169,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
                     }
                     with storage_lock:
                         dashboard_storage[trace_id] = response_data
-                        dashboard_storage['most_recent'] = response_data
+                        dashboard_storage[user['session_key']] = response_data
                     final = {
                         "phase": "done",
                         "message": event.get("message", "Complete"),
