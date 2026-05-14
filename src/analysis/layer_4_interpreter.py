@@ -194,13 +194,25 @@ def select_charts(
         # Plot against the top 3 most significant numerics (excluding identifiers)
         top_numerics = sorted([p for p in numerics if p.role != 'identifier'], key=_calculate_kpi_score, reverse=True)
         for num_col in top_numerics[:3]:
+            tags = getattr(num_col, "semantic_tags", []) or []
+            # Pick aggregation function based on semantic tag from layer_2:
+            # - 'additive' (revenue/cost/qty/etc.) must SUM across buckets
+            # - 'rate' (rate/score/temperature/age/etc.) averages
+            # - otherwise default to mean
+            if "additive" in tags:
+                agg_func = "sum"
+            else:
+                agg_func = "mean"
+
+            title_verb = "Total" if agg_func == "sum" else "Trend of"
             chart_specs.append({
                 "id": f"timeseries_{dt_col.name}_{num_col.name}",
-                "title": f"Trend of {num_col.name} over {dt_col.name}",
+                "title": f"{title_verb} {num_col.name} over {dt_col.name}",
                 "chart_type": "line",
                 "intent": "time_series",
                 "x_field": dt_col.name,
                 "y_field": num_col.name,
+                "agg_func": agg_func,
                 "priority": 0, # Highest priority
                 "dimensions": {"width": "responsive", "height": "400px"},
                 "responsive": True

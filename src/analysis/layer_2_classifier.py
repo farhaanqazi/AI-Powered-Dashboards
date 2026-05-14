@@ -18,8 +18,98 @@ from src.utils.identifier_detector import is_likely_identifier_with_confidence
 
 logger = logging.getLogger(__name__)
 
-_CURRENCY_RE = re.compile(r"[$\\u00A3\\u20AC\\u00A5\\u20B9\\u20A9\\u20A6\\u20BD\\u0E3F\\u20AB\\u20B4\\u20B1\\u20AA\\u20A1]")
+_CURRENCY_RE = re.compile("[$£€¥₹₩₦₽฿₫₴₱₪₡]")
 _AMBIGUOUS_DATE_RE = re.compile(r"\\b(\\d{1,2})[/-](\\d{1,2})[/-](\\d{2,4})\\b")
+
+# Numeric columns that aggregate by SUMMING across time:
+# revenue, cost, sales, quantity, units, total_*, *_amount, fees, etc.
+_ADDITIVE_NAME_RE = re.compile(
+    r"(?i)(?<![a-zA-Z])("
+    r"revenue|sales|cost|costs|expense|expenses|spend|spending|"
+    r"amount|amounts|total|totals|subtotal|"
+    r"qty|quantity|quantities|unit|units|count|counts|order|orders|"
+    r"profit|loss|losses|income|earnings|"
+    r"fee|fees|tax|taxes|discount|discounts|"
+    r"volume|gross|net|cashflow|cash_flow|"
+    r"transactions|invoice|invoices|payment|payments"
+    r")(?![a-zA-Z])"
+)
+_ADDITIVE_SUFFIX_RE = re.compile(
+    r"(?i)("
+    r"_amount|_total|_count|_qty|_quantity|_units?|_fees?|_sum|"
+    r"_revenue|_sales|_cost|_costs|_spend|_orders?|_volume|_income"
+    r")$"
+)
+
+# Numeric columns that aggregate by AVERAGING (rates, ratios, scores, measurements):
+_RATE_NAME_RE = re.compile(
+    r"(?i)(?<![a-zA-Z])("
+    r"rate|ratio|pct|percent|percentage|"
+    r"score|scoring|index|"
+    r"temperature|temp|pressure|humidity|"
+    r"avg|average|mean|median|"
+    r"speed|velocity|frequency|latency|duration|"
+    r"age|year|hour|minute|second"
+    r")(?![a-zA-Z])"
+)
+_RATE_SUFFIX_RE = re.compile(
+    r"(?i)("
+    r"_rate|_pct|_percent|_ratio|_score|_index|"
+    r"_avg|_average|_mean|_median|"
+    r"_per_.+"
+    r")$"
+)
+
+
+def _normalize_name_for_match(name: str) -> str:
+    """
+    Normalize a column name so the additive/rate regexes can find tokens
+    whether the column uses snake_case, camelCase, PascalCase, or kebab-case.
+    Inserts spaces at lower->upper boundaries and replaces non-letters with
+    spaces.
+    """
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", name)
+    spaced = re.sub(r"[^A-Za-z]+", " ", spaced)
+    return spaced
+
+
+def _detect_aggregation_semantics(
+    name: str,
+    series: pd.Series,
+    is_monetary: bool,
+) -> Optional[str]:
+    """
+    Decide whether a numeric column should be aggregated by sum or by mean
+    when collapsed across time / categories.
+
+    Returns 'additive', 'rate', or None (caller defaults to mean).
+
+    Precedence:
+      1. Monetary (currency-tagged) -> additive.
+      2. Name regex match for rates (e.g. 'temperature', 'age', '*_rate') -> rate.
+         Checked BEFORE additive because 'age' must not be summed.
+      3. Name regex match for additives (e.g. 'revenue', '*_amount') -> additive.
+      4. Bounded [0, 1] or [0, 100] floats -> rate.
+      5. None.
+    """
+    if is_monetary:
+        return "additive"
+    normalized = _normalize_name_for_match(name)
+    if _RATE_NAME_RE.search(normalized) or _RATE_SUFFIX_RE.search(name):
+        return "rate"
+    if _ADDITIVE_NAME_RE.search(normalized) or _ADDITIVE_SUFFIX_RE.search(name):
+        return "additive"
+    try:
+        if pd.api.types.is_numeric_dtype(series):
+            s = pd.to_numeric(series, errors="coerce").dropna()
+            if len(s) > 10:
+                mn, mx = float(s.min()), float(s.max())
+                if mn >= 0.0 and mx <= 1.0 and pd.api.types.is_float_dtype(s):
+                    return "rate"
+    except Exception:
+        pass
+    return None
+
 _DATE_FORMATS = [
     "%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d",
     "%d-%m-%Y", "%d/%m/%Y", "%d.%m.%Y",
@@ -232,6 +322,15 @@ def run_semantic_classification(
                 numeric_stats = _compute_numeric_stats(numeric_series)
                 if numeric_stats:
                     profile.stats.update(numeric_stats)
+
+            # Aggregation-semantics tag: additive (sum across time) vs rate (mean).
+            agg_hint = _detect_aggregation_semantics(
+                name, df[name], is_monetary=('monetary' in semantic_tags)
+            )
+            if agg_hint == 'additive':
+                semantic_tags.append('additive')
+            elif agg_hint == 'rate':
+                semantic_tags.append('rate')
 
         enriched_profiles[name] = EnrichedProfile(
             role=role,
