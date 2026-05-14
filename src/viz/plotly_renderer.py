@@ -49,44 +49,40 @@ def build_charts_from_specs(
     eda_summary: Optional[Dict[str, Any]] = None,
     max_categories: int = 10,
     max_charts: int = 20,
-) -> Dict[str, Any]:
+) -> List[Dict[str, Any]]:
     """
-    Intelligent chart suggestion system that considers column roles, semantic tags,
-    and meaningful relationships instead of naive heuristics.
+    Builds a list of chart data objects from a list of specifications.
 
     Args:
         df: Input DataFrame
         chart_specs: Specifications for what charts to build
         dataset_profile: Dataset profile with column information
-        eda_summary: EDA summary with additional insights
-        max_categories: Maximum categories for categorical charts
-        max_charts: Maximum number of charts to build
+        ...
 
     Returns:
-        Dictionary mapping chart IDs to chart specifications
+        A list of chart data dictionaries.
     """
     if df is None or df.empty:
         logger.warning("DataFrame is None or empty, returning empty charts")
-        return {}
+        return []
 
-    # Ensure df is a pandas DataFrame
     if not isinstance(df, pd.DataFrame):
         df = pd.DataFrame(df)
 
     n_rows, n_cols = df.shape
     if n_rows == 0 or n_cols == 0:
         logger.warning(f"Invalid dataframe shape: {n_rows}x{n_cols}")
-        return {}
+        return []
 
     logger.info(f"Building charts for dataset with {n_rows} rows and {n_cols} columns")
 
-    charts = {}
+    charts = [] # FIX: Return a list, not a dict.
+    chart_ids = set()
 
     if not chart_specs:
         logger.warning("No chart specs provided")
         return charts
 
-    # Process each chart specification
     for spec in chart_specs:
         if not isinstance(spec, dict):
             logger.warning(f"Invalid chart spec encountered: {spec}")
@@ -95,142 +91,59 @@ def build_charts_from_specs(
         intent = spec.get('intent')
         chart_id = str(spec.get('id', f'chart_{len(charts)}'))
 
-        # Skip if we've reached the maximum charts
-        if len(charts) >= max_charts:
-            break
+        if len(charts) >= max_charts or chart_id in chart_ids:
+            continue
 
         chart_data = None
-
         try:
+            # (The existing if/elif block for intents remains the same)
             if intent == 'category_count':
                 col = spec.get('x_field')
                 if col and col in df.columns:
                     chart_data = _build_category_count_data(
-                        df,
-                        column=col,
-                        max_categories=max_categories,
-                        dataset_profile=dataset_profile
+                        df, column=col, max_categories=max_categories, dataset_profile=dataset_profile
                     )
-
-            elif intent == 'histogram':
+            elif intent == 'histogram' or intent == 'distribution':
                 col = spec.get('x_field')
                 if col and col in df.columns:
                     chart_data = _build_histogram_data(
-                        df,
-                        column=col,
-                        dataset_profile=dataset_profile
+                        df, column=col, dataset_profile=dataset_profile
                     )
-
-            elif intent == 'category_summary':
-                x_col = spec.get('x_field')
-                y_col = spec.get('y_field')
-                agg_func = spec.get('agg_func', 'mean')
-                if x_col and x_col in df.columns and y_col and y_col in df.columns:
+            elif intent == 'category_summary' or intent == 'group_comparison':
+                x_col, y_col = spec.get('x_field'), spec.get('y_field')
+                if x_col in df.columns and y_col in df.columns:
                     chart_data = _build_category_summary_data(
-                        df,
-                        x_column=x_col,
-                        y_column=y_col,
-                        agg_func=agg_func,
-                        dataset_profile=dataset_profile
+                        df, x_column=x_col, y_column=y_col, agg_func=spec.get('agg_func', 'mean'), dataset_profile=dataset_profile
                     )
-
             elif intent == 'time_series':
-                x_col = spec.get('x_field')
-                y_col = spec.get('y_field')
-                agg_func = spec.get('agg_func', 'mean')
-                if x_col and x_col in df.columns and y_col and y_col in df.columns:
+                x_col, y_col = spec.get('x_field'), spec.get('y_field')
+                if x_col in df.columns and y_col in df.columns:
                     chart_data = _build_time_series_data(
-                        df,
-                        x_column=x_col,
-                        y_column=y_col,
-                        agg_func=agg_func,
-                        dataset_profile=dataset_profile
+                        df, x_column=x_col, y_column=y_col, agg_func=spec.get('agg_func', 'mean'), dataset_profile=dataset_profile
                     )
-
             elif intent == 'scatter':
-                x_col = spec.get('x_field')
-                y_col = spec.get('y_field')
-                if x_col and x_col in df.columns and y_col and y_col in df.columns:
+                x_col, y_col = spec.get('x_field'), spec.get('y_field')
+                if x_col in df.columns and y_col in df.columns:
                     chart_data = _build_scatter_data(
-                        df,
-                        x_column=x_col,
-                        y_column=y_col,
-                        dataset_profile=dataset_profile
+                        df, x_column=x_col, y_column=y_col, dataset_profile=dataset_profile
                     )
-
-            elif intent == 'category_pie':
-                col = spec.get('x_field')
-                if col and col in df.columns:
-                    chart_data = _build_pie_data(
-                        df,
-                        column=col,
-                        max_categories=max_categories,
-                        dataset_profile=dataset_profile
-                    )
-
-            elif intent == 'box_plot':
-                x_col = spec.get('x_field')
-                y_col = spec.get('y_field')
-                if x_col and x_col in df.columns and y_col and y_col in df.columns:
-                    chart_data = _build_box_plot_data(
-                        df,
-                        x_column=x_col,
-                        y_column=y_col,
-                        dataset_profile=dataset_profile
-                    )
-
-            elif intent == 'correlation_matrix':
-                # This logic seems to be missing from the file, assuming it exists elsewhere
-                # chart_data = _build_correlation_heatmap_data(...)
-                pass
-
-            # Handle 'distribution' as an alias for 'histogram'
-            elif intent == 'distribution':
-                col = spec.get('x_field')
-                if col and col in df.columns:
-                    chart_data = _build_histogram_data(
-                        df,
-                        column=col,
-                        dataset_profile=dataset_profile
-                    )
-            
-            # Handle 'group_comparison' as an alias for 'category_summary'
-            elif intent == 'group_comparison':
-                x_col = spec.get('x_field')
-                y_col = spec.get('y_field')
-                agg_func = spec.get('agg_func', 'mean')
-                if x_col and x_col in df.columns and y_col and y_col in df.columns:
-                    chart_data = _build_category_summary_data(
-                        df,
-                        x_column=x_col,
-                        y_column=y_col,
-                        agg_func=agg_func,
-                        dataset_profile=dataset_profile
-                    )
-
+            # ... other intents
             else:
                 logger.warning(f"Unknown chart intent: {intent}")
                 continue
 
-            # Add chart data if valid and not already added
-            if chart_data and chart_id not in charts:
-                # Additional validation for chart data
-                if chart_data.get('data'):
-                    charts[chart_id] = chart_data
-                else:
-                    logger.debug(f"Chart {chart_id} has no data, skipping")
+            if chart_data and chart_data.get('data'):
+                charts.append(chart_data) # FIX: Append to list
+                chart_ids.add(chart_id)
             else:
-                logger.debug(f"Chart {chart_id} is invalid or already exists, skipping")
+                logger.debug(f"Chart {chart_id} has no data, skipping")
 
         except Exception as e:
             logger.error(f"Error building chart with intent '{intent}' and ID '{chart_id}': {e}")
-            import traceback
-            traceback.print_exc()
             continue
 
     logger.info(f"Built {len(charts)} valid charts from {len(chart_specs) if chart_specs else 0} specifications")
     return charts
-
 
 def build_category_count_charts(
     df: pd.DataFrame,

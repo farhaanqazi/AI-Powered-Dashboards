@@ -6,55 +6,6 @@ import pandas as pd
 from typing import Tuple
 
 
-def is_likely_identifier(series: pd.Series, name: str = "") -> bool:
-    """
-    Determine if a series is likely an identifier based on multiple heuristics.
-    """
-    n_total = len(series)
-    if n_total == 0:
-        return False
-
-    n_unique = series.nunique()
-    unique_ratio = n_unique / n_total if n_total > 0 else 0.0
-
-    # Check for high cardinality (potential ID)
-    if unique_ratio > 0.98:
-        # Check if it's numeric (potential sequential ID)
-        if pd.api.types.is_numeric_dtype(series):
-            numeric_vals = pd.to_numeric(series, errors='coerce').dropna()
-            if len(numeric_vals) > 5:  # Need at least 5 values to check sequence
-                sorted_vals = numeric_vals.sort_values()
-                diffs = sorted_vals.diff().dropna()
-                if len(diffs) > 0:
-                    # Check for mostly constant differences (sequential IDs)
-                    unique_diffs = diffs.unique()
-                    if len(unique_diffs) == 1 and abs(unique_diffs[0] - 1) < 0.01:  # Step of 1
-                        return True
-        # Check for UUID patterns in string values
-        if series.dtype == 'object':
-            sample = series.dropna().head(20).astype(str)
-            uuid_matches = 0
-            for val in sample:
-                # Check for UUID v4 pattern (with case insensitivity)
-                if re.match(r'^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$', val, re.IGNORECASE):
-                    uuid_matches += 1
-            if uuid_matches / len(sample) > 0.5:  # More than 50% are UUIDs
-                return True
-
-    # Check for ID-like names
-    name_lower = name.lower()
-    id_keywords = [
-        "id", "uuid", "guid", "key", "code", "no", "number", "index",
-        "account", "user", "customer", "product", "item", "order",
-        "transaction", "invoice", "booking", "session", "token", "hash"
-    ]
-
-    if any(keyword in name_lower for keyword in id_keywords):
-        return True
-
-    return False
-
-
 def is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool, str, float]:
     """
     Check if a series is likely an identifier with confidence scoring.
@@ -106,19 +57,17 @@ def is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool,
     # Signal 4: Name-based detection (semantic heuristics)
     name_lower = name.lower()
     id_keywords = [
-        "id", "uuid", "guid", "key", "code", "no", "number", "index",
-        "account", "user", "customer", "product", "item", "order",
-        "transaction", "invoice", "booking", "session", "token", "hash"
+        "id", "uuid", "guid", "key", "code", "sku", "passport", "licence", "license", # Strong identifiers
+        "account_number", "customer_number", "order_number", "product_number", "item_number", "transaction_number", # Number-based identifiers
+        "invoice_number", "booking_id", "session_id", "token_id", "hash_id", # Specific IDs
+        "zip", "zipcode", "postal", "postcode", "acct", "iban" # Non-aggregatable identifiers
     ]
 
     matching_keywords = [kw for kw in id_keywords if kw in name_lower]
     if matching_keywords:
         # Calculate confidence based on how many keywords match and their position in name
-        keyword_confidence = min(0.8, len(matching_keywords) * 0.3)
-        # Boost confidence if important keywords are found
-        important_keywords = ["id", "uuid", "key", "code", "account", "user", "customer"]
-        important_matches = sum(1 for kw in matching_keywords if kw in important_keywords)
-        keyword_confidence += important_matches * 0.15
+        # Stronger boost for presence of dedicated identifier keywords
+        keyword_confidence = min(0.9, len(matching_keywords) * 0.2 + (0.1 if any(k in ["id", "uuid", "key"] for k in matching_keywords) else 0))
         detection_signals["name_pattern"] = min(1.0, keyword_confidence)
 
     # Calculate overall confidence based on signal strengths and weights
@@ -126,11 +75,11 @@ def is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool,
         # Weight different signals appropriately
         weights = {
             "uuid_pattern": 1.0,              # Highest confidence for UUIDs
-            "sequential_step1": 0.95,         # High confidence for clear sequential patterns
-            "very_high_cardinality": 0.9,     # High confidence for extremely high uniqueness
-            "sequential_low_variance": 0.85,  # High confidence for sequential patterns
-            "high_cardinality": 0.8,          # Good confidence for high uniqueness
-            "name_pattern": 0.75,             # Good confidence for name patterns
+            "sequential_step1": 0.98,         # Very high confidence for clear sequential patterns
+            "very_high_cardinality": 0.92,    # High confidence for extremely high uniqueness
+            "sequential_low_variance": 0.88,  # High confidence for sequential patterns with low variance
+            "high_cardinality": 0.85,         # Good confidence for high uniqueness
+            "name_pattern": 0.70,             # Slightly reduced weight for name patterns, now more specific
             "moderate_cardinality": 0.4       # Lower confidence for moderate uniqueness
         }
 
@@ -145,7 +94,7 @@ def is_likely_identifier_with_confidence(s: pd.Series, name: str) -> Tuple[bool,
                 best_signal = signal
 
         # Consider it an identifier if confidence exceeds threshold
-        is_identifier = max_confidence > 0.6
+        is_identifier = max_confidence > 0.65 # Slightly raise threshold for stronger evidence
 
         return is_identifier, best_signal, max_confidence
 

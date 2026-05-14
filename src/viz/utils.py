@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import re
 import math
-from src.utils.identifier_detector import is_likely_identifier
+from src.utils.identifier_detector import is_likely_identifier_with_confidence
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,73 @@ def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     Robust identifier detection that matches the new correlation engine logic.
     """
     # Use the centralized identifier detector
-    return is_likely_identifier(series, name)
+    # is_likely_identifier_with_confidence returns (bool, str, float), we only need the bool
+    return is_likely_identifier_with_confidence(series, name)[0]
+
+
+def _clean_numeric_series(series: pd.Series) -> pd.Series:
+    """
+    Convert a series to numeric, dropping NaN/Inf safely.
+    """
+    if not isinstance(series, pd.Series):
+        series = pd.Series(series)
+    numeric = pd.to_numeric(series, errors='coerce')
+    numeric = numeric.replace([np.inf, -np.inf], np.nan).dropna()
+    return numeric
+
+
+def _is_low_cardinality_numeric(series: pd.Series, max_unique: int = 6) -> bool:
+    """
+    Detect numeric columns that behave like categories (few unique values).
+    """
+    try:
+        return series.nunique(dropna=True) <= max_unique
+    except Exception:
+        return False
+
+
+def _maybe_clip_series_for_viz(
+    series: pd.Series,
+    lower_q: float = 0.01,
+    upper_q: float = 0.99
+) -> Tuple[pd.Series, Dict[str, Any]]:
+    """
+    Winsorize extreme tails for visualization only when distribution is highly skewed.
+    Returns the possibly clipped series and metadata about the adjustment.
+    """
+    meta: Dict[str, Any] = {"clipped": False}
+
+    if series is None or series.empty:
+        return series, meta
+
+    # Avoid clipping tiny datasets
+    if len(series) < 50:
+        return series, meta
+
+    try:
+        q01, q50, q99 = series.quantile([lower_q, 0.5, upper_q])
+        q25, q75 = series.quantile([0.25, 0.75])
+        iqr = q75 - q25
+
+        if not np.isfinite(iqr) or iqr == 0:
+            return series, meta
+
+        span = q99 - q01
+        if not np.isfinite(span) or span <= 0:
+            return series, meta
+
+        tail_ratio = span / max(abs(iqr), 1e-9)
+        median_abs = abs(q50)
+        extreme_ratio = max(abs(q99), abs(q01)) / max(median_abs, 1e-9)
+
+        if tail_ratio > 8 or extreme_ratio > 25:
+            clipped = series.clip(lower=q01, upper=q99)
+            meta = {"clipped": True, "lower": float(q01), "upper": float(q99)}
+            return clipped, meta
+    except Exception as e:
+        logger.warning(f"Error computing clip bounds: {e}")
+
+    return series, meta
 
 
 def _build_category_count_data(
@@ -161,28 +227,63 @@ def _build_histogram_data(
             return None
 
     # Also check using our identifier detection function
-    if _is_likely_identifier(series, column):
+    # GUARD: float columns are continuous measurements — never skip them as identifiers
+    import pandas.api.types as pat
+    if not pat.is_float_dtype(series) and _is_likely_identifier(series, column):
         logger.info(f"Skipping likely identifier column '{column}' from histogram")
         return None
 
     # Ensure the column is numeric
-    # First check if df[column] is valid
     if not isinstance(df[column], pd.Series) and not isinstance(df[column], pd.DataFrame):
         col_series = pd.Series(df[column]) if hasattr(df[column], '__iter__') else pd.Series([df[column]])
     else:
         col_series = df[column]
 
-    # Clean the series by converting to numeric and handling NaN/None values
-    series = pd.to_numeric(col_series, errors='coerce')
-    # Drop NaN values
-    series = series.dropna()
-
-    # Filter out infinite values
-    series = series[np.isfinite(series)]
+    # Clean the series by converting to numeric and handling NaN/None/Inf values
+    series = _clean_numeric_series(col_series)
 
     if series.empty:
         logger.warning(f"Column '{column}' has no valid numeric values after cleaning")
         return None
+
+    # If numeric behaves like a category (few unique values), treat as discrete bins
+    if _is_low_cardinality_numeric(series):
+        counts = series.value_counts().sort_index()
+        categories = [str(idx) for idx in counts.index]
+        values = [int(val) for val in counts.values]
+
+        table_data = [
+            {"bin_range": cat, "count": val}
+            for cat, val in zip(categories, values)
+        ]
+
+        if not table_data:
+            logger.warning(f"No valid data entries after processing discrete histogram for '{column}'")
+            return None
+
+        title = f"Distribution of {column.replace('_', ' ')}"
+        if hasattr(title, 'title'):
+            title = title.title()
+        else:
+            title = str(title)
+
+        chart_payload = ChartPayload(
+            title=title,
+            column=column,
+            data=table_data,
+            type="histogram"
+        )
+
+        return {
+            "title": chart_payload.title,
+            "column": chart_payload.column,
+            "data": chart_payload.data,
+            "type": chart_payload.type,
+            "viz_adjustments": {"discrete_bins": True}
+        }
+
+    # Clip extreme tails for visualization (winsorization)
+    series, clip_meta = _maybe_clip_series_for_viz(series)
 
     # Adaptive binning strategy based on data size and skew
     n_samples = len(series)
@@ -304,12 +405,17 @@ def _build_histogram_data(
         type="histogram"
     )
 
-    return {
+    result = {
         "title": chart_payload.title,
         "column": chart_payload.column,
         "data": chart_payload.data,
         "type": chart_payload.type
     }
+
+    if clip_meta.get("clipped"):
+        result["viz_adjustments"] = clip_meta
+
+    return result
 
 
 def _build_category_summary_data(
@@ -363,6 +469,9 @@ def _build_category_summary_data(
 
     x_final = valid_data.iloc[:, 0]
     y_final = valid_data.iloc[:, 1]
+
+    # Clip extreme tails for visualization (winsorization)
+    y_final, clip_meta = _maybe_clip_series_for_viz(y_final)
 
     # Apply aggregation by group
     agg_func_lower = agg_func.lower()
@@ -422,7 +531,7 @@ def _build_category_summary_data(
             type="category_summary"
         )
 
-        return {
+        result = {
             "title": chart_payload.title,
             "x_column": x_column,
             "y_column": y_column,
@@ -430,6 +539,9 @@ def _build_category_summary_data(
             "type": chart_payload.type,
             "agg_func": agg_func_lower
         }
+        if clip_meta.get("clipped"):
+            result["viz_adjustments"] = {"y": clip_meta}
+        return result
     except Exception as e:
         logger.error(f"Error in aggregation for {x_column} vs {y_column}: {e}")
         return None
@@ -487,6 +599,9 @@ def _build_time_series_data(
     x_final = combined.iloc[:, 0]
     y_final = combined.iloc[:, 1]
 
+    # Clip extreme tails for visualization (winsorization)
+    y_final, clip_meta = _maybe_clip_series_for_viz(y_final)
+
     # Check if time series is meaningful (not just one repeated value)
     if y_final.nunique() < 2:
         logger.info(f"Y column '{y_column}' has less than 2 unique values over time, skipping time series")
@@ -530,7 +645,7 @@ def _build_time_series_data(
         type="time_series"
     )
 
-    return {
+    result = {
         "title": chart_payload.title,
         "x_column": x_column,
         "y_column": y_column,
@@ -538,6 +653,9 @@ def _build_time_series_data(
         "type": chart_payload.type,
         "agg_func": agg_func
     }
+    if clip_meta.get("clipped"):
+        result["viz_adjustments"] = {"y": clip_meta}
+    return result
 
 
 def _build_scatter_data(
@@ -586,6 +704,10 @@ def _build_scatter_data(
     x_final = combined.iloc[:, 0]
     y_final = combined.iloc[:, 1]
 
+    # Clip extreme tails for visualization (winsorization)
+    x_final, x_clip_meta = _maybe_clip_series_for_viz(x_final)
+    y_final, y_clip_meta = _maybe_clip_series_for_viz(y_final)
+
     # Check for minimal variance (constant or near-constant values)
     x_std = x_final.std()
     y_std = y_final.std()
@@ -615,13 +737,21 @@ def _build_scatter_data(
         type="scatter"
     )
 
-    return {
+    result = {
         "title": chart_payload.title,
         "x_column": x_column,
         "y_column": y_column,
         "data": chart_payload.data,
         "type": chart_payload.type
     }
+
+    if x_clip_meta.get("clipped") or y_clip_meta.get("clipped"):
+        result["viz_adjustments"] = {
+            "x": x_clip_meta,
+            "y": y_clip_meta
+        }
+
+    return result
 
 
 def _build_pie_data(
