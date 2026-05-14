@@ -1,6 +1,6 @@
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/react';
+import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton } from '@clerk/clerk-react';
 import { useDashboardStore } from '../../dashboardStore';
 
 const Header = () => {

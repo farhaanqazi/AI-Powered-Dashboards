@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/react';
+import { SignedIn, SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
 
 const formatFileSize = (bytes) => {
   if (!Number.isFinite(bytes)) return '';

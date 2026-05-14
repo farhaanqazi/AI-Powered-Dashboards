@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/react';
+import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import UploadPage from './components/upload/UploadPage';
 import ProcessingPage from './components/upload/ProcessingPage';
 import DashboardPage from './components/dashboard/DashboardPage';
