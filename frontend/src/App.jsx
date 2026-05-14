@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import UploadPage from './components/upload/UploadPage';
+import ProcessingPage from './components/upload/ProcessingPage';
 import DashboardPage from './components/dashboard/DashboardPage';
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
@@ -152,6 +153,7 @@ function App() {
           <main className="flex-grow">
             <Routes>
               <Route path="/" element={<UploadPage />} />
+              <Route path="/processing" element={<ProcessingPage />} />
               <Route path="/dashboard" element={<DashboardPage />} />
             </Routes>
           </main>
