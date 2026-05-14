@@ -1,6 +1,8 @@
 /* ============================================================
    Dashboard Futuristic Theme
-   Glassmorphism + aurora gradients to match the Processing page.
+   All rules scoped to .dash-shell so they outrank any legacy
+   .glass-card / .chart-container / .empty-state rules in
+   App.css and design-system.css.
    ============================================================ */
 
 .dash-shell {
@@ -15,8 +17,8 @@
   color: #e2e8f0;
 }
 
-/* Aurora gradient blobs (same DNA as ProcessingPage) */
-.dash-aurora {
+/* Aurora gradient blobs */
+.dash-shell .dash-aurora {
   position: absolute;
   border-radius: 9999px;
   filter: blur(90px);
@@ -25,10 +27,10 @@
   pointer-events: none;
   animation: dash-drift 26s ease-in-out infinite;
 }
-.dash-aurora-a { width: 540px; height: 540px; top: -140px;  left: -120px;  background: radial-gradient(circle, rgba(96,165,250,0.9), transparent 70%); }
-.dash-aurora-b { width: 620px; height: 620px; bottom: -180px; right: -160px; background: radial-gradient(circle, rgba(168,85,247,0.85), transparent 70%); animation-delay: -8s; }
-.dash-aurora-c { width: 460px; height: 460px; top: 32%; left: 48%; background: radial-gradient(circle, rgba(45,212,191,0.65), transparent 70%); animation-delay: -16s; }
-.dash-aurora-d { width: 380px; height: 380px; top: 60%; left: 10%; background: radial-gradient(circle, rgba(251,191,36,0.40), transparent 70%); animation-delay: -22s; }
+.dash-shell .dash-aurora-a { width: 540px; height: 540px; top: -140px;  left: -120px;  background: radial-gradient(circle, rgba(96,165,250,0.9), transparent 70%); }
+.dash-shell .dash-aurora-b { width: 620px; height: 620px; bottom: -180px; right: -160px; background: radial-gradient(circle, rgba(168,85,247,0.85), transparent 70%); animation-delay: -8s; }
+.dash-shell .dash-aurora-c { width: 460px; height: 460px; top: 32%; left: 48%; background: radial-gradient(circle, rgba(45,212,191,0.65), transparent 70%); animation-delay: -16s; }
+.dash-shell .dash-aurora-d { width: 380px; height: 380px; top: 60%; left: 10%; background: radial-gradient(circle, rgba(251,191,36,0.40), transparent 70%); animation-delay: -22s; }
 
 @keyframes dash-drift {
   0%, 100% { transform: translate(0,0) scale(1); }
@@ -37,7 +39,7 @@
 }
 
 /* Subtle starfield grid */
-.dash-grid {
+.dash-shell .dash-grid {
   position: absolute;
   inset: 0;
   pointer-events: none;
@@ -50,7 +52,7 @@
 }
 
 /* Drifting particles */
-.dash-particle {
+.dash-shell .dash-particle {
   position: absolute;
   background: rgba(255, 255, 255, 0.7);
   border-radius: 9999px;
@@ -64,9 +66,9 @@
   100% { transform: translateY(-110vh); opacity: 0; }
 }
 
-/* ------------------ Glass surfaces ------------------ */
+/* ------------------ Glass surfaces (scoped) ------------------ */
 
-.glass-card {
+.dash-shell .glass-card {
   position: relative;
   border-radius: 1.25rem;
   border: 1px solid rgba(255,255,255,0.08);
@@ -84,7 +86,7 @@
               border-color 320ms;
 }
 
-.glass-card::before {
+.dash-shell .glass-card::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -98,7 +100,7 @@
   opacity: 0.7;
 }
 
-.glass-card:hover {
+.dash-shell .glass-card:hover {
   transform: translateY(-2px);
   border-color: rgba(255,255,255,0.14);
   box-shadow:
@@ -107,7 +109,7 @@
     0 0 30px -5px rgba(96,165,250,0.20);
 }
 
-.glass-soft {
+.dash-shell .glass-soft {
   border-radius: 1rem;
   border: 1px solid rgba(255,255,255,0.07);
   background: rgba(15, 23, 42, 0.45);
@@ -116,7 +118,7 @@
 }
 
 /* Neon accent badge */
-.neon-badge {
+.dash-shell .neon-badge {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
@@ -128,22 +130,22 @@
   text-transform: uppercase;
   border: 1px solid;
 }
-.neon-badge::before {
+.dash-shell .neon-badge::before {
   content: '';
   width: 6px; height: 6px;
   border-radius: 9999px;
   background: currentColor;
   box-shadow: 0 0 8px currentColor;
 }
-.neon-blue    { color: #93c5fd; border-color: rgba(96,165,250,0.35); background: rgba(96,165,250,0.10); }
-.neon-purple  { color: #d8b4fe; border-color: rgba(168,85,247,0.35); background: rgba(168,85,247,0.10); }
-.neon-emerald { color: #6ee7b7; border-color: rgba(16,185,129,0.40); background: rgba(16,185,129,0.10); }
-.neon-amber   { color: #fcd34d; border-color: rgba(251,191,36,0.40); background: rgba(251,191,36,0.10); }
-.neon-rose    { color: #fda4af; border-color: rgba(244,114,182,0.40); background: rgba(244,114,182,0.10); }
-.neon-cyan    { color: #67e8f9; border-color: rgba(34,211,238,0.40); background: rgba(34,211,238,0.10); }
+.dash-shell .neon-blue    { color: #93c5fd; border-color: rgba(96,165,250,0.35); background: rgba(96,165,250,0.10); }
+.dash-shell .neon-purple  { color: #d8b4fe; border-color: rgba(168,85,247,0.35); background: rgba(168,85,247,0.10); }
+.dash-shell .neon-emerald { color: #6ee7b7; border-color: rgba(16,185,129,0.40); background: rgba(16,185,129,0.10); }
+.dash-shell .neon-amber   { color: #fcd34d; border-color: rgba(251,191,36,0.40); background: rgba(251,191,36,0.10); }
+.dash-shell .neon-rose    { color: #fda4af; border-color: rgba(244,114,182,0.40); background: rgba(244,114,182,0.10); }
+.dash-shell .neon-cyan    { color: #67e8f9; border-color: rgba(34,211,238,0.40); background: rgba(34,211,238,0.10); }
 
 /* Section heading */
-.section-heading {
+.dash-shell .section-heading {
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -152,7 +154,7 @@
   color: #f1f5f9;
   letter-spacing: 0.01em;
 }
-.section-heading .section-eyebrow {
+.dash-shell .section-heading .section-eyebrow {
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.32em;
@@ -160,7 +162,7 @@
   margin-bottom: 0.4rem;
   display: block;
 }
-.section-heading .section-icon {
+.dash-shell .section-icon {
   width: 2rem;
   height: 2rem;
   border-radius: 0.6rem;
@@ -174,7 +176,7 @@
 }
 
 /* Stat tile */
-.stat-tile {
+.dash-shell .stat-tile {
   position: relative;
   border-radius: 1rem;
   padding: 1.25rem 1.25rem 1.1rem;
@@ -185,11 +187,11 @@
   overflow: hidden;
   transition: transform 280ms ease, border-color 280ms;
 }
-.stat-tile:hover {
+.dash-shell .stat-tile:hover {
   transform: translateY(-2px);
   border-color: rgba(255,255,255,0.18);
 }
-.stat-tile .stat-glow {
+.dash-shell .stat-tile .stat-glow {
   position: absolute;
   width: 160px; height: 160px;
   right: -60px; top: -60px;
@@ -198,7 +200,7 @@
   opacity: 0.55;
   pointer-events: none;
 }
-.stat-tile .stat-icon {
+.dash-shell .stat-tile .stat-icon {
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.75rem;
@@ -210,14 +212,14 @@
   background: rgba(15,23,42,0.6);
   border: 1px solid rgba(255,255,255,0.08);
 }
-.stat-tile .stat-label {
+.dash-shell .stat-tile .stat-label {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.28em;
   color: rgba(148,163,184,0.85);
   margin-bottom: 0.3rem;
 }
-.stat-tile .stat-value {
+.dash-shell .stat-tile .stat-value {
   font-size: 1.85rem;
   font-weight: 700;
   letter-spacing: -0.01em;
@@ -228,20 +230,17 @@
   font-variant-numeric: tabular-nums;
 }
 
-.stat-blue   .stat-icon { color: #93c5fd; box-shadow: 0 0 24px -8px rgba(96,165,250,0.6); }
-.stat-blue   .stat-glow { background: radial-gradient(circle, rgba(96,165,250,0.55), transparent 70%); }
-
-.stat-purple .stat-icon { color: #d8b4fe; box-shadow: 0 0 24px -8px rgba(168,85,247,0.6); }
-.stat-purple .stat-glow { background: radial-gradient(circle, rgba(168,85,247,0.55), transparent 70%); }
-
-.stat-emerald .stat-icon { color: #6ee7b7; box-shadow: 0 0 24px -8px rgba(16,185,129,0.6); }
-.stat-emerald .stat-glow { background: radial-gradient(circle, rgba(16,185,129,0.5), transparent 70%); }
-
-.stat-amber  .stat-icon { color: #fcd34d; box-shadow: 0 0 24px -8px rgba(251,191,36,0.6); }
-.stat-amber  .stat-glow { background: radial-gradient(circle, rgba(251,191,36,0.5), transparent 70%); }
+.dash-shell .stat-blue   .stat-icon { color: #93c5fd; box-shadow: 0 0 24px -8px rgba(96,165,250,0.6); }
+.dash-shell .stat-blue   .stat-glow { background: radial-gradient(circle, rgba(96,165,250,0.55), transparent 70%); }
+.dash-shell .stat-purple .stat-icon { color: #d8b4fe; box-shadow: 0 0 24px -8px rgba(168,85,247,0.6); }
+.dash-shell .stat-purple .stat-glow { background: radial-gradient(circle, rgba(168,85,247,0.55), transparent 70%); }
+.dash-shell .stat-emerald .stat-icon { color: #6ee7b7; box-shadow: 0 0 24px -8px rgba(16,185,129,0.6); }
+.dash-shell .stat-emerald .stat-glow { background: radial-gradient(circle, rgba(16,185,129,0.5), transparent 70%); }
+.dash-shell .stat-amber  .stat-icon { color: #fcd34d; box-shadow: 0 0 24px -8px rgba(251,191,36,0.6); }
+.dash-shell .stat-amber  .stat-glow { background: radial-gradient(circle, rgba(251,191,36,0.5), transparent 70%); }
 
 /* Tab navigation */
-.dash-tabs {
+.dash-shell .dash-tabs {
   display: flex;
   gap: 0.35rem;
   padding: 0.4rem;
@@ -252,7 +251,7 @@
   -webkit-backdrop-filter: blur(14px) saturate(140%);
   box-shadow: 0 30px 80px -40px rgba(2,6,23,0.85);
 }
-.dash-tab {
+.dash-shell .dash-tab {
   position: relative;
   flex: 1;
   padding: 0.85rem 1rem;
@@ -270,11 +269,11 @@
   border: 1px solid transparent;
   background: transparent;
 }
-.dash-tab:hover {
+.dash-shell .dash-tab:hover {
   color: #f1f5f9;
   background: rgba(255,255,255,0.04);
 }
-.dash-tab.is-active {
+.dash-shell .dash-tab.is-active {
   color: #f8fafc;
   background: linear-gradient(135deg, rgba(59,130,246,0.30), rgba(168,85,247,0.30));
   border-color: rgba(96,165,250,0.4);
@@ -283,7 +282,7 @@
     0 12px 30px -10px rgba(96,165,250,0.55),
     0 0 36px -6px rgba(168,85,247,0.45);
 }
-.dash-tab .tab-dot {
+.dash-shell .dash-tab .tab-dot {
   width: 5px; height: 5px;
   border-radius: 9999px;
   background: currentColor;
@@ -291,10 +290,12 @@
   opacity: 0;
   transition: opacity 240ms;
 }
-.dash-tab.is-active .tab-dot { opacity: 1; }
+.dash-shell .dash-tab.is-active .tab-dot { opacity: 1; }
 
-/* Chart container background neutralizer */
-.chart-shell {
+/* Chart shell — wrapper for plotly charts inside a glass card.
+   Also resets the legacy .chart-container styles (light gray bg
+   from App.css / design-system.css) when used inside the dash. */
+.dash-shell .chart-shell {
   border-radius: 1rem;
   padding: 0.5rem;
   background:
@@ -303,8 +304,15 @@
   border: 1px solid rgba(255,255,255,0.05);
 }
 
-/* KPI tile (smaller variant) */
-.kpi-tile {
+.dash-shell .chart-container {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  min-height: unset;
+}
+
+/* KPI tile */
+.dash-shell .kpi-tile {
   position: relative;
   border-radius: 1rem;
   padding: 1rem 1.1rem;
@@ -315,15 +323,15 @@
   overflow: hidden;
   transition: transform 280ms ease, border-color 280ms;
 }
-.kpi-tile:hover { transform: translateY(-2px); border-color: rgba(96,165,250,0.35); }
-.kpi-tile .kpi-label {
+.dash-shell .kpi-tile:hover { transform: translateY(-2px); border-color: rgba(96,165,250,0.35); }
+.dash-shell .kpi-tile .kpi-label {
   font-size: 0.7rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: rgba(148,163,184,0.9);
   margin-bottom: 0.25rem;
 }
-.kpi-tile .kpi-value {
+.dash-shell .kpi-tile .kpi-value {
   font-size: 1.25rem;
   font-weight: 700;
   color: #f8fafc;
@@ -332,7 +340,7 @@
 }
 
 /* Pill / metric chips */
-.metric-chip {
+.dash-shell .metric-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
@@ -346,13 +354,13 @@
 }
 
 /* Table */
-.dash-table {
+.dash-shell .dash-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.85rem;
 }
-.dash-table thead th {
+.dash-shell .dash-table thead th {
   position: sticky;
   top: 0;
   background: rgba(15, 23, 42, 0.85);
@@ -369,19 +377,15 @@
   cursor: pointer;
   user-select: none;
 }
-.dash-table thead th:hover { color: #f1f5f9; }
-.dash-table tbody td {
+.dash-shell .dash-table thead th:hover { color: #f1f5f9; }
+.dash-shell .dash-table tbody td {
   padding: 0.85rem 1.1rem;
   color: rgba(226,232,240,0.92);
   border-bottom: 1px solid rgba(255,255,255,0.04);
 }
-.dash-table tbody tr {
-  transition: background 200ms;
-}
-.dash-table tbody tr:hover {
-  background: rgba(96,165,250,0.06);
-}
-.dash-table .mono {
+.dash-shell .dash-table tbody tr { transition: background 200ms; }
+.dash-shell .dash-table tbody tr:hover { background: rgba(96,165,250,0.06); }
+.dash-shell .dash-table .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   background: rgba(255,255,255,0.05);
   padding: 0.15rem 0.5rem;
@@ -390,8 +394,9 @@
   color: #93c5fd;
 }
 
-/* Empty state */
-.empty-state {
+/* Empty state — scoped, color hard-set so design-system.css doesn't win */
+.dash-shell .empty-state {
+  display: block;
   border-radius: 1rem;
   padding: 3rem 2rem;
   text-align: center;
@@ -399,7 +404,7 @@
   background: rgba(15,23,42,0.4);
   color: rgba(148,163,184,0.85);
 }
-.empty-state .empty-icon {
+.dash-shell .empty-state .empty-icon {
   font-size: 1.75rem;
   color: rgba(148,163,184,0.6);
   margin-bottom: 0.6rem;
@@ -407,7 +412,7 @@
 }
 
 /* Input */
-.dash-input {
+.dash-shell .dash-input {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.4rem;
   border-radius: 0.75rem;
@@ -417,33 +422,33 @@
   font-size: 0.9rem;
   transition: border-color 220ms, box-shadow 220ms;
 }
-.dash-input::placeholder { color: rgba(148,163,184,0.55); }
-.dash-input:focus {
+.dash-shell .dash-input::placeholder { color: rgba(148,163,184,0.55); }
+.dash-shell .dash-input:focus {
   outline: none;
   border-color: rgba(96,165,250,0.55);
   box-shadow: 0 0 0 3px rgba(96,165,250,0.18);
 }
 
-/* Correlation strength bar (dark) */
-.corr-bar-track {
+/* Correlation strength bar */
+.dash-shell .corr-bar-track {
   width: 100%;
   height: 5px;
   border-radius: 9999px;
   background: rgba(255,255,255,0.08);
   overflow: hidden;
 }
-.corr-bar-fill {
+.dash-shell .corr-bar-fill {
   height: 100%;
   border-radius: 9999px;
   transition: width 600ms ease;
   box-shadow: 0 0 12px currentColor;
 }
-.corr-strong   { color: #f87171; background: linear-gradient(90deg, #fb7185, #ef4444); }
-.corr-mid      { color: #fb923c; background: linear-gradient(90deg, #fbbf24, #fb923c); }
-.corr-weak     { color: #34d399; background: linear-gradient(90deg, #34d399, #22d3ee); }
+.dash-shell .corr-strong   { color: #f87171; background: linear-gradient(90deg, #fb7185, #ef4444); }
+.dash-shell .corr-mid      { color: #fb923c; background: linear-gradient(90deg, #fbbf24, #fb923c); }
+.dash-shell .corr-weak     { color: #34d399; background: linear-gradient(90deg, #34d399, #22d3ee); }
 
 /* Loading spinner */
-.dash-spinner {
+.dash-shell .dash-spinner {
   width: 3rem;
   height: 3rem;
   border-radius: 9999px;
@@ -456,7 +461,7 @@
 @keyframes dash-spin { to { transform: rotate(360deg); } }
 
 /* Fade-up section entry */
-.dash-section-enter {
+.dash-shell .dash-section-enter {
   animation: dash-section-in 480ms cubic-bezier(0.2,0.7,0.2,1) both;
 }
 @keyframes dash-section-in {
@@ -465,17 +470,11 @@
 }
 
 /* Plotly modebar tweaks for dark theme */
-.chart-container .modebar {
-  background: transparent !important;
-}
-.chart-container .modebar-btn path {
-  fill: rgba(148, 163, 184, 0.8) !important;
-}
-.chart-container .modebar-btn:hover path {
-  fill: #f1f5f9 !important;
-}
+.dash-shell .modebar { background: transparent !important; }
+.dash-shell .modebar-btn path { fill: rgba(148, 163, 184, 0.8) !important; }
+.dash-shell .modebar-btn:hover path { fill: #f1f5f9 !important; }
 
-/* Scrollbars inside dark panels */
-.dash-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-.dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 9999px; }
-.dash-scroll::-webkit-scrollbar-track { background: transparent; }
+/* Scrollbars */
+.dash-shell .dash-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.dash-shell .dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 9999px; }
+.dash-shell .dash-scroll::-webkit-scrollbar-track { background: transparent; }
