@@ -52,6 +52,17 @@ storage_lock = Lock()
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
 
+from src.config import CORS_ALLOW_ORIGINS
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+)
+
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
     external_source: str
