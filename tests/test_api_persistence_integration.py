@@ -91,3 +91,32 @@ def test_no_dashboard_storage_attribute_remains():
     import main as main_module
     assert not hasattr(main_module, "dashboard_storage")
     assert not hasattr(main_module, "storage_lock")
+
+
+def test_dashboard_survives_repository_singleton_reset(client, upload_files):
+    """Simulate a process restart: drop the in-memory singleton, rebuild it
+    from the same DB file, and confirm the dashboard is still there.
+    This is the core proof of §11 issue 1 (no persistence) being fixed."""
+    import src.persistence.repository as repo_mod
+
+    client.post("/api/upload", files=upload_files)
+    assert client.get("/api/dashboard").json()["status"] == "ready"
+
+    # Keep the conftest-bound singleton so it can be restored afterwards.
+    original = repo_mod._repository
+    try:
+        # "Restart": forget the singleton, rebuild from the same DATABASE_URL.
+        repo_mod._repository = None
+        rebuilt = repo_mod.get_repository()
+        assert rebuilt.get("guest:pytest-session") is not None
+
+        # And the HTTP layer still serves it after the reset.
+        assert client.get("/api/dashboard").json()["status"] == "ready"
+    finally:
+        # A real restarted process would not coexist with the prior engine;
+        # here both live in one process. Dispose the freshly-built engine
+        # (it otherwise keeps the SQLite test DB locked on Windows, breaking
+        # the session-teardown unlink) and restore the conftest singleton.
+        if repo_mod._repository is not None and repo_mod._repository is not original:
+            repo_mod._repository._sf.kw["bind"].dispose()
+        repo_mod._repository = original

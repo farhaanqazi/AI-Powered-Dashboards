@@ -87,6 +87,13 @@ app.add_middleware(RequestIDMiddleware)
 app.include_router(build_health_router())
 app.include_router(build_metrics_router())
 
+@app.on_event("startup")
+def _init_persistence() -> None:
+    from src.persistence.repository import get_repository
+    # Building the singleton also calls db.init_db() (create tables if absent).
+    get_repository()
+    logger.info("Persistence layer initialised")
+
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
     external_source: str
