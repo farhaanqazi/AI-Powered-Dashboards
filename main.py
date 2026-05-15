@@ -29,6 +29,12 @@ from src.core.pipeline import (
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
 from src.auth import require_clerk_user, allow_clerk_or_guest
+from src.api.schemas import (
+    UploadResponse,
+    LoadExternalResponse,
+    ValidateExternalResponse,
+    DashboardResponse,
+)
 
 # ---------------- LOGGING ----------------
 try:
@@ -77,7 +83,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # =========================================================
 # ======================= API ==============================
 
-@app.post("/api/upload")
+@app.post("/api/upload", response_model=UploadResponse)
 async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
@@ -197,7 +203,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
     )
 
 
-@app.post("/api/validate_external")
+@app.post("/api/validate_external", response_model=ValidateExternalResponse)
 async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     """Cheap pre-flight: confirm the source is reachable and looks like CSV before
     the user is sent to /processing. Returns 200 on success, 400 with a specific
@@ -260,7 +266,7 @@ async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_cle
     return {"ok": True}
 
 
-@app.post("/api/load_external")
+@app.post("/api/load_external", response_model=LoadExternalResponse)
 async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
@@ -319,7 +325,7 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_o
         "data": response_data,
     }
 
-@app.get("/api/dashboard")
+@app.get("/api/dashboard", response_model=DashboardResponse)
 async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
     with storage_lock:
         dashboard_data = dashboard_storage.get(user['session_key'])
