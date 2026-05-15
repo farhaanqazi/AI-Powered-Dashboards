@@ -1,57 +1,14 @@
-import pytest
-from fastapi.testclient import TestClient
-from main import app
+"""Top-level smoke tests."""
 
-# Create the test client as a fixture
-@pytest.fixture
-def client():
-    return TestClient(app)
 
-# Commenting out these tests as they require a specific fixture file that may not exist
-# and the TestClient setup has compatibility issues
+def test_root_serves_spa(client):
+    """GET / returns the built index.html (or 404 if dist not built yet)."""
+    response = client.get("/")
+    assert response.status_code in (200, 404)
+    if response.status_code == 200:
+        assert "text/html" in response.headers.get("content-type", "")
 
-# FIXTURE_PATH = 'tests/fixtures/sample_data.csv'
 
-# def test_upload_csv_success(client):
-#     """
-#     Tests the /upload endpoint with a valid CSV file.
-#     This is an end-to-end test that simulates a user uploading a file.
-#     """
-#     # Check if the fixture file exists before proceeding
-#     if not os.path.exists(FIXTURE_PATH):
-#         pytest.skip(f"Test fixture file not found: {FIXTURE_PATH}")
-#
-#     with open(FIXTURE_PATH, "rb") as f:
-#         files = {"dataset": ("sample_data.csv", f, "text/csv")}
-#         response = client.post("/upload", files=files)
-#
-#     # 1. Assert that the request was successful
-#     assert response.status_code == 200, f"Request failed with status code {response.status_code}. Response text: {response.text}"
-#
-#     # 2. Assert that the response is HTML
-#     assert "text/html" in response.headers['content-type']
-#
-#     # 3. Assert that the returned dashboard is not blank and contains expected content
-#     response_text = response.text
-#     assert "<title>AI-Powered Dashboard</title>" in response_text
-#
-#     # Check for signs of a successful analysis, not a blank or error page
-#     assert "Dataset Insights" in response_text
-#     assert "Analysis Pipeline Failed!" not in response_text # Ensure our new error message is not present
-#
-#     # Check for a specific KPI from our sample data.
-#     # The 'amount' column should be identified as a key metric.
-#     assert "Amount:" in response_text # Check for specific KPI label
-#     assert "101.15" in response_text  # Check for specific KPI value
-#
-#     # No longer checking for a specific chart title, as it might vary
-#     # assert "Count of Category" in response_text # Removed specific chart title check
-#
-# def test_get_index_page(client):
-#     """
-#     Tests that the root URL (/) returns the main index page successfully.
-#     """
-#     response = client.get("/")
-#     assert response.status_code == 200
-#     assert "AI-Powered Dashboard Generator" in response.text
-#     assert "Upload CSV" in response.text
+def test_unknown_api_returns_404(client):
+    response = client.get("/api/does-not-exist")
+    assert response.status_code == 404

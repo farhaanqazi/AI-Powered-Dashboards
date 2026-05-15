@@ -1,0 +1,11 @@
+record_id,transaction_date,amount,category,description
+1,2024-01-15,101.15,groceries,Weekly food shop
+2,2024-01-16,52.40,fuel,Petrol station
+3,2024-01-17,1200.00,rent,Monthly rent
+4,2024-01-18,15.75,coffee,Morning espresso
+5,2024-01-19,89.30,groceries,Mid-week top up
+6,2024-01-20,250.00,utilities,Electricity bill
+7,2024-01-21,42.10,fuel,Petrol station
+8,2024-01-22,12.50,coffee,Afternoon flat white
+9,2024-01-23,76.80,groceries,Veg market
+10,2024-01-24,1200.00,rent,Monthly rent
