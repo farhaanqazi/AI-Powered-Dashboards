@@ -82,6 +82,11 @@ class DashboardRepository:
         with self._sf() as s:
             return s.execute(select(func.count()).select_from(DashboardRecord)).scalar() or 0
 
+    def dispose(self) -> None:
+        """Release the underlying engine's connection pool. Mainly for tests
+        that simulate a process restart by rebuilding the singleton."""
+        self._sf.kw["bind"].dispose()
+
 
 _repository: Optional[DashboardRepository] = None
 

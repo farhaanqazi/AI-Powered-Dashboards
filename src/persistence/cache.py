@@ -60,3 +60,6 @@ class CachedRepository:
 
     def count(self) -> int:
         return self._base.count()
+
+    def dispose(self) -> None:
+        self._base.dispose()

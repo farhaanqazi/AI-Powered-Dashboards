@@ -117,10 +117,24 @@ def test_dashboard_survives_repository_singleton_reset(client, upload_files):
         # here both live in one process. Dispose the freshly-built engine
         # (it otherwise keeps the SQLite test DB locked on Windows, breaking
         # the session-teardown unlink) and restore the conftest singleton.
-        # get_repository() now returns a CachedRepository wrapping the base
-        # DashboardRepository, so unwrap ._base to reach the session factory.
+        # Use the public dispose() seam instead of reaching through the
+        # private cache/repo/session-factory layers.
         current = repo_mod._repository
         if current is not None and current is not original:
-            base = getattr(current, "_base", current)
-            base._sf.kw["bind"].dispose()
+            current.dispose()
         repo_mod._repository = original
+
+
+def test_repository_dispose_is_public_and_idempotent(tmp_path):
+    from src.persistence import db
+    from src.persistence.repository import DashboardRepository
+    from src.persistence.cache import CachedRepository
+
+    eng = db.make_engine(f"sqlite:///{tmp_path / 'd.db'}")
+    db.init_db(eng)
+    base = DashboardRepository(db.make_session_factory(eng))
+    wrapped = CachedRepository(base, client=None)
+    # Public dispose on both layers; idempotent (safe to call twice).
+    wrapped.dispose()
+    wrapped.dispose()
+    base.dispose()
