@@ -36,3 +36,11 @@ CORS_ALLOW_ORIGINS = [
     for o in os.environ.get("CORS_ALLOW_ORIGINS", _default_origins).split(",")
     if o.strip()
 ]
+
+# --- Persistence Configuration ---
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "sqlite:///./_local/dashboards.db",
+)
+REDIS_URL = os.environ.get("REDIS_URL", "")
+DASHBOARD_TTL_SECONDS = int(os.environ.get("DASHBOARD_TTL_SECONDS", 86400))

@@ -25,3 +25,7 @@ opentelemetry-exporter-otlp-proto-http==1.24.0
 # >=81 no longer ships. Pin setuptools below 81 so the OTel stack imports.
 setuptools<81
 sentry-sdk[fastapi]==1.45.0
+SQLAlchemy==2.0.29
+alembic==1.13.1
+psycopg2-binary==2.9.9
+redis==5.0.4
