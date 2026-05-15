@@ -353,9 +353,9 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_o
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    with storage_lock:
-        dashboard_storage[trace_id] = response_data
-        dashboard_storage[user['session_key']] = response_data
+    get_repository().save(
+        user["session_key"], trace_id=trace_id, payload=response_data
+    )
 
     return {
         "status": "success",

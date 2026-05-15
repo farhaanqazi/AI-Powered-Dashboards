@@ -42,3 +42,30 @@ def test_stream_persists_via_repository(client, upload_files):
     assert stored is not None
     assert "done" in body
     assert repo.count() == 1
+
+
+from unittest.mock import patch
+
+
+def test_load_external_persists_via_repository(client):
+    import pandas as pd
+    from src.data.parser import LoadResult
+    from src.persistence.repository import get_repository
+
+    fake = LoadResult(
+        df=pd.DataFrame({
+            "x": [1.0, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+            "y": [2.0, 4, 6, 8, 10, 12, 14, 16, 18, 20],
+        }),
+        success=True,
+        warnings=[],
+    )
+    with patch("main.load_csv_from_url", return_value=fake):
+        r = client.post(
+            "/api/load_external",
+            json={"external_source": "https://example.com/data.csv"},
+        )
+    assert r.status_code == 200, r.text
+    repo = get_repository()
+    assert repo.get("guest:pytest-session") is not None
+    assert repo.count() == 1
