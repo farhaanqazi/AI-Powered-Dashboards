@@ -142,19 +142,26 @@ exclude_lines = [
 
 - [ ] **Step 3: Create the missing fixture CSV**
 
-Create `tests/fixtures/sample_data.csv` with content:
+The repo `.gitignore` blanket-ignores `*.csv` and `tests/fixtures/`. Add an exception line so future test fixtures aren't silently dropped. Append to `.gitignore`:
+
+```gitignore
+!tests/fixtures/
+!tests/fixtures/**
+```
+
+Then create `tests/fixtures/sample_data.csv` with content (note: dates are deliberately non-unique so the column's cardinality stays below the identifier-detector threshold of 0.90 — all-unique dates with only 10 rows trips the classifier into labelling the column `identifier` instead of `datetime`):
 
 ```csv
 record_id,transaction_date,amount,category,description
 1,2024-01-15,101.15,groceries,Weekly food shop
-2,2024-01-16,52.40,fuel,Petrol station
+2,2024-01-15,52.40,fuel,Petrol station
 3,2024-01-17,1200.00,rent,Monthly rent
 4,2024-01-18,15.75,coffee,Morning espresso
 5,2024-01-19,89.30,groceries,Mid-week top up
 6,2024-01-20,250.00,utilities,Electricity bill
 7,2024-01-21,42.10,fuel,Petrol station
 8,2024-01-22,12.50,coffee,Afternoon flat white
-9,2024-01-23,76.80,groceries,Veg market
+9,2024-01-22,76.80,groceries,Veg market
 10,2024-01-24,1200.00,rent,Monthly rent
 ```
 
@@ -957,7 +964,9 @@ def test_min_correlation_threshold_is_respected(monkeypatch):
     assert ("base", "strong") in pairs
     assert ("base", "weak") not in pairs
 
-    monkeypatch.setattr(config, "MIN_CORRELATION", 0.2)
+    # Note: with seed=42 / n=200 the actual base-weak Pearson r is ~0.1994,
+    # so the lowered threshold must be below that (0.1, not 0.2) to include it.
+    monkeypatch.setattr(config, "MIN_CORRELATION", 0.1)
     insights_low = run_relational_analysis(df, profiles)
     pairs_low = [tuple(sorted(i.columns)) for i in insights_low]
     assert ("base", "weak") in pairs_low
@@ -2306,7 +2315,10 @@ opentelemetry-api==1.24.0
 opentelemetry-sdk==1.24.0
 opentelemetry-instrumentation-fastapi==0.45b0
 opentelemetry-exporter-otlp-proto-http==1.24.0
+setuptools<81
 ```
+
+`setuptools<81` is required: `opentelemetry-instrumentation==0.45b0` imports `pkg_resources`, which setuptools ≥81 no longer ships. Without this pin, `FastAPIInstrumentor` import fails silently (caught by the module's `except ImportError`) and tracing never enables even when the OTLP endpoint is set.
 
 Then `pip install -r requirements.txt`.
 
