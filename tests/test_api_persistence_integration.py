@@ -69,3 +69,25 @@ def test_load_external_persists_via_repository(client):
     repo = get_repository()
     assert repo.get("guest:pytest-session") is not None
     assert repo.count() == 1
+
+
+def test_dashboard_reads_from_repository(client, upload_files):
+    client.post("/api/upload", files=upload_files)
+    r = client.get("/api/dashboard")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ready"
+    assert body["original_filename"] == "sample_data.csv"
+
+
+def test_dashboard_empty_when_repository_has_no_row(client):
+    r = client.get("/api/dashboard")
+    assert r.status_code == 200
+    assert r.json()["status"] == "empty"
+
+
+def test_no_dashboard_storage_attribute_remains():
+    """The in-process dict must be fully removed (§11 issue 1)."""
+    import main as main_module
+    assert not hasattr(main_module, "dashboard_storage")
+    assert not hasattr(main_module, "storage_lock")

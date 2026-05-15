@@ -14,7 +14,6 @@ from pathlib import Path
 from datetime import datetime
 import json
 import os
-from threading import Lock
 import re
 
 from dotenv import load_dotenv
@@ -55,9 +54,7 @@ if os.environ.get("LOG_FILE_HANDLERS", "false").lower() == "true":
 
 logger = logging.getLogger(__name__)
 
-# ---------------- DASHBOARD STATE STORAGE ----------------
-dashboard_storage = {}
-storage_lock = Lock()
+# Dashboard state now lives in src/persistence (see DashboardRepository)
 
 # ---------------- FASTAPI APP ----------------
 # Sentry must init before the app is created so its Starlette/FastAPI
@@ -365,8 +362,7 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_o
 
 @app.get("/api/dashboard", response_model=DashboardResponse)
 async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
-    with storage_lock:
-        dashboard_data = dashboard_storage.get(user['session_key'])
+    dashboard_data = get_repository().get(user["session_key"])
 
     if not dashboard_data:
         return {
