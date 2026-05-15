@@ -29,3 +29,17 @@ def test_structlog_includes_request_id_from_contextvar(capsys):
     captured = capsys.readouterr().out.strip().splitlines()
     parsed = json.loads(captured[-1])
     assert parsed.get("request_id") == "ctx-req-99"
+
+
+def test_request_id_header_round_trips(client):
+    """X-Request-ID supplied by the caller is echoed in the response headers."""
+    response = client.get("/api/dashboard", headers={"X-Request-ID": "trace-abc"})
+    assert response.status_code == 200
+    assert response.headers.get("x-request-id") == "trace-abc"
+
+
+def test_request_id_is_generated_if_missing(client):
+    response = client.get("/api/dashboard")
+    assert response.status_code == 200
+    rid = response.headers.get("x-request-id")
+    assert rid and len(rid) >= 8

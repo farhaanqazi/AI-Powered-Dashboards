@@ -35,6 +35,7 @@ from src.api.schemas import (
     ValidateExternalResponse,
     DashboardResponse,
 )
+from src.observability.request_id import RequestIDMiddleware
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -66,6 +67,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["X-Request-ID"],
 )
+
+app.add_middleware(RequestIDMiddleware)
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
