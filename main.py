@@ -36,6 +36,7 @@ from src.api.schemas import (
     DashboardResponse,
 )
 from src.observability.request_id import RequestIDMiddleware
+from src.observability.health import build_router as build_health_router
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -69,6 +70,11 @@ app.add_middleware(
 )
 
 app.add_middleware(RequestIDMiddleware)
+
+# ---------------- OBSERVABILITY ROUTES ----------------
+# Must be registered before the SPA catch-all (`/{full_path:path}`) so the
+# catch-all does not intercept /healthz and /readyz.
+app.include_router(build_health_router())
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):

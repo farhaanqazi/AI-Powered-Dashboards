@@ -43,3 +43,19 @@ def test_request_id_is_generated_if_missing(client):
     assert response.status_code == 200
     rid = response.headers.get("x-request-id")
     assert rid and len(rid) >= 8
+
+
+def test_healthz_returns_200(client):
+    response = client.get("/healthz")
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_readyz_returns_200_in_phase_0(client):
+    """Phase 0 readiness has no real deps; it returns ok unconditionally.
+    Later phases add Postgres + Redis dependency checks here."""
+    response = client.get("/readyz")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ready"
+    assert "checks" in body
