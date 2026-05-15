@@ -26,7 +26,7 @@ MIN_UNIQUE_RATIO = float(os.environ.get("MIN_UNIQUE_RATIO", 0.01))
 MAX_UNIQUE_RATIO = float(os.environ.get("MAX_UNIQUE_RATIO", 0.9))
 
 # --- Correlation Engine Configuration ---
-MIN_CORRELATION = float(os.environ.get("MIN_CORRELATION", 0.1))
+MIN_CORRELATION = float(os.environ.get("MIN_CORRELATION", 0.5))
 MIN_VARIANCE = float(os.environ.get("MIN_VARIANCE", 0.001))
 
 # --- HTTP Configuration ---
