@@ -40,6 +40,8 @@ from src.observability.metrics import MetricsMiddleware, build_router as build_m
 from src.observability.tracing import configure_tracing
 from src.observability.sentry import configure_sentry
 
+from src.persistence.repository import get_repository
+
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
 configure_observability_logging()
@@ -158,9 +160,9 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
         "eda_summary": getattr(state, "eda_summary", {})
     }
 
-    with storage_lock:
-        dashboard_storage[trace_id] = response_data
-        dashboard_storage[user['session_key']] = response_data
+    get_repository().save(
+        user["session_key"], trace_id=trace_id, payload=response_data
+    )
 
     return {
         "status": "success",
