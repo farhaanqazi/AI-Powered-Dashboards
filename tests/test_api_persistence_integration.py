@@ -25,3 +25,20 @@ def test_upload_does_not_create_trace_id_keyed_row(client, upload_files):
     assert repo.get(trace_id) is None
     assert repo.get("guest:pytest-session") is not None
     assert repo.count() == 1
+
+
+import json
+
+
+def test_stream_persists_via_repository(client, upload_files):
+    from src.persistence.repository import get_repository
+
+    with client.stream("POST", "/api/upload/stream", files=upload_files) as resp:
+        assert resp.status_code == 200
+        body = resp.read().decode("utf-8")
+
+    repo = get_repository()
+    stored = repo.get("guest:pytest-session")
+    assert stored is not None
+    assert "done" in body
+    assert repo.count() == 1
