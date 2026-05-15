@@ -75,3 +75,19 @@ def test_metrics_records_request(client):
     response = client.get("/metrics")
     assert 'http_requests_total{' in response.text
     assert 'path="/api/dashboard"' in response.text
+
+
+def test_pipeline_records_layer_metrics(client, upload_files):
+    from src.observability import metrics as obs_metrics
+
+    obs_metrics.pipeline_layer_seconds.clear()
+    client.post("/api/upload", files=upload_files)
+
+    samples = list(obs_metrics.pipeline_layer_seconds.collect())[0].samples
+    layer_counts = {
+        s.labels["layer"]: s.value
+        for s in samples
+        if s.name.endswith("_count")
+    }
+    for expected_layer in ("profiling", "classifying", "relating", "eda", "interpreting", "rendering"):
+        assert layer_counts.get(expected_layer, 0) >= 1, f"no observation for layer={expected_layer}"
