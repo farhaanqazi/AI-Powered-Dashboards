@@ -59,3 +59,19 @@ def test_readyz_returns_200_in_phase_0(client):
     body = response.json()
     assert body["status"] == "ready"
     assert "checks" in body
+
+
+def test_metrics_endpoint_returns_prometheus_format(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    body = response.text
+    assert "# HELP" in body
+    assert "http_requests_total" in body
+
+
+def test_metrics_records_request(client):
+    client.get("/api/dashboard")
+    response = client.get("/metrics")
+    assert 'http_requests_total{' in response.text
+    assert 'path="/api/dashboard"' in response.text

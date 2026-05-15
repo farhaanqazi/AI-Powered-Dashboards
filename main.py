@@ -37,6 +37,7 @@ from src.api.schemas import (
 )
 from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
+from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -69,12 +70,18 @@ app.add_middleware(
     expose_headers=["X-Request-ID"],
 )
 
+# Middleware execution order is LIFO (last added = outermost). Final order:
+# RequestID (outermost) -> Metrics -> CORS (innermost). So add order must be
+# CORS, then Metrics, then RequestID.
+app.add_middleware(MetricsMiddleware)
+
 app.add_middleware(RequestIDMiddleware)
 
 # ---------------- OBSERVABILITY ROUTES ----------------
 # Must be registered before the SPA catch-all (`/{full_path:path}`) so the
-# catch-all does not intercept /healthz and /readyz.
+# catch-all does not intercept /healthz, /readyz and /metrics.
 app.include_router(build_health_router())
+app.include_router(build_metrics_router())
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
