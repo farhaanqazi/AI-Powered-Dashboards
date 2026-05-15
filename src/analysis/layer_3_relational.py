@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from scipy.stats import pearsonr
 
 from src.analysis.data_structures import EnrichedProfile, RelationalInsight
+from src import config as _cfg
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ def run_relational_analysis(
                 corr, p_value = pearsonr(aligned_df[col1_name], aligned_df[col2_name])
                 
                 # Only report moderate to strong correlations that are statistically significant
-                if pd.isna(corr) or abs(corr) < 0.5 or p_value > 0.05:
+                if pd.isna(corr) or abs(corr) < _cfg.MIN_CORRELATION or p_value > 0.05:
                     continue
                 
                 strength = "strong" if abs(corr) >= 0.7 else "moderate"

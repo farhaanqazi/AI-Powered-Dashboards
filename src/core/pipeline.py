@@ -1,4 +1,5 @@
 import logging
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Optional, Dict, Any, List
 import pandas as pd
@@ -7,6 +8,13 @@ import time
 
 from src import config
 from src.diagnostics import tracer
+from src.observability.metrics import pipeline_layer_seconds
+
+
+@contextmanager
+def _time_layer(layer_name: str):
+    with pipeline_layer_seconds.labels(layer=layer_name).time():
+        yield
 
 # --- New 4-Layer Analysis Engine ---
 from src.analysis.layer_1_profiler import run_syntactic_profiling
@@ -125,7 +133,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         # --- 4-LAYER ANALYSIS PIPELINE ---
         # Layer 1: Get raw facts
         try:
-            syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
+            with _time_layer("profiling"):
+                syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
             tracer.record_custom_event(trace_id, "layer_1_complete", {"profiled_columns": list(syntactic_profiles.keys())})
         except Exception as e:
             msg = f"Layer 1 failed: {e}"
@@ -135,7 +144,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
 
         # Layer 2: Assign semantic meaning
         try:
-            enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+            with _time_layer("classifying"):
+                enriched_profiles = run_semantic_classification(syntactic_profiles, df)
             tracer.record_custom_event(trace_id, "layer_2_complete", {"roles": {n: p.role for n, p in enriched_profiles.items()}})
         except Exception as e:
             msg = f"Layer 2 failed: {e}"
@@ -145,7 +155,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         
         # Layer 3: Find relationships
         try:
-            relational_insights = run_relational_analysis(df, enriched_profiles)
+            with _time_layer("relating"):
+                relational_insights = run_relational_analysis(df, enriched_profiles)
             tracer.record_custom_event(trace_id, "layer_3_complete", {"insights_found": len(relational_insights)})
         except Exception as e:
             msg = f"Layer 3 failed: {e}"
@@ -158,7 +169,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
 
         # Run EDA analysis to generate insights
         try:
-            eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+            with _time_layer("eda"):
+                eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
             eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
@@ -169,23 +181,24 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             eda_summary = {}
 
         # Layer 4: Decide what to show
-        try:
-            kpis = determine_kpis(enriched_profiles, relational_insights)
-            tracer.record_kpi_generation(trace_id, kpis)
-        except Exception as e:
-            msg = f"KPI generation failed: {e}"
-            errors.append(msg)
-            logger.exception(msg)
-            raise
+        with _time_layer("interpreting"):
+            try:
+                kpis = determine_kpis(enriched_profiles, relational_insights)
+                tracer.record_kpi_generation(trace_id, kpis)
+            except Exception as e:
+                msg = f"KPI generation failed: {e}"
+                errors.append(msg)
+                logger.exception(msg)
+                raise
 
-        try:
-            chart_specs = select_charts(enriched_profiles, relational_insights)
-            tracer.record_chart_selection(trace_id, chart_specs)
-        except Exception as e:
-            msg = f"Chart selection failed: {e}"
-            errors.append(msg)
-            logger.exception(msg)
-            raise
+            try:
+                chart_specs = select_charts(enriched_profiles, relational_insights)
+                tracer.record_chart_selection(trace_id, chart_specs)
+            except Exception as e:
+                msg = f"Chart selection failed: {e}"
+                errors.append(msg)
+                logger.exception(msg)
+                raise
 
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
@@ -203,7 +216,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         }
 
         try:
-            all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
+            with _time_layer("rendering"):
+                all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
         except Exception as e:
             msg = f"Chart rendering failed: {e}"
             errors.append(msg)
@@ -350,17 +364,20 @@ def build_dashboard_from_df_generator(
             return
 
         yield {"phase": "profiling", "message": "Profiling columns...", "percent": 20}
-        syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
+        with _time_layer("profiling"):
+            syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
         tracer.record_custom_event(trace_id, "layer_1_complete",
                                    {"profiled_columns": list(syntactic_profiles.keys())})
 
         yield {"phase": "classifying", "message": "Classifying column roles...", "percent": 35}
-        enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+        with _time_layer("classifying"):
+            enriched_profiles = run_semantic_classification(syntactic_profiles, df)
         tracer.record_custom_event(trace_id, "layer_2_complete",
                                    {"roles": {n: p.role for n, p in enriched_profiles.items()}})
 
         yield {"phase": "relating", "message": "Finding correlations and relationships...", "percent": 50}
-        relational_insights = run_relational_analysis(df, enriched_profiles)
+        with _time_layer("relating"):
+            relational_insights = run_relational_analysis(df, enriched_profiles)
         tracer.record_custom_event(trace_id, "layer_3_complete",
                                    {"insights_found": len(relational_insights)})
 
@@ -368,7 +385,8 @@ def build_dashboard_from_df_generator(
 
         yield {"phase": "eda", "message": "Running exploratory data analysis...", "percent": 65}
         try:
-            eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
+            with _time_layer("eda"):
+                eda_summary = run_eda_analysis(df, enriched_profiles, relational_insights)
             eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
@@ -378,10 +396,11 @@ def build_dashboard_from_df_generator(
             eda_summary = {}
 
         yield {"phase": "kpis", "message": "Computing KPIs and selecting charts...", "percent": 80}
-        kpis = determine_kpis(enriched_profiles, relational_insights)
-        tracer.record_kpi_generation(trace_id, kpis)
-        chart_specs = select_charts(enriched_profiles, relational_insights)
-        tracer.record_chart_selection(trace_id, chart_specs)
+        with _time_layer("interpreting"):
+            kpis = determine_kpis(enriched_profiles, relational_insights)
+            tracer.record_kpi_generation(trace_id, kpis)
+            chart_specs = select_charts(enriched_profiles, relational_insights)
+            tracer.record_chart_selection(trace_id, chart_specs)
 
         yield {"phase": "rendering", "message": "Building charts...", "percent": 92}
         role_counts: Dict[str, int] = {}
@@ -395,7 +414,8 @@ def build_dashboard_from_df_generator(
             "dataset_grain": dataset_grain,
             "columns": [p.__dict__ for p in enriched_profiles.values()],
         }
-        all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
+        with _time_layer("rendering"):
+            all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
         primary_chart = next((c for c in all_charts if c.get("type") == "bar"), None)
 
         state = DashboardState(

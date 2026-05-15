@@ -80,3 +80,5 @@ frontend/.vite/
 *.tmp
 *~
 supplement/
+!tests/fixtures/
+!tests/fixtures/**

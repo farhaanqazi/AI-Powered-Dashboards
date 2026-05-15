@@ -1,6 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -29,22 +28,65 @@ from src.core.pipeline import (
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
 from src.auth import require_clerk_user, allow_clerk_or_guest
+from src.api.schemas import (
+    UploadResponse,
+    LoadExternalResponse,
+    ValidateExternalResponse,
+    DashboardResponse,
+)
+from src.observability.request_id import RequestIDMiddleware
+from src.observability.health import build_router as build_health_router
+from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
+from src.observability.tracing import configure_tracing
+from src.observability.sentry import configure_sentry
 
 # ---------------- LOGGING ----------------
-try:
-    from src.logger import configure_logging, get_logger
-    configure_logging()
-    logger = get_logger(__name__)
-except Exception:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+from src.observability.logging import configure_observability_logging
+configure_observability_logging()
+
+if os.environ.get("LOG_FILE_HANDLERS", "false").lower() == "true":
+    try:
+        from src.logger import configure_logging
+        configure_logging()
+    except Exception:
+        pass
+
+logger = logging.getLogger(__name__)
 
 # ---------------- DASHBOARD STATE STORAGE ----------------
 dashboard_storage = {}
 storage_lock = Lock()
 
 # ---------------- FASTAPI APP ----------------
+# Sentry must init before the app is created so its Starlette/FastAPI
+# integrations hook correctly.
+configure_sentry()
 app = FastAPI()
+configure_tracing(app)
+
+from src.config import CORS_ALLOW_ORIGINS
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ALLOW_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+)
+
+# Middleware execution order is LIFO (last added = outermost). Final order:
+# RequestID (outermost) -> Metrics -> CORS (innermost). So add order must be
+# CORS, then Metrics, then RequestID.
+app.add_middleware(MetricsMiddleware)
+
+app.add_middleware(RequestIDMiddleware)
+
+# ---------------- OBSERVABILITY ROUTES ----------------
+# Must be registered before the SPA catch-all (`/{full_path:path}`) so the
+# catch-all does not intercept /healthz, /readyz and /metrics.
+app.include_router(build_health_router())
+app.include_router(build_metrics_router())
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
@@ -77,7 +119,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # =========================================================
 # ======================= API ==============================
 
-@app.post("/api/upload")
+@app.post("/api/upload", response_model=UploadResponse)
 async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
@@ -197,7 +239,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
     )
 
 
-@app.post("/api/validate_external")
+@app.post("/api/validate_external", response_model=ValidateExternalResponse)
 async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     """Cheap pre-flight: confirm the source is reachable and looks like CSV before
     the user is sent to /processing. Returns 200 on success, 400 with a specific
@@ -260,7 +302,7 @@ async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_cle
     return {"ok": True}
 
 
-@app.post("/api/load_external")
+@app.post("/api/load_external", response_model=LoadExternalResponse)
 async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
@@ -319,7 +361,7 @@ async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_o
         "data": response_data,
     }
 
-@app.get("/api/dashboard")
+@app.get("/api/dashboard", response_model=DashboardResponse)
 async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
     with storage_lock:
         dashboard_data = dashboard_storage.get(user['session_key'])
@@ -369,17 +411,12 @@ async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
-import re
-
-# Custom route to serve dynamic assets with flexible path structures
 @app.get("/assets/{full_path:path}")
 async def serve_dynamic_assets(full_path: str):
-    # Handle various asset structures like {timestamp}/{filename.ext}
     filepath = f"frontend/dist/assets/{full_path}"
     if os.path.exists(filepath):
         return FileResponse(filepath)
-    else:
-        raise HTTPException(status_code=404, detail="Asset not found")
+    raise HTTPException(status_code=404, detail="Asset not found")
 
 # Serve React SPA (handles all frontend routing)
 @app.get("/", response_class=HTMLResponse)
@@ -448,18 +485,6 @@ async def test_persistence(action: str):
     elif action == "read":
         return TEST_FILE.read_text() if TEST_FILE.exists() else "File missing"
     return "Invalid action"
-
-# Custom route to serve dynamic assets with timestamp subdirectories
-@app.get("/assets/{subdir}/{filename}")
-async def serve_dynamic_assets(subdir: str, filename: str):
-    filepath = f"frontend/dist/assets/{subdir}/{filename}"
-    if os.path.exists(filepath):
-        return FileResponse(filepath)
-    else:
-        raise HTTPException(status_code=404, detail="Asset not found")
-
-# Also serve assets from the main assets directory for any direct references
-app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
 # Cache-busting middleware
 @app.middleware("http")

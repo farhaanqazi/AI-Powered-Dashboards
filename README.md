@@ -100,7 +100,6 @@ await uploadFileStream(file, (evt) => {
 │   ├── viz/
 │   │   ├── plotly_renderer.py           Chart-spec → data dispatcher
 │   │   ├── utils.py                     Per-chart builders (with downsampling/winsorization)
-│   │   ├── eda_visualizer.py            EDA-driven plots (correlations, outliers, etc.)
 │   │   └── simple_renderer.py           Lightweight render path
 │   └── diagnostics/tracer.py            Per-request pipeline tracing
 └── frontend/
