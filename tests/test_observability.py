@@ -110,3 +110,19 @@ def test_tracing_init_succeeds_with_endpoint(monkeypatch):
     monkeypatch.setenv("OTEL_SERVICE_NAME", "ai-powered-dashboards-test")
     tracing.configure_tracing(force=True)
     assert tracing.is_enabled() is True
+
+
+def test_sentry_init_is_noop_without_dsn(monkeypatch):
+    from src.observability import sentry as obs_sentry
+
+    monkeypatch.delenv("SENTRY_DSN", raising=False)
+    obs_sentry.configure_sentry(force=True)
+    assert obs_sentry.is_enabled() is False
+
+
+def test_sentry_init_is_enabled_with_dsn(monkeypatch):
+    from src.observability import sentry as obs_sentry
+
+    monkeypatch.setenv("SENTRY_DSN", "https://public@o0.ingest.sentry.io/0")
+    obs_sentry.configure_sentry(force=True)
+    assert obs_sentry.is_enabled() is True

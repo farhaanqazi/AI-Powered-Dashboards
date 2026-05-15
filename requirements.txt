@@ -24,3 +24,4 @@ opentelemetry-exporter-otlp-proto-http==1.24.0
 # opentelemetry-instrumentation 0.45b0 imports pkg_resources, which setuptools
 # >=81 no longer ships. Pin setuptools below 81 so the OTel stack imports.
 setuptools<81
+sentry-sdk[fastapi]==1.45.0

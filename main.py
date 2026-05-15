@@ -39,6 +39,7 @@ from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
 from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
 from src.observability.tracing import configure_tracing
+from src.observability.sentry import configure_sentry
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -58,6 +59,9 @@ dashboard_storage = {}
 storage_lock = Lock()
 
 # ---------------- FASTAPI APP ----------------
+# Sentry must init before the app is created so its Starlette/FastAPI
+# integrations hook correctly.
+configure_sentry()
 app = FastAPI()
 configure_tracing(app)
 
