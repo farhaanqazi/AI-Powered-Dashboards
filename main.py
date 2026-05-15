@@ -37,13 +37,17 @@ from src.api.schemas import (
 )
 
 # ---------------- LOGGING ----------------
-try:
-    from src.logger import configure_logging, get_logger
-    configure_logging()
-    logger = get_logger(__name__)
-except Exception:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+from src.observability.logging import configure_observability_logging
+configure_observability_logging()
+
+if os.environ.get("LOG_FILE_HANDLERS", "false").lower() == "true":
+    try:
+        from src.logger import configure_logging
+        configure_logging()
+    except Exception:
+        pass
+
+logger = logging.getLogger(__name__)
 
 # ---------------- DASHBOARD STATE STORAGE ----------------
 dashboard_storage = {}
