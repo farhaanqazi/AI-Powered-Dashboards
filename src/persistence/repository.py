@@ -86,18 +86,21 @@ class DashboardRepository:
 _repository: Optional[DashboardRepository] = None
 
 
-def get_repository() -> DashboardRepository:
-    """App-wide singleton. Lazily builds the engine from config on first use."""
+def get_repository() -> "CachedRepository":
+    """App-wide singleton. Lazily builds the engine + optional Redis cache."""
     global _repository
     if _repository is None:
         from src.persistence import db
+        from src.persistence.cache import CachedRepository, build_cache_client
         engine = db.make_engine()
         db.init_db(engine)
-        _repository = DashboardRepository(db.make_session_factory(engine))
+        base = DashboardRepository(db.make_session_factory(engine))
+        _repository = CachedRepository(base, client=build_cache_client())
     return _repository
 
 
 def reset_repository_for_tests(session_factory) -> None:
-    """Rebind the singleton to a test-controlled session factory."""
     global _repository
-    _repository = DashboardRepository(session_factory)
+    from src.persistence.cache import CachedRepository, build_cache_client
+    base = DashboardRepository(session_factory)
+    _repository = CachedRepository(base, client=build_cache_client())

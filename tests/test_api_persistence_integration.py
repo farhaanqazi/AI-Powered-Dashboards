@@ -117,6 +117,10 @@ def test_dashboard_survives_repository_singleton_reset(client, upload_files):
         # here both live in one process. Dispose the freshly-built engine
         # (it otherwise keeps the SQLite test DB locked on Windows, breaking
         # the session-teardown unlink) and restore the conftest singleton.
-        if repo_mod._repository is not None and repo_mod._repository is not original:
-            repo_mod._repository._sf.kw["bind"].dispose()
+        # get_repository() now returns a CachedRepository wrapping the base
+        # DashboardRepository, so unwrap ._base to reach the session factory.
+        current = repo_mod._repository
+        if current is not None and current is not original:
+            base = getattr(current, "_base", current)
+            base._sf.kw["bind"].dispose()
         repo_mod._repository = original
