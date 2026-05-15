@@ -81,3 +81,23 @@ class DashboardRepository:
     def count(self) -> int:
         with self._sf() as s:
             return s.execute(select(func.count()).select_from(DashboardRecord)).scalar() or 0
+
+
+_repository: Optional[DashboardRepository] = None
+
+
+def get_repository() -> DashboardRepository:
+    """App-wide singleton. Lazily builds the engine from config on first use."""
+    global _repository
+    if _repository is None:
+        from src.persistence import db
+        engine = db.make_engine()
+        db.init_db(engine)
+        _repository = DashboardRepository(db.make_session_factory(engine))
+    return _repository
+
+
+def reset_repository_for_tests(session_factory) -> None:
+    """Rebind the singleton to a test-controlled session factory."""
+    global _repository
+    _repository = DashboardRepository(session_factory)
