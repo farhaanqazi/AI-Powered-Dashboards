@@ -375,17 +375,12 @@ async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
-import re
-
-# Custom route to serve dynamic assets with flexible path structures
 @app.get("/assets/{full_path:path}")
 async def serve_dynamic_assets(full_path: str):
-    # Handle various asset structures like {timestamp}/{filename.ext}
     filepath = f"frontend/dist/assets/{full_path}"
     if os.path.exists(filepath):
         return FileResponse(filepath)
-    else:
-        raise HTTPException(status_code=404, detail="Asset not found")
+    raise HTTPException(status_code=404, detail="Asset not found")
 
 # Serve React SPA (handles all frontend routing)
 @app.get("/", response_class=HTMLResponse)
@@ -454,18 +449,6 @@ async def test_persistence(action: str):
     elif action == "read":
         return TEST_FILE.read_text() if TEST_FILE.exists() else "File missing"
     return "Invalid action"
-
-# Custom route to serve dynamic assets with timestamp subdirectories
-@app.get("/assets/{subdir}/{filename}")
-async def serve_dynamic_assets(subdir: str, filename: str):
-    filepath = f"frontend/dist/assets/{subdir}/{filename}"
-    if os.path.exists(filepath):
-        return FileResponse(filepath)
-    else:
-        raise HTTPException(status_code=404, detail="Asset not found")
-
-# Also serve assets from the main assets directory for any direct references
-app.mount("/assets", StaticFiles(directory="frontend/dist/assets"), name="assets")
 
 # Cache-busting middleware
 @app.middleware("http")
