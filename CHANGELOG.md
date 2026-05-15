@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased] — Phase 1: Persistence Layer
+
+### Added
+- SQL-backed dashboard persistence (`src/persistence/`): SQLAlchemy `DashboardRecord`, `DashboardRepository`, Alembic migrations. Default backend SQLite; production via `DATABASE_URL` (Postgres-compatible).
+- Row-level TTL: dashboards expire after `DASHBOARD_TTL_SECONDS` (default 24h); expired rows are excluded from reads and swept opportunistically on write.
+- Optional Redis read-through cache (`REDIS_URL`); transparent passthrough when unset.
+- `@app.on_event("startup")` hook creates the schema on boot.
+- Public `dispose()` on the repository/cache for clean engine teardown.
+
+### Changed
+- `/api/upload`, `/api/upload/stream`, `/api/load_external` now persist via the repository; `/api/dashboard` reads from it.
+- Test suite is DB-backed (isolated SQLite per session; table truncated per test).
+
+### Removed
+- In-process `dashboard_storage` dict and `storage_lock` (§11 issue 1).
+- Orphan `trace_id`-keyed storage entries — `trace_id` stays in the HTTP response but is never a storage key (§11 issue 5).
+
+### Fixed (§11)
+- Issue 1: dashboards survive process restart (SQL-backed, not in-process dict).
+- Issue 5: no orphan `trace_id` rows; exactly one row per `session_key`.
+- Issue 21: rows expire (TTL) and are evicted.
+
+### Deferred
+- Raw-CSV object store (not required by issues 1/5/21 — YAGNI).
+- Async DB/pipeline (sub-plan #3).
+
+### Phase 1 test coverage
+Backend coverage: 59% (src/ + main.py). Persistence modules: `src/persistence/__init__.py` 100%, `models.py` 100%, `repository.py` 97%, `db.py` 93%, `cache.py` 83%. Three of four persistence modules exceed the >85% target; `cache.py` is at 83% (uncovered: the optional-Redis import-failure fallback and two unconfigured-client passthrough branches, exercised only when `redis` is absent / `REDIS_URL` set to a bad host — not padded with filler tests).
+
 ## [Unreleased] — Phase 0: Stabilize
 
 ### Added

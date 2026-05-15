@@ -138,3 +138,44 @@ def test_repository_dispose_is_public_and_idempotent(tmp_path):
     wrapped.dispose()
     wrapped.dispose()
     base.dispose()
+
+
+def test_per_session_isolation_end_to_end(client, upload_files):
+    a = client.post(
+        "/api/upload", files=upload_files,
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+    )
+    assert a.status_code == 200
+    b = client.get(
+        "/api/dashboard",
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "bob"},
+    )
+    assert b.json()["status"] == "empty"
+    a2 = client.get(
+        "/api/dashboard",
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+    )
+    assert a2.json()["status"] == "ready"
+
+
+def test_ttl_expiry_end_to_end(client, upload_files):
+    """With TTL forced negative, an uploaded dashboard is immediately expired
+    and the GET returns empty — proving §11 issue 21 end-to-end."""
+    import src.persistence.repository as repo_mod
+    from src.persistence import db
+    from src.persistence.repository import DashboardRepository
+    from src.persistence.cache import CachedRepository, build_cache_client
+
+    engine = db.make_engine()
+    db.init_db(engine)
+    original = repo_mod._repository
+    repo_mod._repository = CachedRepository(
+        DashboardRepository(db.make_session_factory(engine), ttl_seconds=-1),
+        client=build_cache_client(),
+    )
+    try:
+        client.post("/api/upload", files=upload_files)
+        assert client.get("/api/dashboard").json()["status"] == "empty"
+    finally:
+        repo_mod._repository.dispose()
+        repo_mod._repository = original
