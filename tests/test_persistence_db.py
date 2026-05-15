@@ -43,3 +43,31 @@ def test_session_factory_round_trips(tmp_path):
     with Session() as s:
         assert s.execute(text("SELECT 1")).scalar() == 1
     eng.dispose()
+
+
+def test_dashboard_record_defaults(tmp_path):
+    from datetime import datetime, timezone, timedelta
+    from src.persistence import db
+    from src.persistence.models import DashboardRecord
+
+    eng = db.make_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    db.init_db(eng)
+    Session = db.make_session_factory(eng)
+    exp = datetime.now(tz=timezone.utc) + timedelta(hours=1)
+    with Session() as s:
+        rec = DashboardRecord(
+            session_key="guest:abc",
+            trace_id="t-1",
+            original_filename="x.csv",
+            payload={"kpis": []},
+            expires_at=exp,
+        )
+        s.add(rec)
+        s.commit()
+    with Session() as s:
+        got = s.get(DashboardRecord, "guest:abc")
+        assert got is not None
+        assert got.payload == {"kpis": []}
+        assert got.created_at is not None
+        assert got.updated_at is not None
+    eng.dispose()
