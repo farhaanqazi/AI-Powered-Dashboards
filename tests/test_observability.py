@@ -91,3 +91,22 @@ def test_pipeline_records_layer_metrics(client, upload_files):
     }
     for expected_layer in ("profiling", "classifying", "relating", "eda", "interpreting", "rendering"):
         assert layer_counts.get(expected_layer, 0) >= 1, f"no observation for layer={expected_layer}"
+
+
+def test_tracing_init_is_noop_when_endpoint_unset(monkeypatch):
+    """Without OTEL_EXPORTER_OTLP_ENDPOINT, tracing init must not raise or set
+    a real exporter."""
+    from src.observability import tracing
+
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
+    tracing.configure_tracing(force=True)
+    assert tracing.is_enabled() is False
+
+
+def test_tracing_init_succeeds_with_endpoint(monkeypatch):
+    from src.observability import tracing
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318/v1/traces")
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "ai-powered-dashboards-test")
+    tracing.configure_tracing(force=True)
+    assert tracing.is_enabled() is True

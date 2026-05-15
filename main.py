@@ -38,6 +38,7 @@ from src.api.schemas import (
 from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
 from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
+from src.observability.tracing import configure_tracing
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -58,6 +59,7 @@ storage_lock = Lock()
 
 # ---------------- FASTAPI APP ----------------
 app = FastAPI()
+configure_tracing(app)
 
 from src.config import CORS_ALLOW_ORIGINS
 
