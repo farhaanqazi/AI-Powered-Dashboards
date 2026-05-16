@@ -29,4 +29,4 @@ SQLAlchemy==2.0.29
 alembic==1.13.1
 psycopg2-binary==2.9.9
 redis==5.0.4
-groq==1.2.0
+groq==1.0.0
