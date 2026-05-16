@@ -239,39 +239,58 @@
 .dash-shell .stat-amber  .stat-icon { color: #fcd34d; box-shadow: 0 0 24px -8px rgba(251,191,36,0.6); }
 .dash-shell .stat-amber  .stat-glow { background: radial-gradient(circle, rgba(251,191,36,0.5), transparent 70%); }
 
-/* Tab navigation */
+/* Tab navigation — sized like the stat cards (4-up card grid) */
 .dash-shell .dash-tabs {
-  display: flex;
-  gap: 0.35rem;
-  padding: 0.4rem;
-  border-radius: 1rem;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(15,23,42,0.55);
-  backdrop-filter: blur(14px) saturate(140%);
-  -webkit-backdrop-filter: blur(14px) saturate(140%);
-  box-shadow: 0 30px 80px -40px rgba(2,6,23,0.85);
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .dash-shell .dash-tabs { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1024px) {
+  .dash-shell .dash-tabs { grid-template-columns: repeat(4, 1fr); }
 }
 .dash-shell .dash-tab {
   position: relative;
-  flex: 1;
-  padding: 0.85rem 1rem;
+  padding: 1.25rem 1.25rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.85rem;
+  border-radius: 1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(203,213,225,0.8);
+  cursor: pointer;
+  overflow: hidden;
+  transition: color 240ms, background 240ms, transform 280ms ease, border-color 280ms;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(160deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01)) , rgba(15,23,42,0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.dash-shell .dash-tab i {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.55rem;
-  border-radius: 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: rgba(203,213,225,0.75);
-  cursor: pointer;
-  transition: color 240ms, background 240ms, transform 240ms;
-  border: 1px solid transparent;
-  background: transparent;
+  font-size: 1.05rem;
+  background: rgba(15,23,42,0.6);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.dash-shell .dash-tab > span:not(.tab-dot) {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
 .dash-shell .dash-tab:hover {
   color: #f1f5f9;
-  background: rgba(255,255,255,0.04);
+  transform: translateY(-2px);
+  border-color: rgba(255,255,255,0.18);
 }
 .dash-shell .dash-tab.is-active {
   color: #f8fafc;
@@ -282,8 +301,15 @@
     0 12px 30px -10px rgba(96,165,250,0.55),
     0 0 36px -6px rgba(168,85,247,0.45);
 }
+.dash-shell .dash-tab.is-active i {
+  color: #f8fafc;
+  box-shadow: 0 0 24px -8px rgba(96,165,250,0.6);
+}
 .dash-shell .dash-tab .tab-dot {
-  width: 5px; height: 5px;
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 6px; height: 6px;
   border-radius: 9999px;
   background: currentColor;
   box-shadow: 0 0 6px currentColor;
@@ -325,18 +351,34 @@
 }
 .dash-shell .kpi-tile:hover { transform: translateY(-2px); border-color: rgba(96,165,250,0.35); }
 .dash-shell .kpi-tile .kpi-label {
-  font-size: 0.7rem;
-  letter-spacing: 0.22em;
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: rgba(148,163,184,0.9);
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.3rem;
+  line-height: 1.25;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  /* reserve 2 lines so values stay aligned across a row */
+  min-height: calc(0.68rem * 1.25 * 2);
 }
 .dash-shell .kpi-tile .kpi-value {
-  font-size: 1.25rem;
+  font-size: 1.15rem;
   font-weight: 700;
   color: #f8fafc;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Pill / metric chips */

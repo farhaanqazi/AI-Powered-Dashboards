@@ -28,6 +28,23 @@ def _is_likely_identifier(series: pd.Series, name: str = "") -> bool:
     return is_likely_identifier_with_confidence(series, name)[0]
 
 
+def _treat_as_identifier(series: pd.Series, name: str,
+                         dataset_profile: Optional[Dict[str, Any]] = None) -> bool:
+    """Authoritative identifier gate for chart building.
+
+    The pipeline role (Layer 2, possibly AI-arbitrated) is the source of
+    truth. Re-detecting from the raw series at render time double-jeopardies
+    real metrics/categories/dates and silently drops valid charts. So: if the
+    dataset_profile carries an explicit role for this column, trust it. Only
+    when no role is available do we fall back to the raw heuristic."""
+    if dataset_profile:
+        cp = next((c for c in dataset_profile.get('columns', [])
+                   if c.get('name') == name), None)
+        if cp and cp.get('role'):
+            return cp['role'] == 'identifier'
+    return _is_likely_identifier(series, name)
+
+
 def _clean_numeric_series(series: pd.Series) -> pd.Series:
     """
     Convert a series to numeric, dropping NaN/Inf safely.
@@ -116,7 +133,7 @@ def _build_category_count_data(
             return None
 
     # Also check using our identifier detection function
-    if _is_likely_identifier(series, column):
+    if _treat_as_identifier(series, column, dataset_profile):
         logger.info(f"Skipping likely identifier column '{column}' from category count chart")
         return None
 
@@ -229,7 +246,7 @@ def _build_histogram_data(
     # Also check using our identifier detection function
     # GUARD: float columns are continuous measurements — never skip them as identifiers
     import pandas.api.types as pat
-    if not pat.is_float_dtype(series) and _is_likely_identifier(series, column):
+    if not pat.is_float_dtype(series) and _treat_as_identifier(series, column, dataset_profile):
         logger.info(f"Skipping likely identifier column '{column}' from histogram")
         return None
 
@@ -436,7 +453,7 @@ def _build_category_summary_data(
     x_series = df[x_column]
     y_series = df[y_column]
 
-    if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
+    if _treat_as_identifier(x_series, x_column, dataset_profile) or _treat_as_identifier(y_series, y_column, dataset_profile):
         logger.info(f"Skipping summary for columns '{x_column}' and '{y_column}' - one is likely identifier")
         return None
 
@@ -570,7 +587,7 @@ def _build_time_series_data(
         return None
 
     # If X column is likely an identifier, skip
-    if _is_likely_identifier(x_series, x_column):
+    if _treat_as_identifier(x_series, x_column, dataset_profile):
         logger.info(f"Skipping time series - X column '{x_column}' is likely an identifier")
         return None
 
@@ -710,7 +727,7 @@ def _build_scatter_data(
     x_series = df[x_column]
     y_series = df[y_column]
 
-    if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
+    if _treat_as_identifier(x_series, x_column, dataset_profile) or _treat_as_identifier(y_series, y_column, dataset_profile):
         logger.info(f"Skipping scatter plot for columns '{x_column}' and '{y_column}' - identifier detected")
         return None
 
@@ -872,7 +889,7 @@ def _build_pie_data(
 
     # Check if this is likely an identifier
     series = df[column]
-    if _is_likely_identifier(series, column):
+    if _treat_as_identifier(series, column, dataset_profile):
         logger.info(f"Skipping pie chart for column '{column}' - likely identifier")
         return None
 
@@ -936,7 +953,7 @@ def _build_box_plot_data(
     x_series = df[x_column]
     y_series = df[y_column]
 
-    if _is_likely_identifier(x_series, x_column) or _is_likely_identifier(y_series, y_column):
+    if _treat_as_identifier(x_series, x_column, dataset_profile) or _treat_as_identifier(y_series, y_column, dataset_profile):
         logger.info(f"Skipping box plot for columns '{x_column}' and '{y_column}' - identifier detected")
         return None
 

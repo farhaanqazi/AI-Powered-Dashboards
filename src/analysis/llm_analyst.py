@@ -103,6 +103,9 @@ _SYSTEM_PROMPT = (
     "about; explain WHY each matters in plain language. Aim for 6-10 KPIs and "
     "10-18 charts covering distributions, category breakdowns, trends and "
     "relationships.\n"
+    "5. Also produce 3-5 business use_cases and 3-6 recommendations. These are "
+    "qualitative strategy — no statistics, no fabricated figures. key_inputs "
+    "must be real column names.\n"
     "4. Charts: intent must be one of "
     "category_count, distribution, category_summary, group_comparison, "
     "time_series, scatter. Use real column names for x_field/y_field.\n"
@@ -111,6 +114,20 @@ _SYSTEM_PROMPT = (
 
 _SCHEMA_HINT = {
     "narrative": "2-4 sentence executive summary of what this dataset is about and the single most important takeaway (NO numbers).",
+    "use_cases": [
+        {
+            "use_case": "short business use-case title",
+            "description": "what analysis to do and the value it unlocks (NO numbers)",
+            "key_inputs": ["real column names involved"],
+        }
+    ],
+    "recommendations": [
+        {
+            "title": "short recommended next action",
+            "description": "concrete analytical or business recommendation (NO numbers)",
+            "priority": "high or medium or low",
+        }
+    ],
     "kpis": [
         {
             "column": "exact column name OR omit if correlation",
@@ -127,6 +144,8 @@ _SCHEMA_HINT = {
             "y_field": "real column name or null",
             "agg_func": "sum or mean or null",
             "title": "specific, contextual chart title (NO numbers)",
+            "x_label": "human-readable x-axis label (NO numbers)",
+            "y_label": "human-readable y-axis label (NO numbers)",
             "rationale": "why this chart is worth showing",
         }
     ],
@@ -174,7 +193,8 @@ def _build_kpis(
             if coeff is None:
                 continue
             out.append({"label": label, "value": f"{coeff:.2f}",
-                        "type": "correlation", "score": score})
+                        "type": "correlation", "score": score,
+                        "_src": ("corr", frozenset(corr))})
             continue
 
         col = item.get("column")
@@ -186,6 +206,7 @@ def _build_kpis(
                 "value": _kpi_value(profile, metric),
                 "type": profile.role,
                 "score": score,
+                "_src": ("col", col),
             })
     return out
 
@@ -226,6 +247,8 @@ def _build_charts(
             "x_field": x,
             "priority": idx,
             "rationale": str(item.get("rationale") or "").strip(),
+            "x_label": str(item.get("x_label") or "").strip(),
+            "y_label": str(item.get("y_label") or "").strip(),
             "dimensions": {"width": "responsive", "height": "400px"},
             "responsive": True,
             "ai_generated": True,
@@ -238,6 +261,38 @@ def _build_charts(
             spec["agg_func"] = agg
         out.append(spec)
     return out
+
+
+def _build_eda(
+    parsed: Dict[str, Any], enriched_profiles: Dict[str, EnrichedProfile]
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Rebuild use_cases / recommendations in the exact heuristic shape the
+    frontend expects, keeping only real column names in key_inputs."""
+    names = set(enriched_profiles.keys())
+    use_cases: List[Dict[str, Any]] = []
+    for u in (parsed.get("use_cases") or [])[:6]:
+        title = str(u.get("use_case") or "").strip()
+        desc = str(u.get("description") or "").strip()
+        if not title or not desc:
+            continue
+        key_inputs = [c for c in (u.get("key_inputs") or []) if c in names][:6]
+        use_cases.append(
+            {"use_case": title, "description": desc, "key_inputs": key_inputs}
+        )
+
+    recommendations: List[Dict[str, Any]] = []
+    for r in (parsed.get("recommendations") or [])[:8]:
+        title = str(r.get("title") or "").strip()
+        desc = str(r.get("description") or "").strip()
+        if not title or not desc:
+            continue
+        priority = str(r.get("priority") or "medium").lower()
+        if priority not in ("high", "medium", "low"):
+            priority = "medium"
+        recommendations.append(
+            {"title": title, "description": desc, "priority": priority}
+        )
+    return use_cases, recommendations
 
 
 def run_ai_analyst(
@@ -253,7 +308,8 @@ def run_ai_analyst(
     Never raises. Any failure returns the caller's heuristic fallback so the
     pipeline behaves exactly as before the AI layer existed.
     """
-    fallback = {"kpis": fallback_kpis, "chart_specs": fallback_specs, "narrative": ""}
+    fallback = {"kpis": fallback_kpis, "chart_specs": fallback_specs,
+                "narrative": "", "use_cases": [], "recommendations": []}
 
     if not config.AI_ANALYST_ENABLED or not config.GROQ_API_KEY:
         return fallback
@@ -298,6 +354,7 @@ def run_ai_analyst(
         )
         charts = _build_charts(parsed.get("charts") or [], enriched_profiles)
         narrative = str(parsed.get("narrative") or "").strip()
+        ai_use_cases, ai_recs = _build_eda(parsed, enriched_profiles)
     except Exception as e:
         logger.warning(f"AI analyst output rejected, using heuristic fallback: {e}")
         return fallback
@@ -312,14 +369,155 @@ def run_ai_analyst(
     ai_sigs = {_sig(c) for c in charts}
     charts += [s for s in fallback_specs if _sig(s) not in ai_sigs]
 
-    ai_labels = {k["label"] for k in kpis}
-    kpis += [k for k in fallback_kpis if k.get("label") not in ai_labels]
+    # KPI merge: the heuristic labels columns by raw name ("HBA1C_LEVEL") and
+    # would duplicate an AI KPI that already covers the same column with a
+    # human label. Dedup by SOURCE (column / corr-pair), not label text. If the
+    # model gave a full set, drop the raw heuristic backfill entirely — that
+    # raw-name leak is exactly the "amateur" look we're removing.
+    ai_src = {k.get("_src") for k in kpis if k.get("_src")}
+    if len(kpis) < 6:
+        for hk in fallback_kpis:
+            lbl = str(hk.get("label", ""))
+            if lbl.startswith("Corr: ") and " & " in lbl:
+                a, b = lbl[6:].split(" & ", 1)
+                src = ("corr", frozenset([a.strip(), b.strip()]))
+            else:
+                src = ("col", lbl)
+            if src not in ai_src:
+                kpis.append(hk)
+    for k in kpis:
+        k.pop("_src", None)
 
     if not kpis and not charts:
         return fallback
 
     logger.info(
         f"AI analyst: {len(kpis)} KPIs, {len(charts)} charts, "
-        f"narrative={'yes' if narrative else 'no'}"
+        f"narrative={'yes' if narrative else 'no'}, "
+        f"{len(ai_use_cases)} use-cases, {len(ai_recs)} recs"
     )
-    return {"kpis": kpis, "chart_specs": charts, "narrative": narrative}
+    return {
+        "kpis": kpis,
+        "chart_specs": charts,
+        "narrative": narrative,
+        "use_cases": ai_use_cases,
+        "recommendations": ai_recs,
+    }
+
+
+_VALID_ROLES = {"boolean", "datetime", "numeric", "identifier",
+                "categorical", "text"}
+
+_ROLE_SYSTEM_PROMPT = (
+    "You are a data-typing expert. For each listed column you are given its "
+    "name, the heuristic's current role, identifier-confidence, unique ratio, "
+    "dtype and sample values. The heuristic is known to mislabel real metrics "
+    "and categories as 'identifier', and dates as 'text'. Decide the correct "
+    "role for each from EXACTLY this set: boolean, datetime, numeric, "
+    "identifier, categorical, text. A column is 'identifier' ONLY if its values "
+    "exist to uniquely key a row (IDs, codes, UUIDs, sequential keys) — NOT if "
+    "it is a measurable quantity or a real category. Return ONLY JSON: "
+    '{"roles": {"<column>": "<role>", ...}} including only columns whose role '
+    "should CHANGE."
+)
+
+
+def _role_candidates(
+    enriched_profiles: Dict[str, EnrichedProfile], df
+) -> List[str]:
+    """Cheap, no-AI pre-filter: only columns the heuristic is likely wrong
+    about. Returns [] for clean datasets so no Groq call is made at all."""
+    out = []
+    for name, p in enriched_profiles.items():
+        tags = p.semantic_tags or []
+        if (
+            p.role in ("identifier", "text")
+            or "ambiguous_date" in tags
+            or (p.role == "numeric" and p.unique_count <= 30)
+        ):
+            if name in getattr(df, "columns", []):
+                out.append(name)
+    return out[:25]
+
+
+def arbitrate_column_roles(
+    enriched_profiles: Dict[str, EnrichedProfile], df
+) -> Dict[str, str]:
+    """Let the LLM correct ambiguous column roles BEFORE Layers 3/4 consume
+    them. Mutates enriched_profiles in place. Returns the applied changes
+    (empty when nothing changed / AI unavailable). Never raises."""
+    if not config.AI_ANALYST_ENABLED or not config.GROQ_API_KEY:
+        return {}
+    candidates = _role_candidates(enriched_profiles, df)
+    if not candidates:
+        return {}
+
+    try:
+        from groq import Groq
+        from src.utils.identifier_detector import (
+            is_likely_identifier_with_confidence,
+        )
+    except Exception as e:  # pragma: no cover
+        logger.warning(f"Role arbitration disabled: {e}")
+        return {}
+
+    cols_payload = []
+    for name in candidates:
+        p = enriched_profiles[name]
+        try:
+            series = df[name].dropna()
+            samples = [str(v) for v in series.unique()[:8]]
+            conf = round(
+                is_likely_identifier_with_confidence(df[name], name)[2], 3
+            )
+        except Exception:
+            samples, conf = [], 0.0
+        cols_payload.append({
+            "name": name,
+            "current_role": p.role,
+            "identifier_confidence": conf,
+            "unique_ratio": round(
+                p.unique_count / max(len(df), 1), 4
+            ),
+            "dtype": p.dtype,
+            "samples": samples,
+        })
+
+    try:
+        client = Groq(api_key=config.GROQ_API_KEY,
+                      timeout=config.GROQ_TIMEOUT_SECONDS)
+        resp = client.chat.completions.create(
+            model=config.GROQ_MODEL,
+            temperature=0.0,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": _ROLE_SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(
+                    {"columns": cols_payload}, default=str)},
+            ],
+        )
+        parsed = json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        logger.warning(f"Role arbitration call failed, keeping heuristic: {e}")
+        return {}
+
+    changes: Dict[str, str] = {}
+    for col, new_role in (parsed.get("roles") or {}).items():
+        new_role = str(new_role).strip().lower()
+        if (
+            col in enriched_profiles
+            and new_role in _VALID_ROLES
+            and new_role != enriched_profiles[col].role
+        ):
+            old = enriched_profiles[col].role
+            enriched_profiles[col].role = new_role
+            if new_role != "identifier":
+                enriched_profiles[col].semantic_tags = [
+                    t for t in (enriched_profiles[col].semantic_tags or [])
+                    if t not in ("id", "identifier", "code", "index")
+                ]
+            changes[col] = f"{old}->{new_role}"
+
+    if changes:
+        logger.info(f"AI role arbitration applied: {changes}")
+    return changes

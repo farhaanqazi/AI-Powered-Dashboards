@@ -95,10 +95,30 @@ const themedAxis = (extra = {}) => ({
   ...extra,
 });
 
-const baseLayout = (title, extras = {}) => {
-  const titleObj = typeof title === 'string'
-    ? { text: title, font: { color: DARK_THEME.title, size: 14 } }
-    : (title || undefined);
+// Wrap a long axis title onto multiple lines so the rotated y-axis label
+// isn't clipped at the container edge.
+const wrapAxisTitle = (text, maxLen = 18) => {
+  const str = String(text ?? '');
+  if (str.length <= maxLen) return str;
+  const words = str.split(/[\s_]+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if (line && (line.length + w.length + 1) > maxLen) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = line ? `${line} ${w}` : w;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.join('<br>');
+};
+
+const baseLayout = (_title, extras = {}) => {
+  // The chart title is intentionally NOT rendered inside the Plotly figure —
+  // every chart is wrapped in a card that already shows the title as a heading.
+  // Rendering it here too caused a duplicated title.
 
   // Merge axis defaults if caller supplied them
   const mergeAxis = (override) => {
@@ -106,7 +126,13 @@ const baseLayout = (title, extras = {}) => {
     const { title: t, ...rest } = override;
     const merged = themedAxis(rest);
     if (t) {
-      merged.title = typeof t === 'string' ? { text: t, font: { color: DARK_THEME.tick, size: 12 } } : t;
+      const titleText = typeof t === 'string' ? t : t.text;
+      merged.title = {
+        text: wrapAxisTitle(titleText),
+        font: { color: DARK_THEME.tick, size: 11 },
+        standoff: 12,
+        ...(typeof t === 'object' ? { ...t, text: wrapAxisTitle(t.text) } : {}),
+      };
     }
     return merged;
   };
@@ -114,9 +140,9 @@ const baseLayout = (title, extras = {}) => {
   const { xaxis, yaxis, ...restExtras } = extras;
 
   return {
-    title: titleObj,
+    title: undefined,
     height: 400,
-    margin: { t: 50, b: 60, l: 60, r: 40 },
+    margin: { t: 24, b: 64, l: 72, r: 36 },
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
     font: { color: DARK_THEME.font, family: 'Inter, ui-sans-serif, system-ui, sans-serif' },
@@ -236,8 +262,8 @@ const ChartRenderer = ({ chartData }) => {
       xValues = dataObj.x || [];
       yValues = dataObj.y || [];
     }
-    const xTitle = chartData.x_column || dataObj?.xaxis?.title || 'Category';
-    const yTitle = chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
+    const xTitle = chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'Category';
+    const yTitle = chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
     const color = chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa';
     ({ data: plotlyData, layout } = renderCategoricalSeries(xValues, yValues, {
       title, color, layoutExtras: layout, xTitle, yTitle,
@@ -269,8 +295,8 @@ const ChartRenderer = ({ chartData }) => {
     }];
     layout = baseLayout(title, {
       ...layout,
-      xaxis: { title: chartData.x_column || dataObj?.xaxis?.title || 'X', automargin: true },
-      yaxis: { title: chartData.y_column || dataObj?.yaxis?.title || 'Y', type: yIsLog ? 'log' : 'linear', automargin: true },
+      xaxis: { title: chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'X', automargin: true },
+      yaxis: { title: chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || 'Y', type: yIsLog ? 'log' : 'linear', automargin: true },
     });
   }
   else if (chartType === 'time_series' || chartType === 'line') {
@@ -297,8 +323,8 @@ const ChartRenderer = ({ chartData }) => {
     }];
     layout = baseLayout(title, {
       ...layout,
-      xaxis: { title: chartData.x_column || 'Date', automargin: true },
-      yaxis: { title: chartData.y_column || 'Value', type: yIsLog ? 'log' : 'linear', automargin: true },
+      xaxis: { title: chartData.x_title || chartData.x_column || 'Date', automargin: true },
+      yaxis: { title: chartData.y_title || chartData.y_column || 'Value', type: yIsLog ? 'log' : 'linear', automargin: true },
     });
   }
   else if (chartType === 'box' || chartType === 'box_plot') {
@@ -324,8 +350,8 @@ const ChartRenderer = ({ chartData }) => {
     }
     layout = baseLayout(title, {
       ...layout,
-      xaxis: { title: chartData.x_column || dataObj?.xaxis?.title || '', automargin: true },
-      yaxis: { title: chartData.y_column || dataObj?.yaxis?.title || 'Values', automargin: true },
+      xaxis: { title: chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || '', automargin: true },
+      yaxis: { title: chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || 'Values', automargin: true },
       showlegend: plotlyData.length > 1,
     });
   }

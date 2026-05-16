@@ -133,6 +133,16 @@ def build_charts_from_specs(
                 continue
 
             if chart_data and chart_data.get('data'):
+                # Overlay AI-authored title / axis labels. The heuristic
+                # builders title charts from raw column names; when the spec
+                # came from the LLM we prefer its human-readable strings.
+                if spec.get('ai_generated'):
+                    if spec.get('title'):
+                        chart_data['title'] = spec['title']
+                    if spec.get('x_label'):
+                        chart_data['x_title'] = spec['x_label']
+                    if spec.get('y_label'):
+                        chart_data['y_title'] = spec['y_label']
                 charts.append(chart_data) # FIX: Append to list
                 chart_ids.add(chart_id)
             else:

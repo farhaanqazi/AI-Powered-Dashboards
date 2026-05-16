@@ -53,8 +53,8 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
               <div key={index} className="kpi-tile">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="kpi-label truncate" title={kpi.label}>{kpi.label}</p>
-                    <p className="kpi-value truncate" title={kpi.value}>{kpi.value}</p>
+                    <p className="kpi-label" title={kpi.label}>{kpi.label}</p>
+                    <p className="kpi-value" title={kpi.value}>{kpi.value}</p>
                   </div>
                   <div className="p-2 rounded-lg bg-sky-400/15 text-sky-300 border border-sky-400/25 flex-shrink-0">
                     <i className="fas fa-chart-line" />

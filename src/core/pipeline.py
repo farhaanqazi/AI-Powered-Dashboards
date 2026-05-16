@@ -22,7 +22,7 @@ from src.analysis.layer_2_classifier import run_semantic_classification
 from src.analysis.layer_3_relational import run_relational_analysis
 from src.analysis.layer_4_interpreter import determine_kpis, select_charts
 from src.analysis.eda_analyzer import run_eda_analysis
-from src.analysis.llm_analyst import run_ai_analyst
+from src.analysis.llm_analyst import run_ai_analyst, arbitrate_column_roles
 
 # --- Existing Visualization and Data Structures ---
 from src.viz.plotly_renderer import build_charts_from_specs
@@ -147,6 +147,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         try:
             with _time_layer("classifying"):
                 enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+                arbitrate_column_roles(enriched_profiles, df)
             tracer.record_custom_event(trace_id, "layer_2_complete", {"roles": {n: p.role for n, p in enriched_profiles.items()}})
         except Exception as e:
             msg = f"Layer 2 failed: {e}"
@@ -207,8 +208,13 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             )
             kpis = ai["kpis"]
             chart_specs = ai["chart_specs"]
-            if ai["narrative"] and isinstance(eda_summary, dict):
-                eda_summary["ai_narrative"] = ai["narrative"]
+            if isinstance(eda_summary, dict):
+                if ai["narrative"]:
+                    eda_summary["ai_narrative"] = ai["narrative"]
+                if ai["use_cases"]:
+                    eda_summary["use_cases"] = ai["use_cases"]
+                if ai["recommendations"]:
+                    eda_summary["recommendations"] = ai["recommendations"]
 
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
@@ -382,6 +388,7 @@ def build_dashboard_from_df_generator(
         yield {"phase": "classifying", "message": "Classifying column roles...", "percent": 35}
         with _time_layer("classifying"):
             enriched_profiles = run_semantic_classification(syntactic_profiles, df)
+            arbitrate_column_roles(enriched_profiles, df)
         tracer.record_custom_event(trace_id, "layer_2_complete",
                                    {"roles": {n: p.role for n, p in enriched_profiles.items()}})
 
@@ -418,8 +425,13 @@ def build_dashboard_from_df_generator(
             )
             kpis = ai["kpis"]
             chart_specs = ai["chart_specs"]
-            if ai["narrative"] and isinstance(eda_summary, dict):
-                eda_summary["ai_narrative"] = ai["narrative"]
+            if isinstance(eda_summary, dict):
+                if ai["narrative"]:
+                    eda_summary["ai_narrative"] = ai["narrative"]
+                if ai["use_cases"]:
+                    eda_summary["use_cases"] = ai["use_cases"]
+                if ai["recommendations"]:
+                    eda_summary["recommendations"] = ai["recommendations"]
 
         yield {"phase": "rendering", "message": "Building charts...", "percent": 92}
         role_counts: Dict[str, int] = {}
