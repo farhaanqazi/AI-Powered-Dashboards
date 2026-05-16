@@ -37,6 +37,18 @@ CORS_ALLOW_ORIGINS = [
     if o.strip()
 ]
 
+# --- AI Analyst (LLM) Configuration ---
+# The LLM narrates over and selects from deterministically-computed numbers.
+# It never computes or invents figures. If the key is absent or the call fails,
+# the pipeline silently falls back to the heuristic Layer 4.
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_TIMEOUT_SECONDS = int(os.environ.get("GROQ_TIMEOUT_SECONDS", 30))
+# Defaults ON only when a key is present; explicit env override always wins.
+AI_ANALYST_ENABLED = os.environ.get(
+    "AI_ANALYST_ENABLED", "true" if GROQ_API_KEY else "false"
+).lower() == "true"
+
 # --- Persistence Configuration ---
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",

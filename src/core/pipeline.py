@@ -22,6 +22,7 @@ from src.analysis.layer_2_classifier import run_semantic_classification
 from src.analysis.layer_3_relational import run_relational_analysis
 from src.analysis.layer_4_interpreter import determine_kpis, select_charts
 from src.analysis.eda_analyzer import run_eda_analysis
+from src.analysis.llm_analyst import run_ai_analyst
 
 # --- Existing Visualization and Data Structures ---
 from src.viz.plotly_renderer import build_charts_from_specs
@@ -199,6 +200,15 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                 errors.append(msg)
                 logger.exception(msg)
                 raise
+
+            ai = run_ai_analyst(
+                enriched_profiles, relational_insights, eda_summary,
+                fallback_kpis=kpis, fallback_specs=chart_specs,
+            )
+            kpis = ai["kpis"]
+            chart_specs = ai["chart_specs"]
+            if ai["narrative"] and isinstance(eda_summary, dict):
+                eda_summary["ai_narrative"] = ai["narrative"]
 
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
@@ -401,6 +411,15 @@ def build_dashboard_from_df_generator(
             tracer.record_kpi_generation(trace_id, kpis)
             chart_specs = select_charts(enriched_profiles, relational_insights)
             tracer.record_chart_selection(trace_id, chart_specs)
+
+            ai = run_ai_analyst(
+                enriched_profiles, relational_insights, eda_summary,
+                fallback_kpis=kpis, fallback_specs=chart_specs,
+            )
+            kpis = ai["kpis"]
+            chart_specs = ai["chart_specs"]
+            if ai["narrative"] and isinstance(eda_summary, dict):
+                eda_summary["ai_narrative"] = ai["narrative"]
 
         yield {"phase": "rendering", "message": "Building charts...", "percent": 92}
         role_counts: Dict[str, int] = {}
