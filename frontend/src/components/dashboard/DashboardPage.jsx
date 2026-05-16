@@ -207,36 +207,6 @@ const DashboardPage = () => {
           )}
         </div>
 
-        {/* Stats grid */}
-        {hasData && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-7 dash-section-enter">
-            <StatTile
-              tone="blue"
-              icon="fa-table"
-              label="Total Rows"
-              value={profile?.n_rows?.toLocaleString() || 0}
-            />
-            <StatTile
-              tone="purple"
-              icon="fa-grip-vertical"
-              label="Total Columns"
-              value={profile?.n_cols || 0}
-            />
-            <StatTile
-              tone="emerald"
-              icon="fa-calculator"
-              label="Numeric Fields"
-              value={profile?.role_counts?.numeric || 0}
-            />
-            <StatTile
-              tone="amber"
-              icon="fa-tags"
-              label="Categorical Fields"
-              value={profile?.role_counts?.categorical || 0}
-            />
-          </div>
-        )}
-
         {/* Critical Totals */}
         {dashboardData?.critical_totals && Object.keys(dashboardData.critical_totals).length > 0 && (
           <div className="glass-card p-6 mb-7 dash-section-enter">
@@ -292,14 +262,5 @@ const DashboardPage = () => {
     </div>
   );
 };
-
-const StatTile = ({ tone, icon, label, value }) => (
-  <div className={`stat-tile stat-${tone}`}>
-    <div className="stat-glow" />
-    <div className="stat-icon"><i className={`fas ${icon}`} /></div>
-    <div className="stat-label">{label}</div>
-    <div className="stat-value">{value}</div>
-  </div>
-);
 
 export default DashboardPage;

@@ -100,7 +100,9 @@ _SYSTEM_PROMPT = (
     "values in your output at all — the system fills those in from ground truth.\n"
     "2. Only reference column names that appear in the provided data.\n"
     "3. Choose KPIs and charts that a business stakeholder would actually care "
-    "about; explain WHY each matters in plain language.\n"
+    "about; explain WHY each matters in plain language. Aim for 6-10 KPIs and "
+    "10-18 charts covering distributions, category breakdowns, trends and "
+    "relationships.\n"
     "4. Charts: intent must be one of "
     "category_count, distribution, category_summary, group_comparison, "
     "time_series, scatter. Use real column names for x_field/y_field.\n"
@@ -300,13 +302,18 @@ def run_ai_analyst(
         logger.warning(f"AI analyst output rejected, using heuristic fallback: {e}")
         return fallback
 
-    # Backfill from the heuristic if the model gave us too little to render a
-    # credible dashboard. Better a hybrid than a sparse one.
-    if len(kpis) < 3 and fallback_kpis:
-        have = {k["label"] for k in kpis}
-        kpis += [k for k in fallback_kpis if k.get("label") not in have]
-    if len(charts) < 3 and fallback_specs:
-        charts += fallback_specs[: max(0, 3 - len(charts))]
+    # Merge, never shrink: AI-labelled items come first (better titles), then
+    # every heuristic item the model didn't already cover is appended. This
+    # keeps the full chart breadth the heuristic produced (20+) while the AI
+    # only improves ordering and naming on top.
+    def _sig(spec):
+        return (spec.get("intent"), spec.get("x_field"), spec.get("y_field"))
+
+    ai_sigs = {_sig(c) for c in charts}
+    charts += [s for s in fallback_specs if _sig(s) not in ai_sigs]
+
+    ai_labels = {k["label"] for k in kpis}
+    kpis += [k for k in fallback_kpis if k.get("label") not in ai_labels]
 
     if not kpis and not charts:
         return fallback

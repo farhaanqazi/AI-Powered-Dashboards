@@ -3,7 +3,8 @@ import ChartRenderer from '../charts/ChartRenderer';
 
 const OverviewTab = ({ data, loading, error, refreshKey }) => {
   const safeData = data || {};
-  const { kpis, primary_chart, category_charts, all_charts } = safeData;
+  const { kpis, primary_chart, category_charts, all_charts, eda_summary } = safeData;
+  const aiNarrative = eda_summary && eda_summary.ai_narrative;
 
   if (loading) {
     return (
@@ -25,6 +26,16 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
 
   return (
     <section id="overview-section" className="analysis-section space-y-8">
+      {aiNarrative && (
+        <div className="glass-soft p-5 border-sky-400/20">
+          <h2 className="section-heading mb-3">
+            <span className="section-icon"><i className="fas fa-wand-magic-sparkles text-sky-300" /></span>
+            <span>AI Executive Summary</span>
+          </h2>
+          <p className="text-slate-200 leading-relaxed text-[15px]">{aiNarrative}</p>
+        </div>
+      )}
+
       {/* KPIs */}
       <div>
         <div className="flex items-center justify-between mb-4">
