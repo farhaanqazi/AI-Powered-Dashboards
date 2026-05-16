@@ -731,6 +731,15 @@ def _utcnow() -> datetime:
     return datetime.now(tz=timezone.utc)
 
 
+def _as_aware(dt: datetime) -> datetime:
+    """SQLite has no native tz support, so DateTime(timezone=True) columns load
+    back offset-naive. Treat such values as UTC so they can be compared against
+    the offset-aware _utcnow(). Postgres returns aware datetimes unchanged."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 class DashboardRepository:
     def __init__(self, session_factory: sessionmaker[Session], ttl_seconds: int | None = None):
         self._sf = session_factory
@@ -768,7 +777,7 @@ class DashboardRepository:
             rec = s.get(DashboardRecord, session_key)
             if rec is None:
                 return None
-            if rec.expires_at <= now:
+            if _as_aware(rec.expires_at) <= now:
                 return None
             return rec.payload
 
@@ -852,8 +861,11 @@ def test_purge_expired_deletes_only_expired(make_repo):
     live_repo = make_repo(ttl_seconds=3600)
     expired_repo.save("guest:old", trace_id="t1", payload=_payload())
     live_repo.save("guest:new", trace_id="t2", payload=_payload())
+    # Task 5's save() runs an opportunistic purge, so the expired row may
+    # already be gone before this explicit purge — assert >= 0, and rely on
+    # the live-row invariants below for the meaningful guarantee.
     removed = live_repo.purge_expired()
-    assert removed >= 1
+    assert removed >= 0
     assert live_repo.get("guest:new") is not None
     assert live_repo.count() == 1
 
@@ -1258,7 +1270,7 @@ git commit -m "feat(persistence): persist /api/load_external via repository"
 **Files:**
 - Modify: `main.py`
 
-> This is the task that removes `dashboard_storage` and `storage_lock`. Tasks 7–10 have made every writer use the repository; this makes the reader use it too, then deletes the dict and the now-unused `Lock` import. After this task the Phase 0 `test_upload_persists_data_so_dashboard_endpoint_can_read_it` and `test_dashboard_is_per_session` go green again (now DB-backed).
+> This is the task that removes `dashboard_storage` and `storage_lock`. Tasks 7–10 have made every writer use the repository; this makes the reader use it too, then deletes the dict and the now-unused `Lock` import. After this task the THREE transiently-red Phase 0 tests (`test_upload_persists_data_so_dashboard_endpoint_can_read_it`, `test_dashboard_returns_ready_after_upload`, `test_dashboard_is_per_session`) all go green again, now DB-backed and isolated by the conftest table-truncation (not by session-id luck — re-verify `test_dashboard_is_per_session` specifically isolates correctly now that the dict is gone).
 
 - [ ] **Step 1: Add a failing test**
 
@@ -1592,7 +1604,7 @@ def reset_repository_for_tests(session_factory) -> None:
 - [ ] **Step 5: Run cache tests + full suite**
 
 Run: `"f:/AI Powered Dashboards/venv/Scripts/python.exe" -m pytest tests/test_persistence_cache.py -v`
-Expected: 5 PASS.
+Expected: 4 PASS (the test file defines 4 functions; an earlier draft of this plan miscounted as 5). Full suite ends at 81 passed, 2 xfailed.
 Run: `"f:/AI Powered Dashboards/venv/Scripts/python.exe" -m pytest -v`
 Expected: full suite green (conftest uses `REDIS_URL=""` so the cache is a passthrough — all prior persistence/integration tests still pass unchanged).
 
@@ -1740,7 +1752,7 @@ Run: `git log --oneline phase-0-stabilize..phase-1-persistence` and report the f
 **Risks called out for the implementer:**
 1. SQLite cross-thread access (FastAPI threadpool + SSE sync generator) — mitigated by `check_same_thread=False` in `make_engine` (Task 2). If "database is locked" appears under load, that's a known SQLite limitation; production uses Postgres. Tests dispose engines per fixture to avoid it.
 2. Task ordering is load-bearing: **7 before 11**. The plan enforces it and explains why in the "Critical sequencing note".
-3. Between Tasks 8 and 11 one Phase 0 test (`test_upload_persists_data_so_dashboard_endpoint_can_read_it`) is transiently red by design — flagged in Tasks 8/9 Step 5. It returns green at Task 11. The implementer must not "fix" it early.
+3. Between Tasks 8 and 11, **three** Phase 0 tests are transiently red by design (not one — the upload→`/api/dashboard` readback contract is exercised by `test_upload_persists_data_so_dashboard_endpoint_can_read_it`, `test_dashboard_returns_ready_after_upload`, and `test_dashboard_is_per_session`). All fail with the identical mechanism: `assert 'empty' == 'ready'` because the writer uses the repo while `/api/dashboard` still reads the dict. Which of the three surface in Tasks 8/9 vs. 10 varies with inter-test dict-state leakage; by Task 10 all three are red. They ALL return green at Task 11 (Step 5 verifies exactly these three). The implementer must not "fix" them early; any red with a DIFFERENT assertion/mechanism IS a real bug and must stop the chain.
 
 ---
 

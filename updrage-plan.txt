@@ -1,0 +1,947 @@
+# AI-Powered Dashboards — Detailed Architecture & Working Reference
+
+Purpose: Single-source architecture document to plan a major backend upgrade.
+Intended audience: another AI agent + the developer. Do not assume tribal knowledge.
+Last verified against working tree at the time of writing.
+
+---
+
+## 0. PROJECT SNAPSHOT
+
+- One-paragraph description: A web app that ingests a CSV (upload, URL, or Kaggle slug),
+  runs a 4-layer Python analytics pipeline (profile → classify → relate → interpret),
+  generates KPI + chart specifications + EDA insights, and presents them in a
+  React/Plotly dashboard. Auth is Clerk-based with an optional client-only
+  "Continue as guest" mode. Streaming progress is delivered via Server-Sent Events.
+
+- Repo layout (relevant top-level):
+  - `main.py` — FastAPI entrypoint, all HTTP endpoints
+  - `src/` — backend python
+    - `core/pipeline.py` — orchestrator (sync + streaming variants)
+    - `data/parser.py` — CSV loaders (file / URL / Kaggle)
+    - `analysis/` — 4-layer pipeline + EDA
+    - `viz/` — chart spec rendering (data payloads, not Plotly figures)
+    - `utils/identifier_detector.py` — shared identifier detection
+    - `auth.py` — Clerk JWT verification + guest header path
+    - `config.py` — env-driven defaults
+    - `logger.py` — structured logging
+    - `diagnostics/tracer.py` — runtime telemetry hooks
+  - `frontend/` — React 18 + Vite + Tailwind + DaisyUI + Plotly
+  - `Dockerfile` — single-stage build for Hugging Face Space
+  - `requirements.txt`, `frontend/package.json` — dependency manifests
+  - `logs/` — runtime log output (gitignored)
+  - `supplement/` — local working data (gitignored)
+  - `traces_analysis/` — diagnostic outputs
+
+- Deployment:
+  - Hugging Face Space (Docker SDK) at `huggingface.co/spaces/farburgh/AI_powered_dashboard`
+  - Mirror on GitHub: `github.com/farhaanqazi/AI-Powered-Dashboards`
+  - Single container, Python 3.9-slim base + Node 18 for the frontend build
+  - Port 7860, `uvicorn main:app`
+  - The FastAPI process **serves both the API AND the built React SPA** from `frontend/dist`
+    via static file mounts and SPA-catchall route. No separate frontend host.
+
+---
+
+## 1. DEPLOYMENT TOPOLOGY
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Hugging Face Space (Docker)                                       │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │  Container: python:3.9-slim + node18                         │  │
+│  │  Entrypoint: uvicorn main:app --host 0.0.0.0 --port 7860     │  │
+│  │                                                              │  │
+│  │  ┌───────────────────────┐    ┌───────────────────────────┐  │  │
+│  │  │  FastAPI app          │◄───┤  Static: frontend/dist/   │  │  │
+│  │  │  - /api/* endpoints   │    │  - index.html             │  │  │
+│  │  │  - SPA catchall       │    │  - assets/<BUILD_ID>/*.js │  │  │
+│  │  │  - In-process dict    │    │  - assets/<BUILD_ID>/*.css│  │  │
+│  │  │    storage (no DB)    │    └───────────────────────────┘  │  │
+│  │  └───────┬───────────────┘                                   │  │
+│  │          │                                                   │  │
+│  │          ▼                                                   │  │
+│  │  ┌───────────────────────┐                                   │  │
+│  │  │  Pipeline (sync)      │                                   │  │
+│  │  │  - pandas in-memory   │                                   │  │
+│  │  │  - 4 layers           │                                   │  │
+│  │  │  - blocks event loop  │ ◄── KEY UPGRADE CONCERN           │  │
+│  │  └───────────────────────┘                                   │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                    │
+│  Env (set in HF Space → Variables/Secrets):                        │
+│    VITE_CLERK_PUBLISHABLE_KEY (Variable, exposed as build ARG +    │
+│      runtime env; backend falls back to it if CLERK_PUBLISHABLE_KEY│
+│      not set — see src/auth.py)                                    │
+│    (optionally) CLERK_PUBLISHABLE_KEY for explicit clarity         │
+│    KAGGLE creds if Kaggle ingestion is to work                     │
+└────────────────────────────────────────────────────────────────────┘
+            ▲
+            │  HTTPS
+            ▼
+        Browser
+   React SPA + Clerk Provider + Plotly + html2canvas/jsPDF
+```
+
+### Build flow (Dockerfile)
+
+1. `python:3.9-slim` base, install gcc/g++/curl + Node 18 via NodeSource.
+2. `pip install -r requirements.txt` (cached layer).
+3. `npm ci` in `frontend/` (cached when package.json unchanged).
+4. `COPY . .` (invalidated by `ARG CACHEBUST`).
+5. `ARG VITE_CLERK_PUBLISHABLE_KEY` + `ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY`.
+6. `cd frontend && rm -rf dist/ node_modules/.cache && npm run build` → produces `frontend/dist/`.
+7. Drop to non-root `appuser:1001`, expose 7860, run uvicorn.
+
+### Vite dev config (for local)
+
+- `frontend/vite.config.js`: dev server on 5173, proxy `/api`, `/upload`, `/load_external`, `/dashboard` → `http://localhost:8000`.
+- `base: './'` so the built SPA is path-relative (required for HF Spaces).
+- Assets bundled under `assets/<BUILD_ID>/` for cache-busting; `BUILD_ID = Date.now()` at build time.
+
+---
+
+## 2. RUNTIME PROCESS MODEL
+
+Single uvicorn process. Synchronous endpoints use FastAPI's run-in-threadpool
+behavior (FastAPI offloads non-`async` route functions automatically), but **all
+the heavy work in `pipeline.py` is synchronous and pandas-bound**, so:
+
+- One request that runs the full pipeline holds a worker thread for its duration.
+- Default uvicorn worker count = 1 thread pool ≈ 40 workers (Starlette default).
+- The streaming SSE endpoint runs the **generator** in the same worker thread
+  that's serving the request; while it computes, that worker is blocked.
+
+The in-process storage dict `dashboard_storage` (see §6) is the *only* state
+that survives between requests. Restart → all state lost. Multiple containers
+would not share state. There is no database, cache, queue, or persistence
+layer.
+
+---
+
+## 3. BACKEND — FastAPI ENTRYPOINT (`main.py`)
+
+### 3.1 Module imports / setup
+
+```python
+from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
+from fastapi.responses import (HTMLResponse, JSONResponse, PlainTextResponse,
+                               FileResponse, StreamingResponse)
+from fastapi.staticfiles import StaticFiles
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+import pandas as pd
+from threading import Lock
+from dotenv import load_dotenv
+
+from src.core.pipeline import (
+    build_dashboard_from_file,
+    build_dashboard_from_df,
+    build_dashboard_from_file_generator,
+)
+from src.data.parser import load_csv_from_url, load_csv_from_kaggle
+from src.auth import require_clerk_user, allow_clerk_or_guest
+```
+
+### 3.2 Process-wide state
+
+```python
+dashboard_storage = {}     # dict — see §6 for layout
+storage_lock      = Lock() # thread-safe writes/reads
+app               = FastAPI()
+```
+
+`load_dotenv()` is called once at import. `logs/` may not exist on first boot;
+the logger module handles that.
+
+### 3.3 Exception handlers
+
+- `RequestValidationError` → 422 with `{message, errors}`
+- `Exception` (catchall) → 500 with `{message, error_type, error_detail}`
+
+Both log via the structured `logger` (errors.log uses JSON).
+
+### 3.4 API endpoint inventory
+
+| Method | Path                       | Auth dep                | Purpose |
+|--------|----------------------------|-------------------------|---------|
+| POST   | `/api/upload`              | `allow_clerk_or_guest`  | Sync CSV upload + full pipeline; returns final dashboard JSON. Legacy/non-streaming. |
+| POST   | `/api/upload/stream`       | `allow_clerk_or_guest`  | Same as above but streams SSE phase events; final `done` event carries data. Used by the React UI. |
+| POST   | `/api/validate_external`   | `allow_clerk_or_guest`  | Pre-flight: validates URL/slug + sniffs remote content so UI can fail fast and stay on upload page. Returns 200 `{ok: true}` or 400 with `detail`. |
+| POST   | `/api/load_external`       | `allow_clerk_or_guest`  | Sync URL/Kaggle ingest + pipeline; returns final dashboard JSON. |
+| GET    | `/api/dashboard`           | `allow_clerk_or_guest`  | Returns the caller's most recent dashboard (keyed by session). |
+| GET    | `/`                        | none                    | Serves `frontend/dist/index.html`. |
+| GET    | `/splash`                  | none                    | Serves `frontend/dist/splash.html`. |
+| GET    | `/assets/{path}`           | none                    | Serves built frontend assets (also `app.mount("/assets", StaticFiles)`). |
+| GET    | `/{full_path:path}`        | none                    | SPA catchall — returns index.html for client-side routing; 404 for `api/` and `assets/` prefixes. |
+| GET    | `/vite.svg`                | none                    | Returns inline SVG favicon stub. |
+| GET    | `/debug-build-files`       | none                    | Lists files in `frontend/dist/` and `frontend/dist/assets/`. Debug-only; **public**. |
+| GET    | `/test-persistence/{action}` | none                  | Writes/reads `persistence_test.txt`. Diagnostic; **public**. |
+
+### 3.5 Middleware
+
+- `add_cache_headers` (HTTP middleware): adds `no-cache` to `/assets/*`, `/api/*`,
+  `*.html` and `/`. Adds an `ETag` based on `int(time.time())` for assets +
+  HTML — defeats CDN caching on Spaces.
+
+### 3.6 Endpoint details
+
+#### POST `/api/upload`
+- Body: `multipart/form-data` with `dataset: UploadFile` (.csv only) and optional `encoding`.
+- Auth: `Depends(allow_clerk_or_guest)`.
+- Filename guards: rejects `..`, leading `/`, non-`.csv` extensions.
+- Reads file bytes into memory (`await dataset.read()`), wraps as `io.BytesIO`.
+- Calls `build_dashboard_from_file(...)` (sync). Pipeline raises `RuntimeError`
+  on layer failure → 500 with detail; returns `None` if loader fails → 500.
+- Persists to `dashboard_storage[trace_id]` (UUID) AND `dashboard_storage[user['session_key']]` (see §6).
+- Returns `{status: "success", trace_id, data: response_data}`.
+
+#### POST `/api/upload/stream`
+- Same input/validation as `/api/upload`.
+- Returns `StreamingResponse(media_type="text/event-stream")` with headers:
+  `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`,
+  `Connection: keep-alive`.
+- Inner generator `event_source()` iterates `build_dashboard_from_file_generator(...)`
+  and emits each event as `data: <json>\n\n`. On `done`, builds `response_data`,
+  persists to storage, emits final `done` frame with `trace_id` and `data`.
+- On unhandled exception, emits `{phase: "error", message, percent: 100}` and returns.
+
+#### POST `/api/validate_external`
+- Body: JSON `{external_source: str}` (Pydantic `LoadExternalRequest`).
+- Decision tree:
+  1. Empty → 400.
+  2. Starts with `http://`/`https://` →
+     - URL regex check → 400 if malformed.
+     - If `kaggle.com/datasets/` in URL → 400 with friendly message suggesting
+       the `username/dataset` slug derived from the URL.
+     - `requests.get(src, stream=True, timeout=10, allow_redirects=True)` →
+       400 on `RequestException`.
+     - Status >= 400 → 400.
+     - Content-Type `text/html` / `application/xhtml` / `*xml*` → 400.
+     - First 4 KB sniff for HTML markers (`<!DOCTYPE`, `<html`, `<?xml`) → 400.
+     - Pass → `{ok: true}`.
+  3. Otherwise treat as Kaggle slug:
+     - Must be exactly `owner/dataset` → 400 otherwise.
+     - Pass → `{ok: true}`.
+- This endpoint exists to satisfy "fail early, no navigation to /processing on
+  user input errors."
+
+#### POST `/api/load_external`
+- Body: JSON `{external_source: str}`.
+- Same URL/slug dispatch as `validate_external`, but actually loads:
+  - URL → `load_csv_from_url(src)`
+  - Slug → `load_csv_from_kaggle(slug)`
+- If load fails or returns `df is None` → 400.
+- Calls `build_dashboard_from_df(result.df)` → `RuntimeError` → 500.
+- Attaches `result.warnings` to `state.warnings`.
+- Persists same as `/api/upload`.
+- Returns `{status: "success", trace_id, data}`.
+
+#### GET `/api/dashboard`
+- Reads `dashboard_storage.get(user['session_key'])` under `storage_lock`.
+- If absent → 200 with `{status: "empty", ...empty payload}`.
+- If present → 200 with `{status: "ready", timestamp, metadata: {columns, rows, filename}, kpis, charts, eda, errors, warnings, dataset_profile, primary_chart, category_charts, all_charts, original_filename, critical_totals, critical_full_dataset_aggregates, eda_summary}`.
+- The frontend Zustand store `dashboardStore.refresh()` calls this on
+  `/dashboard` mount and on every tab switch.
+
+### 3.7 Pydantic models
+
+```python
+class LoadExternalRequest(BaseModel):
+    external_source: str
+```
+
+That's the only request body model. Everything else is form-data or query-less.
+
+### 3.8 Known oddities in `main.py`
+
+- Two definitions of `serve_dynamic_assets` (lines ~312 and ~390 of the legacy
+  file) shadow each other. The second one wins for the more specific
+  `/assets/{subdir}/{filename}` path, but `app.mount("/assets", StaticFiles(...))`
+  at the end also serves the same prefix. Net behavior is OK but the layering
+  is messy.
+- `import re` appears twice (top-level and again mid-file).
+- `/debug-build-files` and `/test-persistence/{action}` are unauthenticated and
+  reveal filesystem state. Remove or gate before public traffic.
+- `CORSMiddleware` is imported but not registered. Current deployment serves
+  SPA and API from the same origin so CORS isn't needed; if you split hosts
+  it must be added.
+
+---
+
+## 4. BACKEND — PIPELINE (`src/core/pipeline.py`)
+
+### 4.1 Public API
+
+```python
+build_dashboard_from_file(file_storage, max_cols=50,
+                          original_filename=None, encoding=None) -> DashboardState
+build_dashboard_from_file_generator(file_storage, max_cols=50,
+                          original_filename=None, encoding=None) -> Iterator[dict]
+build_dashboard_from_df(df, max_cols=50, original_filename=None) -> DashboardState
+build_dashboard_from_df_generator(df, max_cols=50,
+                          original_filename=None) -> Iterator[dict]
+```
+
+### 4.2 Sync flow (`build_dashboard_from_df`)
+
+```
+df ─► _reshape_if_wide_timeseries(df)            (optional melt)
+   ─► run_syntactic_profiling(df, max_cols)      Layer 1
+   ─► run_semantic_classification(profiles, df)  Layer 2
+   ─► run_relational_analysis(df, enriched)      Layer 3
+   ─► run_eda_analysis(df, enriched, insights)   EDA
+   ─► determine_kpis(enriched, insights, top_k)  Layer 4 KPI
+   ─► select_charts(enriched, insights, max_charts) Layer 4 chart specs
+   ─► build_charts_from_specs(df, specs, ...)    viz
+   ─► assemble DashboardState
+```
+
+`_detect_dataset_grain(enriched, df)` is computed and attached to
+`dataset_profile.dataset_grain` for downstream consumers.
+
+### 4.3 Streaming generator (`build_dashboard_from_file_generator`)
+
+Yields the following events **in order**, with the listed `percent` values:
+
+| Phase key      | percent | message                                       | Carries `state`? |
+|----------------|---------|-----------------------------------------------|------------------|
+| `reading`      | 5       | "Reading CSV file..."                         | no |
+| `preparing`    | 10      | "Reshaping data if needed..."                 | no |
+| `profiling`    | 20      | "Profiling columns..."                        | no |
+| `classifying`  | 35      | "Classifying column roles..."                 | no |
+| `relating`     | 50      | "Finding correlations and relationships..."   | no |
+| `eda`          | 65      | "Running exploratory data analysis..."        | no |
+| `kpis`         | 80      | "Computing KPIs and selecting charts..."      | no |
+| `rendering`    | 92      | "Building charts..."                          | no |
+| `done`         | 100     | "Complete"                                    | **yes** (state attached) |
+| `error`        | 100     | "<detail>"                                    | no (terminates stream) |
+
+The frontend `ProcessingPage.jsx` consumes only `phase` + `message`; the final
+`done` payload (re-wrapped by `main.py` as `data`) is what the dashboard reads
+later via `/api/dashboard`.
+
+### 4.4 Wide-format reshape
+
+`_reshape_if_wide_timeseries(df)` checks if >5 column names match
+`(col_)?YYYY` AND >30% of columns are year-like → calls `pd.melt(...)`
+producing `(Year, Value)` long-format. Wrapped in try/except; on failure
+returns input unchanged and logs at INFO.
+
+This is fragile: any dataset where the wide format is desired (e.g.
+country×indicator panels meant to stay wide) will be reshaped without consent.
+
+### 4.5 Failure semantics
+
+- Layer raises an exception (other than already-handled per-column errors) →
+  pipeline catches, logs full traceback, raises `RuntimeError("Pipeline
+  failed: <stage>: <detail>")`.
+- `main.py` translates `RuntimeError` to HTTP 500 with that detail.
+
+---
+
+## 5. BACKEND — ANALYSIS LAYERS
+
+### 5.1 Layer 1 — Syntactic profiling (`analysis/layer_1_profiler.py`)
+
+- Input: DataFrame, `max_cols` (default 50, truncates wider tables).
+- Per column produces `SyntacticProfile`:
+  - `name`, `dtype` (str), `null_count`, `unique_count`
+  - `stats`: `{count}`; for numeric also `{min, max, mean, std, median, q25, q75, sum, variance}`
+  - `top_categories`: top 10 `value_counts()` as `[{value: str, count: int}, ...]`
+- Skips all-null columns entirely.
+- Complexity: O(m·n) with full passes; quantiles dominate.
+- Memory: holds the full DataFrame; per-column stats are negligible.
+
+### 5.2 Layer 2 — Semantic classification (`analysis/layer_2_classifier.py`)
+
+Assigns `role ∈ {boolean, datetime, numeric, identifier, categorical, text}`
+and `semantic_tags ⊆ {monetary, additive, rate, format:..., ambiguous_date}`.
+
+Decision order:
+
+1. `boolean` if pandas bool dtype.
+2. `datetime` if pandas datetime dtype, or `_detect_datetime(series, min_rate=0.85)`
+   passes for object dtype. The detector tries 8 explicit `strptime` formats first
+   (US/EU variants), then a `pd.to_datetime(..., errors='coerce')` fallback with
+   a 90% threshold AND an ambiguity check that rejects e.g. `01/02/2020`
+   where day/month can't be disambiguated.
+3. For float dtype → `numeric` (skip identifier check to avoid float IDs).
+4. Identifier detection for everything else:
+   `is_likely_identifier_with_confidence(series, name)` from
+   `utils/identifier_detector.py`. Confidence > 0.65 → `identifier`.
+5. Integer numeric (if not flagged as ID) → `numeric`.
+6. Object dtype that wasn't datetime/ID:
+   - `_numeric_conversion_rate(series)` cleans `$`, `%`, `,`, parens-negatives,
+     unicode currency; if conversion rate ≥ 0.85 → `numeric`, with `monetary`
+     tag if currency markers found.
+   - Low cardinality (< 50 unique, ratio < 20%) → `categorical`.
+   - High-cardinality categorical (> 50 unique but ratio < 5%) → `categorical`.
+   - Else → `text`.
+7. Fallback → `text`.
+
+Aggregation semantics (`_detect_aggregation_semantics`):
+- Precedence: monetary→`additive`; name regex `_RATE_*`→`rate`;
+  name regex `_ADDITIVE_*`→`additive`; bounded [0,1] or [0,100] float→`rate`.
+- Pattern lists:
+  - additive: `revenue|sales|cost|qty|total|amount|fees|tax|discount|volume|payment`
+  - rate: `rate|ratio|pct|percent|score|temperature|age|avg|speed|duration`
+
+### 5.3 Layer 3 — Relational analysis (`analysis/layer_3_relational.py`)
+
+- Selects numeric columns with `std > 0.001` and `role != identifier`.
+- Pairwise Pearson via `scipy.stats.pearsonr`.
+- Emits a `RelationalInsight(type="correlation")` only if
+  `abs(corr) >= 0.5` and `p_value <= 0.05` and aligned sample size >= 20.
+- `details = {correlation_coefficient, p_value, strength: "moderate"|"strong", sample_size}`.
+- **Complexity O(m²·n)** — the dominant scaling bottleneck for wide datasets.
+- No partial correlation, no rank correlation, no categorical/categorical
+  association (Cramér's V etc.), no numeric/categorical (ANOVA / eta²).
+
+### 5.4 EDA (`analysis/eda_analyzer.py`)
+
+`run_eda_analysis(df, enriched, insights) -> dict`:
+
+```
+{
+  key_indicators: [...],            # avg/variability per numeric, plus dataset-level
+  patterns_and_relationships: {
+    correlations: [...],            # echoes Layer 3 results
+    trends: [...],
+    outliers: [...],                # IQR-based per numeric column
+    anomalies: [...]
+  },
+  use_cases: [...],                 # heuristic narrative
+  recommendations: [...],
+  critical_totals: {...},           # sum() of monetary-tagged numerics
+  errors: [...]
+}
+```
+
+Each sub-function wrapped in try/except so partial failure is non-fatal; errors
+collected into `errors` list and also surfaced on `state.errors`.
+
+### 5.5 Layer 4 — Interpretation (`analysis/layer_4_interpreter.py`)
+
+`determine_kpis(enriched, insights, top_k=10)`:
+- Per-column score (0..1):
+  - Skip identifiers, low-variance (<0.01), or tags in {id, identifier, code, index, number}.
+  - Base: numeric 0.3 (zero if name contains id/key/code/account/customer/zip),
+    categorical 0.2, datetime 0.2.
+  - Tag boosts: monetary +0.4, quantity +0.3, rating +0.2.
+  - Variability: `min(0.3, std/mean)` (coefficient of variation).
+- Correlation KPIs from Layer 3: label `"Corr: col1 & col2"`, `score = |coeff|`.
+- Filter: collected if `score > 0.1`, final output requires `score > 0.5`.
+- Returns top K.
+
+`select_charts(enriched, insights, max_charts=20)`:
+- Per column: numeric→`histogram` (priority 2), categorical (≤50 unique)→`bar` (priority 1).
+- Per correlation: `scatter` (priority 1).
+- Time series: pick first datetime column, top 3 numeric by KPI score (excl. IDs),
+  agg_func = `sum` if additive, else `mean`, chart_type `line` (priority 0).
+- Dedup by `(x_field, y_field, chart_type, intent)`. Sort by priority. Truncate.
+
+### 5.6 Identifier detector (`utils/identifier_detector.py`)
+
+Centralized weighted signal scorer used by Layer 2 and the viz layer:
+
+| Signal                       | Score              | Weight |
+|------------------------------|--------------------|--------|
+| `very_high_cardinality` (>0.98) | 0.95            | ~0.92  |
+| `high_cardinality` (>0.95)   | 0.85               | ~0.85  |
+| `moderate_cardinality` (>0.90) | 0.60             | ~0.70  |
+| `sequential_step1`           | 0.95               | 0.95   |
+| `sequential_low_variance`    | 0.85               | 0.85   |
+| `uuid_pattern`               | uuid_ratio         | 1.0    |
+| `name_pattern`               | min(0.9, n·0.2 + boost) | 0.70 |
+
+Returns `(is_identifier, best_signal, confidence)` with threshold 0.65.
+
+### 5.7 Visualization (`viz/plotly_renderer.py`, `viz/utils.py`)
+
+`build_charts_from_specs(df, chart_specs, dataset_profile, eda_summary,
+max_categories=10, max_charts=20)`:
+
+- Iterates chart specs, dispatches by `intent`:
+  - `category_count` → `_build_category_count_data`: value_counts truncated to
+    top N-1, remainder aggregated as `"Others"`.
+  - `histogram` / `distribution` → `_build_histogram_data`: adaptive binning,
+    Winsorization for highly skewed (clip 1–99 percentile).
+  - `category_summary` / `group_comparison` → groupby + agg.
+  - `time_series` → coerce x to datetime, groupby+agg, sort ascending.
+  - `scatter` → drop NaN, random sample to ≤5000 points.
+- Returns a list of payloads (dicts with `type`, `title`, `data`, etc.) — *not*
+  Plotly figures. The frontend renders via `react-plotly.js`.
+
+`viz/eda_visualizer.py` produces Plotly figures (`.to_json()`) for the EDA
+summary, but is NOT wired into the main pipeline output as of the current
+working tree. It's dormant code.
+
+### 5.8 Config (`src/config.py`)
+
+Env-overridable knobs (all `os.environ.get` with defaults):
+
+```
+MAX_ROWS = 500000
+MAX_COLS = 50
+MAX_CATEGORIES = 10
+MAX_CHARTS = 20
+UNIQUENESS_CUTOFF = 0.95     # (declared, not consistently used)
+AVG_LENGTH_CUTOFF = 30       # (declared, not used)
+MIN_DATE = 1900
+MAX_DATE = 2100
+KPI_TOP_K = 10
+MIN_VARIABILITY_THRESHOLD = 0.01
+MIN_UNIQUE_RATIO = 0.01
+MAX_UNIQUE_RATIO = 0.9
+MIN_CORRELATION = 0.1        # ⚠ Layer 3 hard-codes 0.5, not this
+MIN_VARIANCE = 0.001
+```
+
+Note the drift: `MIN_CORRELATION` is defined but Layer 3 uses a literal `0.5`.
+Either rewire or drop.
+
+### 5.9 Logger (`src/logger.py`)
+
+- `configure_logging()` + `get_logger(name)`.
+- Two file handlers:
+  - `logs/app.log` — INFO+, rotating 10MB×5, plain text.
+  - `logs/errors.log` — WARNING+, rotating, JSON-structured (timestamp, level, message, exception traceback if any, extras).
+- Console handler with ANSI colors.
+- Env: `LOG_LEVEL`, `LOG_DIR`, `LOG_MAX_BYTES`, `LOG_BACKUP_COUNT`, `LOG_JSON_ERRORS`.
+
+### 5.10 Diagnostics (`src/diagnostics/tracer.py`)
+
+Provides timing/status decorators or context managers used by the pipeline for
+per-stage telemetry. Records SUCCESS / FAILURE / CRITICAL_FAILURE. Output goes
+to logs and `traces_analysis/` (when enabled). Not on the request path's
+critical performance budget.
+
+---
+
+## 6. STATE & STORAGE
+
+### 6.1 The dict
+
+```python
+dashboard_storage: dict[str, dict] = {}
+storage_lock      = Lock()
+```
+
+Two key namespaces share the same dict (UUID space vs. prefixed strings —
+they don't collide):
+
+- `dashboard_storage[trace_id]` — keyed by per-upload UUID4. Written by all
+  three load endpoints. **Never read by any endpoint.** Pure orphan.
+- `dashboard_storage[user["session_key"]]` — written by all load endpoints,
+  read by `GET /api/dashboard`. `session_key` is computed in `allow_clerk_or_guest`:
+  - For Clerk users: `"user:<sub>"` (`sub` from JWT claims).
+  - For guests: `"guest:<X-Guest-Session-Id>"` (falls back to `"guest:anonymous"`).
+
+### 6.2 Implications
+
+- **Unbounded growth**: every upload adds one trace_id entry that nothing ever
+  reads. Session entries also accumulate (one per user, but never expire).
+- **Process-local**: a restart wipes everything; horizontal scale impossible.
+- **Memory cost**: each entry is the full dashboard payload (KPIs + chart data
+  + EDA), tens of MB for non-trivial datasets. With max-sized data this can
+  push >2 GB per upload before the dict even matters.
+
+### 6.3 Recently fixed cross-user collision
+
+Pre-fix, both reads and writes used the literal key `'most_recent'`, meaning
+*any* user's upload became *everyone's* "most recent dashboard". Now each
+user/guest has their own slot keyed by `session_key`. The guest session ID is
+a `crypto.randomUUID()` generated client-side on first `enableGuest()` call
+and persisted in `localStorage`.
+
+---
+
+## 7. AUTH
+
+### 7.1 Clerk JWT path (`src/auth.py:require_clerk_user`)
+
+- Reads `CLERK_PUBLISHABLE_KEY` env (falls back to `VITE_CLERK_PUBLISHABLE_KEY`).
+- Decodes the publishable key to recover the Clerk Frontend API issuer URL
+  (base64url-decoded segment between `pk_*_` and trailing `$`).
+- Fetches `/.well-known/jwks.json` via `PyJWKClient` (cached 1h).
+- HTTPBearer dep extracts `Authorization: Bearer <jwt>`.
+- `jwt.decode(token, signing_key, algorithms=["RS256"], issuer=issuer, options={"require": ["exp","iat","sub"]})`.
+- Returns full claims dict; 401 on any PyJWTError.
+
+### 7.2 Guest path (`allow_clerk_or_guest`)
+
+- If request has header `X-Guest-Mode: 1` → bypass JWT entirely.
+- Reads `X-Guest-Session-Id` header (or `"anonymous"`).
+- Returns `{"sub": "guest", "guest": True, "session_key": "guest:<sid>"}`.
+
+For Clerk users the dep wraps `require_clerk_user(creds)` and appends
+`session_key = "user:<sub>"`.
+
+### 7.3 Frontend token / header attachment (`frontend/src/services/api.js`)
+
+`authHeaders()`:
+1. Try `window.Clerk?.session?.getToken()` → if available, send
+   `Authorization: Bearer <token>`.
+2. Else if `localStorage.getItem('dataInsight:guestMode') === '1'`, send
+   `X-Guest-Mode: 1` + `X-Guest-Session-Id: <localStorage uuid>`.
+3. Else send nothing → backend returns 401.
+
+Applied via:
+- axios `interceptors.request.use` for the axios `api` instance.
+- A manual `headers: await authHeaders()` in the streaming `fetch()` upload
+  call (since axios doesn't expose `ReadableStream` cleanly).
+
+### 7.4 Clerk on the React side (`frontend/src/main.jsx`, `App.jsx`, `Header.jsx`)
+
+- `<ClerkProvider publishableKey={VITE_CLERK_PUBLISHABLE_KEY}>` at root.
+- If env var missing at build time, a `<ConfigError>` UI renders instead of
+  the app — prevents the previously-seen blank page.
+- `App.jsx` defines `<Protected>` wrapper:
+  - If `isGuest` (from `useDashboardStore`) → render children directly.
+  - Else: `<SignedIn>{children}</SignedIn><SignedOut><RedirectToSignIn /></SignedOut>`.
+- Routes: `/` (public upload page), `/processing` (Protected), `/dashboard` (Protected).
+- `Header.jsx` shows `<SignInButton>` / `<SignUpButton>` when signed out,
+  `<UserButton>` when signed in. Theme switches between light and dark based
+  on `location.pathname` (dashboard/processing → dark).
+
+### 7.5 Guest mode flag (`frontend/src/dashboardStore.js`)
+
+```js
+isGuest:        readGuest(),                  // localStorage 'dataInsight:guestMode' === '1'
+enableGuest:    () => { write+ensureGuestSessionId(); set({isGuest:true}); },
+disableGuest:   () => { remove(GUEST_KEY); set({isGuest:false}); },
+```
+
+`ensureGuestSessionId()` generates and persists a `crypto.randomUUID()` (or
+fallback) under `dataInsight:guestSessionId` on first enable.
+
+---
+
+## 8. FRONTEND — STRUCTURE
+
+### 8.1 Tech stack
+
+- React 18 + Vite 4.5 (build, dev server proxy)
+- React Router 6
+- Tailwind 3 + DaisyUI 4
+- Zustand 4 for state
+- Clerk (`@clerk/clerk-react` v5) for auth
+- Plotly.js (`plotly.js` + `react-plotly.js`) for charts
+- axios 1 + native fetch (for SSE)
+- html2canvas + jsPDF for PDF export
+- Font Awesome (CSS asset)
+
+### 8.2 Routes & pages
+
+| Path           | Component        | Notes |
+|----------------|------------------|-------|
+| `/`            | `UploadPage`     | Public route. Renders locked card or upload form depending on auth/guest state. |
+| `/processing`  | `ProcessingPage` | Protected. Streams SSE phases, shows per-step durations. |
+| `/dashboard`   | `DashboardPage`  | Protected. 4 tabs (Overview, EDA, Visualizations, Columns). |
+
+### 8.3 Zustand store (`dashboardStore.js`)
+
+Single store. Fields:
+
+- Dashboard data: `data`, `loading`, `error`, `lastUpdated`, `refresh()`.
+- Guest mode: `isGuest`, `enableGuest()`, `disableGuest()`.
+- PDF export bridge:
+  - `exporting`, `exportHandler`, `setExportHandler(fn)`, `runExport()`.
+  - `DashboardPage` registers a closure via `setExportHandler` on mount; the
+    `Export` button in `Header` calls `runExport()`. This is how the Header
+    triggers logic owned by `DashboardPage` without prop drilling.
+
+### 8.4 Upload flow (UploadPage)
+
+- If `!allowed` (signed-out AND not guest) → locked card with three CTAs:
+  Create account, Sign in, **Continue as a guest**.
+- If allowed → form with two paths:
+  - File upload: `sniffCsvFile(file)` client-side (reads first 8 KB, checks
+    extension, HTML/XML/binary markers, delimiter heuristic, header vs row-2
+    field count). Errors render inline. On pass → `navigate('/processing', {state: {kind:'file', file}})`.
+  - URL/Kaggle slug: `validateExternalSource(source)` → `POST /api/validate_external`.
+    Errors render inline. On pass → `navigate('/processing', {state: {kind:'external', source}})`.
+- Both buttons show a `Validating…` spinner during the check.
+
+### 8.5 Processing flow (ProcessingPage)
+
+- Reads `job` from `location.state`. If neither file nor source → redirect to `/`.
+- Single-fire `useEffect` (StrictMode-safe via `startedOnce.current`) runs:
+  - File: `uploadFileStream(file, onPhase, {signal})` — POSTs to
+    `/api/upload/stream`, parses SSE frames, calls `onPhase(evt)` per frame.
+  - External: `loadExternalSource(source)` — non-streaming.
+- `onPhase` updates `phaseKey`, `phaseMessage`, appends to activity feed,
+  and (newer feature) records per-phase timings.
+- Per-phase timings:
+  - On every distinct `phaseKey` transition: close out previous timing
+    (set `endedAt`), push new one (`startedAt`, `endedAt: null`).
+  - On final success: close out last timing, persist last 20 runs to
+    `localStorage.dataInsight:timings` plus `console.table` dump.
+  - UI shows:
+    - Duration chip on each pipeline connector between dots.
+    - Duration badge per activity-feed entry.
+    - "Timing breakdown" card with horizontal bar per phase scaled to the
+      slowest bar; highlights `Slowest step`.
+- On final `done` → `navigate('/dashboard')`.
+- On `error` or rejected fetch → renders red error block with Back-to-upload
+  button. Does NOT redirect on its own.
+- Cancel button → `abortRef.abort()` → navigates back to `/`.
+
+### 8.6 Dashboard flow (DashboardPage)
+
+- On mount and on each tab change → `useDashboardStore.refresh()` →
+  `GET /api/dashboard`.
+- 4 tab components:
+  - `OverviewTab.jsx` — stats cards, primary chart, critical totals.
+  - `EDATab.jsx` — EDA summary tables + insights.
+  - `VisualizationsTab.jsx` — grid of Plotly charts from `all_charts`.
+  - `ColumnsTab.jsx` — column profile table.
+- Particles + aurora gradients styled in `dashboard-futuristic.css`.
+- Active tab is local React state; not synced to URL.
+
+### 8.7 PDF export (`services/pdfExport.js`)
+
+- `exportDashboardToPDF({setActiveTab, getCaptureEl, filename})`:
+  - Adds class `dash-export-mode` to `.dash-shell` to disable
+    `backdrop-filter` / `mask-image` / `background-clip:text` (html2canvas
+    can't render these).
+  - For each of the 4 tabs in fixed order: switch tab → wait 200ms → fire
+    `resize` event → wait 900ms → `html2canvas(captureEl, {scale: 2, ...})`.
+  - Tall canvases sliced vertically across A4 pages with `(cont.)` titles.
+  - Dark page background (`#0b1226`) matches the dashboard theme.
+  - Always restores original tab on exit (even on error) via try/finally.
+
+### 8.8 Splash screen (`App.jsx:SplashScreen`)
+
+- Renders for ~5s on first session load (`sessionStorage.hasSeenSplash`).
+- Particle effect + branded gradient.
+- Skip button bypasses immediately.
+
+---
+
+## 9. DEPENDENCIES SNAPSHOT
+
+### Python (`requirements.txt`)
+
+`fastapi==0.109.2`, `uvicorn[standard]==0.27.0.post1`, `PyJWT[crypto]==2.8.0`,
+`python-dotenv==1.0.1`, `pandas==2.2.0`, `plotly==5.18.0`, `kagglehub==0.2.2`,
+`scipy==1.12.0`, `requests==2.31.0`, `chardet==5.2.0`, `python-multipart==0.0.6`,
+`jinja2==3.1.3`, `psutil==5.9.8`, `pytest==8.0.0`.
+
+Notable absences: any task queue, any DB driver, any cache, any object store
+client.
+
+### JS (`frontend/package.json`)
+
+Runtime: `@clerk/clerk-react ^5.61`, `axios ^1.3`, `daisyui ^4.7`,
+`html2canvas ^1.4`, `jspdf ^4.2`, `plotly.js ^2.27` (+ `-basic-dist 3.3`),
+`react ^18.2`, `react-dom ^18.2`, `react-plotly.js ^2.6`,
+`react-router-dom ^6.8`, `tailwindcss ^3.2`, `zustand ^4.5`.
+
+Build: `vite ^4.1`, `@vitejs/plugin-react ^3.1`, eslint 8 family.
+
+---
+
+## 10. END-TO-END DATA FLOW (FILE UPLOAD, HAPPY PATH)
+
+```
+1. User on /:
+   UploadPage selects file, hits "Generate Dashboard".
+
+2. Client-side sniff (sniffCsvFile):
+   First 8 KB read. Extension + HTML/XML/binary/delimiter/field-count checks.
+   Failure → setError, no navigation.
+
+3. navigate('/processing', {state: {kind:'file', file}}).
+
+4. ProcessingPage useEffect (once):
+   fetch('/api/upload/stream', {method: POST, body: FormData(file),
+       headers: { 'X-Guest-Mode': '1', 'X-Guest-Session-Id': <sid> }
+                  OR { Authorization: 'Bearer <jwt>' }})
+
+5. Server side:
+   a. auth dep returns user dict with session_key.
+   b. filename guards.
+   c. event_source generator runs build_dashboard_from_file_generator(...).
+   d. Each yielded dict serialized as 'data: <json>\n\n'.
+   e. Pipeline runs (sync, blocks worker thread):
+      - load_csv_from_file → encoding detect (chardet, latin1 fallback) → pd.read_csv
+        → optional row sampling if > MAX_ROWS
+      - _reshape_if_wide_timeseries (optional)
+      - Layer 1..4 + EDA + viz
+      - state assembled
+   f. Final 'done' frame includes trace_id + response_data.
+   g. response_data persisted to dashboard_storage[trace_id]
+                              and dashboard_storage[user['session_key']].
+
+6. ProcessingPage:
+   - On each frame: update phase UI + record timings.
+   - On 'done': close last timing, persist to localStorage,
+     navigate('/dashboard').
+
+7. DashboardPage on mount:
+   - dashboardStore.refresh() → GET /api/dashboard with auth/guest headers.
+   - Backend reads dashboard_storage[user['session_key']]. Returns full payload.
+   - Tabs render from data. PDF export wires through store.
+```
+
+---
+
+## 11. OBSERVED ISSUES (PROBLEM STATEMENT)
+
+Facts about the current state. Each entry names the file(s) involved and
+describes the observable behavior or constraint. No remediation prescribed.
+
+1. **No persistence layer.** `main.py:dashboard_storage` is an in-process
+   `dict`. Restart wipes all state. Two uvicorn workers or two containers
+   would not share state. There is no database, cache, message queue, or
+   object store in the system.
+
+2. **Pipeline runs synchronously on the request worker.**
+   `build_dashboard_from_df` (and its file/streaming variants) execute the
+   full 4-layer pipeline plus rendering in the worker thread that's serving
+   the HTTP request. Wall-clock time scales with data size; for max-allowed
+   inputs this is tens of seconds. While a pipeline is running, that worker
+   is unavailable for other endpoints.
+
+3. **In-memory pandas only.** `MAX_ROWS = 500_000` is enforced via random
+   sampling in `data/parser.py`. The pipeline assumes the entire DataFrame
+   is materialised in RAM. Peak memory for a max-size dataset is ~2.3–2.5
+   GB per concurrent upload (full DF + per-column profiles + rendered chart
+   data).
+
+4. **Layer 3 correlation is O(m²·n).** `analysis/layer_3_relational.py`
+   iterates pairwise numeric columns, computes `scipy.stats.pearsonr` on
+   the aligned non-null subset of each pair. Pairwise count grows
+   quadratically with column count.
+
+5. **Orphan trace-id entries.** `main.py` writes `dashboard_storage[trace_id]`
+   in `/api/upload`, `/api/upload/stream`, and `/api/load_external`. No
+   endpoint reads from those keys. They accumulate for the lifetime of the
+   process.
+
+6. **Wide-format auto-reshape is unconditional.**
+   `pipeline.py:_reshape_if_wide_timeseries` detects `(col_)?YYYY` column
+   patterns and `pd.melt`s the DataFrame when >5 columns match and the year
+   share exceeds 30%. The decision is opaque to the user; datasets that
+   were intended to remain wide are silently transformed.
+
+7. **No request-level rate limiting.** Any caller (authenticated or guest)
+   can invoke the pipeline endpoints at full speed. There is no per-IP,
+   per-user, or per-session throttle.
+
+8. **`/api/validate_external` performs a full streamed GET.** Even when only
+   the first 4 KB are sniffed, the TCP connection completes against the
+   target. There is no HEAD pre-check.
+
+9. **Unauthenticated diagnostic endpoints.** `/debug-build-files` enumerates
+   `frontend/dist/` and `frontend/dist/assets/`. `/test-persistence/{action}`
+   reads/writes `persistence_test.txt`. Both are reachable without auth.
+
+10. **`CORSMiddleware` imported but not registered.** `main.py` imports
+    `fastapi.middleware.cors.CORSMiddleware` and never calls
+    `app.add_middleware(CORSMiddleware, ...)`. SPA and API currently share
+    an origin, so the absence has no runtime effect today.
+
+11. **`config.py.MIN_CORRELATION` drift.** `src/config.py` declares
+    `MIN_CORRELATION = 0.1`. `analysis/layer_3_relational.py` uses a literal
+    `0.5`. The config value is never read.
+
+12. **`viz/eda_visualizer.py` is unreferenced.** It exposes
+    `create_correlation_heatmap`, `create_key_indicators_bar`,
+    `create_patterns_timeline`, `create_outliers_visualization`,
+    `create_use_cases_visualization`, `create_comprehensive_eda_dashboard`.
+    None are imported by the pipeline, the API, or the chart renderer.
+
+13. **No automated tests on the request path.** A `tests/` directory exists
+    in the repo. The CI/CD pipeline (if any) does not invoke it; behavior
+    coverage of the 4 layers is informal.
+
+14. **Identifier detection thresholds are hard-coded.**
+    `utils/identifier_detector.py` uses literals (0.95, 0.98, 0.65
+    confidence cutoff, etc.). They are not surfaced via `config.py` or
+    environment.
+
+15. **`DashboardPage` re-fetches on every tab switch.** The component calls
+    `useDashboardStore.refresh()` on each `activeTab` change even though
+    `/api/dashboard` returns the same payload regardless of which tab is
+    visible.
+
+16. **Datetime detection is timezone-naive.** `analysis/layer_2_classifier.py`
+    `_detect_datetime` tries 8 explicit `strptime` formats plus a
+    `pd.to_datetime(..., errors='coerce')` fallback. None preserve timezone
+    information.
+
+17. **`agg_func` is only emitted for time-series chart specs.**
+    `analysis/layer_4_interpreter.py:select_charts` sets `agg_func` on
+    `time_series` charts (sum vs. mean based on `additive`/`rate` tag). The
+    `category_summary`/`group_comparison` builders default to `mean`
+    irrespective of tag.
+
+18. **`build_charts_from_specs` iterates the full DataFrame per chart.**
+    `viz/plotly_renderer.py` produces ~20 charts; each builder takes the
+    entire `df` as input. Related charts (e.g., multiple time-series on the
+    same datetime column) re-group and re-aggregate the same data.
+
+19. **Duplicate definitions in `main.py`.** `serve_dynamic_assets` is
+    declared twice (at `/assets/{full_path:path}` ~line 312 and
+    `/assets/{subdir}/{filename}` ~line 390). `import re` appears twice.
+    `app.mount("/assets", StaticFiles(...))` overlaps with both.
+
+20. **No Pydantic response models.** All endpoints return hand-built `dict`
+    literals. Response shape is enforced only by the frontend's reads.
+
+21. **Storage entries never expire.** Per-session payloads written to
+    `dashboard_storage[user["session_key"]]` are retained for the process
+    lifetime. There is no TTL, eviction policy, or cleanup task.
+
+22. **Single-process assumption is baked into the auth issuer cache.**
+    `auth.py:_clerk_issuer` uses `@lru_cache(maxsize=1)` and `_jwks_client`
+    similarly. JWKS is refreshed every hour per process; with multiple
+    processes each would maintain its own cache.
+
+---
+
+## 12. APPENDIX — Quick-reference public API surface
+
+### Backend (Python)
+
+| Symbol | Module | Returns |
+|--------|--------|---------|
+| `build_dashboard_from_file(file_storage, max_cols, original_filename, encoding)` | `core/pipeline` | `DashboardState` |
+| `build_dashboard_from_file_generator(file_storage, ...)` | `core/pipeline` | iterator of event dicts |
+| `build_dashboard_from_df(df, max_cols, original_filename)` | `core/pipeline` | `DashboardState` |
+| `build_dashboard_from_df_generator(df, ...)` | `core/pipeline` | iterator of event dicts |
+| `load_csv_from_file(file_storage, max_file_size, max_rows, encoding)` | `data/parser` | `LoadResult` |
+| `load_csv_from_url(url, timeout, max_rows)` | `data/parser` | `LoadResult` |
+| `load_csv_from_kaggle(slug, csv_name, timeout, max_rows)` | `data/parser` | `LoadResult` |
+| `run_syntactic_profiling(df, max_cols)` | `analysis/layer_1_profiler` | `Dict[str, SyntacticProfile]` |
+| `run_semantic_classification(profiles, df)` | `analysis/layer_2_classifier` | `Dict[str, EnrichedProfile]` |
+| `run_relational_analysis(df, enriched)` | `analysis/layer_3_relational` | `List[RelationalInsight]` |
+| `determine_kpis(enriched, insights, top_k)` | `analysis/layer_4_interpreter` | `List[Dict]` |
+| `select_charts(enriched, insights, max_charts)` | `analysis/layer_4_interpreter` | `List[Dict]` |
+| `run_eda_analysis(df, enriched, insights)` | `analysis/eda_analyzer` | `Dict` |
+| `build_charts_from_specs(df, specs, ...)` | `viz/plotly_renderer` | `List[Dict]` |
+| `is_likely_identifier_with_confidence(s, name)` | `utils/identifier_detector` | `(bool, str, float)` |
+| `require_clerk_user(creds)` | `auth` | claims dict |
+| `allow_clerk_or_guest(request, creds)` | `auth` | claims dict + `session_key` |
+
+### HTTP
+
+(See §3.4 for the full table.)
+
+### Frontend modules
+
+- `services/api.js` — `uploadFile`, `uploadFileStream`, `loadExternalSource`,
+  `validateExternalSource`, `sniffCsvFile`, `getDashboardData`.
+- `services/pdfExport.js` — `exportDashboardToPDF`.
+- `dashboardStore.js` — Zustand store (data + guest mode + export bridge).
+- `components/upload/UploadPage.jsx` — upload + guest flow.
+- `components/upload/ProcessingPage.jsx` — SSE consumer + timings.
+- `components/dashboard/DashboardPage.jsx` — tabbed dashboard.
+- `components/common/Header.jsx` — auth + export + theming.
+
+---
+
+End of document.
