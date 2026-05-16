@@ -211,6 +211,8 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             if isinstance(eda_summary, dict):
                 if ai["narrative"]:
                     eda_summary["ai_narrative"] = ai["narrative"]
+                if ai["key_indicators"]:
+                    eda_summary["key_indicators"] = ai["key_indicators"]
                 if ai["use_cases"]:
                     eda_summary["use_cases"] = ai["use_cases"]
                 if ai["recommendations"]:
@@ -428,6 +430,8 @@ def build_dashboard_from_df_generator(
             if isinstance(eda_summary, dict):
                 if ai["narrative"]:
                     eda_summary["ai_narrative"] = ai["narrative"]
+                if ai["key_indicators"]:
+                    eda_summary["key_indicators"] = ai["key_indicators"]
                 if ai["use_cases"]:
                     eda_summary["use_cases"] = ai["use_cases"]
                 if ai["recommendations"]:

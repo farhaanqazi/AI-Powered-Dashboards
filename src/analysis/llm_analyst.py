@@ -106,6 +106,10 @@ _SYSTEM_PROMPT = (
     "5. Also produce 3-5 business use_cases and 3-6 recommendations. These are "
     "qualitative strategy — no statistics, no fabricated figures. key_inputs "
     "must be real column names.\n"
+    "6. Also produce 6-12 key_indicators: the metrics a stakeholder would "
+    "actually track. NEVER pick an identifier/ID column (averaging an ID is "
+    "meaningless). Humanize names (spaces, no underscores). No numbers in your "
+    "text — the system fills exact figures from ground truth.\n"
     "4. Charts: intent must be one of "
     "category_count, distribution, category_summary, group_comparison, "
     "time_series, scatter. Use real column names for x_field/y_field.\n"
@@ -114,6 +118,14 @@ _SYSTEM_PROMPT = (
 
 _SCHEMA_HINT = {
     "narrative": "2-4 sentence executive summary of what this dataset is about and the single most important takeaway (NO numbers).",
+    "key_indicators": [
+        {
+            "column": "real column name (NEVER an identifier/ID column)",
+            "metric": "one of: mean, median, sum, min, max, std, top_category",
+            "indicator": "humanized headline metric name, spaces not underscores (NO numbers)",
+            "description": "one short business sentence on what it tells you (NO numbers)",
+        }
+    ],
     "use_cases": [
         {
             "use_case": "short business use-case title",
@@ -263,12 +275,49 @@ def _build_charts(
     return out
 
 
+def _build_key_indicators(
+    raw: List[Dict[str, Any]], enriched_profiles: Dict[str, EnrichedProfile]
+) -> List[Dict[str, Any]]:
+    """AI picks which columns matter and writes the prose; the figure itself
+    is computed here from ground truth. Identifiers are hard-excluded — an
+    averaged ID is the nonsense we are removing."""
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for item in raw[:14]:
+        col = item.get("column")
+        if col not in enriched_profiles or col in seen:
+            continue
+        profile = enriched_profiles[col]
+        if profile.role == "identifier":
+            continue
+        indicator = str(item.get("indicator") or "").strip()
+        desc = str(item.get("description") or "").strip()
+        if not indicator:
+            continue
+        metric = str(item.get("metric") or "mean").lower()
+        value = _kpi_value(profile, metric)
+        if value == "N/A":
+            continue
+        seen.add(col)
+        out.append({
+            "indicator": indicator,
+            "description": f"{desc} ({value})" if desc else str(value),
+            "value": value,
+            "type": metric,
+        })
+    return out
+
+
 def _build_eda(
     parsed: Dict[str, Any], enriched_profiles: Dict[str, EnrichedProfile]
-) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Rebuild use_cases / recommendations in the exact heuristic shape the
-    frontend expects, keeping only real column names in key_inputs."""
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Rebuild key_indicators / use_cases / recommendations in the exact
+    heuristic shape the frontend expects, keeping only real, non-identifier
+    columns."""
     names = set(enriched_profiles.keys())
+    key_indicators = _build_key_indicators(
+        parsed.get("key_indicators") or [], enriched_profiles
+    )
     use_cases: List[Dict[str, Any]] = []
     for u in (parsed.get("use_cases") or [])[:6]:
         title = str(u.get("use_case") or "").strip()
@@ -292,7 +341,7 @@ def _build_eda(
         recommendations.append(
             {"title": title, "description": desc, "priority": priority}
         )
-    return use_cases, recommendations
+    return key_indicators, use_cases, recommendations
 
 
 def run_ai_analyst(
@@ -309,7 +358,8 @@ def run_ai_analyst(
     pipeline behaves exactly as before the AI layer existed.
     """
     fallback = {"kpis": fallback_kpis, "chart_specs": fallback_specs,
-                "narrative": "", "use_cases": [], "recommendations": []}
+                "narrative": "", "key_indicators": [],
+                "use_cases": [], "recommendations": []}
 
     if not config.AI_ANALYST_ENABLED or not config.GROQ_API_KEY:
         return fallback
@@ -354,7 +404,7 @@ def run_ai_analyst(
         )
         charts = _build_charts(parsed.get("charts") or [], enriched_profiles)
         narrative = str(parsed.get("narrative") or "").strip()
-        ai_use_cases, ai_recs = _build_eda(parsed, enriched_profiles)
+        ai_kis, ai_use_cases, ai_recs = _build_eda(parsed, enriched_profiles)
     except Exception as e:
         logger.warning(f"AI analyst output rejected, using heuristic fallback: {e}")
         return fallback
@@ -394,12 +444,14 @@ def run_ai_analyst(
     logger.info(
         f"AI analyst: {len(kpis)} KPIs, {len(charts)} charts, "
         f"narrative={'yes' if narrative else 'no'}, "
+        f"{len(ai_kis)} key-indicators, "
         f"{len(ai_use_cases)} use-cases, {len(ai_recs)} recs"
     )
     return {
         "kpis": kpis,
         "chart_specs": charts,
         "narrative": narrative,
+        "key_indicators": ai_kis,
         "use_cases": ai_use_cases,
         "recommendations": ai_recs,
     }
@@ -501,6 +553,12 @@ def arbitrate_column_roles(
         logger.warning(f"Role arbitration call failed, keeping heuristic: {e}")
         return {}
 
+    import re
+    _ID_NAME = re.compile(
+        r"(?:^|_)(id|uuid|guid|nhs|ssn|number|num|no|code|key|ref|account|"
+        r"acct|iban|mrn|index)(?:_|$)", re.IGNORECASE
+    )
+
     changes: Dict[str, str] = {}
     for col, new_role in (parsed.get("roles") or {}).items():
         new_role = str(new_role).strip().lower()
@@ -510,6 +568,15 @@ def arbitrate_column_roles(
             and new_role != enriched_profiles[col].role
         ):
             old = enriched_profiles[col].role
+            # Guard: never let the model un-identify a true key. Sequential /
+            # near-unique values or an ID-style name mean it IS an identifier
+            # regardless of what the model thinks (NHS_Number_Formatted etc.).
+            if old == "identifier" and new_role != "identifier":
+                uniq_ratio = enriched_profiles[col].unique_count / max(
+                    len(df), 1
+                )
+                if uniq_ratio > 0.9 or _ID_NAME.search(col):
+                    continue
             enriched_profiles[col].role = new_role
             if new_role != "identifier":
                 enriched_profiles[col].semantic_tags = [

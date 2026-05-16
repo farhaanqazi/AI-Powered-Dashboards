@@ -1,5 +1,5 @@
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
+import { toCanvas } from 'html-to-image';
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
@@ -25,13 +25,14 @@ async function captureTab({ tab, setActiveTab, getCaptureEl }) {
   const el = getCaptureEl();
   if (!el) return null;
 
-  return html2canvas(el, {
-    scale: 2,
-    useCORS: true,
+  // html-to-image renders via the browser (SVG foreignObject), so modern CSS
+  // colour functions (oklch / color-mix injected by DaisyUI v4) are resolved
+  // by the browser itself. html2canvas re-implemented its own CSS colour
+  // parser and threw on those, killing the export silently.
+  return toCanvas(el, {
+    pixelRatio: 2,
     backgroundColor: PDF_BG,
-    logging: false,
-    windowWidth: el.scrollWidth,
-    windowHeight: el.scrollHeight,
+    cacheBust: true,
   });
 }
 

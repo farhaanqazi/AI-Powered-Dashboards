@@ -143,6 +143,8 @@ def build_charts_from_specs(
                         chart_data['x_title'] = spec['x_label']
                     if spec.get('y_label'):
                         chart_data['y_title'] = spec['y_label']
+                    if spec.get('rationale'):
+                        chart_data['ai_insight'] = spec['rationale']
                 charts.append(chart_data) # FIX: Append to list
                 chart_ids.add(chart_id)
             else:
