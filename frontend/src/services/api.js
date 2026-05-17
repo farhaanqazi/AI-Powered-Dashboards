@@ -68,7 +68,18 @@ export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
 
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '');
-    throw new Error(text || `Upload failed with status ${response.status}`);
+    let msg = text;
+    try {
+      // FastAPI errors come back as {"detail": "..."} — show the plain
+      // message, never the raw JSON envelope.
+      const parsed = JSON.parse(text);
+      msg = typeof parsed?.detail === 'string'
+        ? parsed.detail
+        : (Array.isArray(parsed?.detail)
+            ? parsed.detail.map((d) => d?.msg).filter(Boolean).join('; ')
+            : '') || text;
+    } catch { /* not JSON — keep raw text */ }
+    throw new Error(msg || `Upload failed with status ${response.status}`);
   }
 
   const reader = response.body.getReader();
@@ -181,6 +192,14 @@ export const patchRegistry = async (traceId, overrides) => {
   const response = await api.patch(
     `/dashboard/${encodeURIComponent(traceId || 'current')}/registry`,
     { overrides: overrides || [], confirm: true },
+  );
+  return response.data;
+};
+
+export const grantAiConsent = async (traceId) => {
+  const response = await api.post(
+    `/dashboard/${encodeURIComponent(traceId || 'current')}/ai-consent`,
+    { consent: true },
   );
   return response.data;
 };

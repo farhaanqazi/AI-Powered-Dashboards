@@ -51,10 +51,12 @@ def test_high_confidence_non_pii_auto_accepts():
     assert ok and reasons == []
 
 
-def test_pii_never_auto_accepts():
+def test_pii_does_not_block_dashboard_acceptance():
+    # PII model change: the deterministic dashboard always builds (no egress);
+    # PII alone no longer prevents auto-accept. It only gates AI via consent.
     ok, reasons = evaluate_acceptance(_contract(0.99, pii=True))
-    assert ok is False
-    assert any("sensitive personal data" in r for r in reasons)
+    assert ok is True
+    assert reasons == []
 
 
 def test_low_confidence_needs_review():
@@ -71,10 +73,17 @@ def test_missing_grain_needs_review():
 
 # ---- S6.2 DQ report ----
 
-def test_dq_report_blocked_on_pii():
-    rep = build_dq_report(_contract(0.9, pii=True), None, type("C", (), {"vetoes": [], "flags": []})())
-    assert rep.status == "blocked"
-    assert rep.pii_blocked is True
+def test_dq_report_pii_requires_ai_consent_not_blocked():
+    crit = type("C", (), {"vetoes": [], "flags": []})()
+    rep = build_dq_report(_contract(0.9, pii=True), None, crit)
+    assert rep.status != "blocked"          # dashboard always builds
+    assert rep.pii_present is True
+    assert rep.ai_consent is False
+    assert rep.ai_consent_required is True
+    # Once the user consents, the gate clears.
+    rep2 = build_dq_report(_contract(0.9, pii=True), None, crit, ai_consent=True)
+    assert rep2.ai_consent is True
+    assert rep2.ai_consent_required is False
 
 
 def test_dq_report_ok_when_accepted():

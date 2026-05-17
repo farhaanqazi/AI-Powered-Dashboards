@@ -8,7 +8,12 @@
 .dash-shell {
   position: relative;
   min-height: calc(100vh - 8rem);
+  /* `clip` clips the aurora/particle bleed just like `hidden` but does NOT
+     create a scroll container, so the descendant sticky tab bar still pins to
+     the viewport. `hidden` is the pre-`clip` fallback (older browsers just
+     lose the freeze, nothing breaks). */
   overflow: hidden;
+  overflow: clip;
   background:
     radial-gradient(1200px 800px at 10% -10%, rgba(96, 165, 250, 0.18), transparent 60%),
     radial-gradient(1000px 700px at 110% 10%, rgba(168, 85, 247, 0.16), transparent 60%),
@@ -244,6 +249,24 @@
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
+  /* Frozen on top: stays pinned to the viewport while the page scrolls.
+     The translucent backdrop + blur keep scrolled content from bleeding
+     through the grid gaps; z-index sits above the cards. */
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  padding: 0.7rem 0;
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(12px) saturate(140%);
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+/* Don't freeze while exporting to image (html2canvas needs static layout). */
+.dash-shell.dash-export-mode .dash-tabs {
+  position: static;
+  background: transparent;
+  border-bottom: 0;
+  padding: 0;
 }
 @media (min-width: 640px) {
   .dash-shell .dash-tabs { grid-template-columns: repeat(3, 1fr); }

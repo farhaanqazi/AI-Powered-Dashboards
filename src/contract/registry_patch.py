@@ -157,15 +157,21 @@ def apply_registry_overrides(
         if isinstance(payload.get("kpis"), list):
             payload["kpis"] = [k for k in payload["kpis"] if _kpi_ok(k)]
 
-    # Refresh the data-quality verdict: human-approved & locked ⇒ ok, unless
-    # still PII-blocked (which review cannot clear).
+    # Refresh the data-quality verdict: human-approved & locked ⇒ ok. PII no
+    # longer yields "blocked" — the dashboard always builds; PII only gates the
+    # AI layer behind separate, explicit consent (preserved here, not cleared).
     dq = (profile.get("data_quality") or {})
     report = dq.get("report") or {}
-    report["status"] = "blocked" if locked.pii_blocked else "ok"
+    ai_consent = bool(dq.get("ai_consent", report.get("ai_consent", False)))
+    report["status"] = "ok"
     report["auto_accepted"] = False
     report["human_reviewed"] = True
     report["recomputed"] = recomputed
+    report["pii_present"] = bool(locked.pii_blocked)
+    report["ai_consent"] = ai_consent
+    report["ai_consent_required"] = bool(locked.pii_blocked) and not ai_consent
     dq["report"] = report
+    dq["ai_consent"] = ai_consent
     profile["data_quality"] = dq
     payload["dataset_profile"] = profile
     return payload

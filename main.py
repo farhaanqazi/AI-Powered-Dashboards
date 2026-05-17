@@ -34,8 +34,11 @@ from src.api.schemas import (
     DashboardResponse,
     RegistryPatchRequest,
     RegistryPatchResponse,
+    AiConsentRequest,
+    AiConsentResponse,
 )
 from src.contract.registry_patch import apply_registry_overrides
+from src.contract.ai_consent import apply_ai_consent
 from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
 from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
@@ -159,13 +162,28 @@ async def _read_upload_capped(dataset: UploadFile) -> bytes:
             status_code=413,
             detail=f"File has {ncols} columns; limit is {config.MAX_UPLOAD_COLS}.",
         )
-    # Row cap: cheap newline count (upper bound on data rows).
-    nrows = contents.count(b"\n")
-    if nrows > config.MAX_UPLOAD_ROWS:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File has ~{nrows} rows; limit is {config.MAX_UPLOAD_ROWS}.",
-        )
+    # Row cap. A raw newline count is only a cheap UPPER bound — Excel exports
+    # routinely pad a worksheet with millions of empty ",,,," rows, which a
+    # newline count would wrongly reject. So trust the fast count only when it
+    # is already under the limit; otherwise count REAL data rows (lines with
+    # at least one byte that isn't a separator/quote/whitespace) so padded
+    # sheets pass while genuinely oversized files are still blocked.
+    if contents.count(b"\n") > config.MAX_UPLOAD_ROWS:
+        _PAD = b" ,;\t\r\"'"
+        data_lines = 0
+        for line in contents.splitlines():
+            if line.strip(_PAD):  # empty / separator-only padding -> skip
+                data_lines += 1
+        nrows = max(data_lines - 1, 0)  # exclude the header row
+        if nrows > config.MAX_UPLOAD_ROWS:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"This file has about {nrows:,} rows of data, which is "
+                    f"over the {config.MAX_UPLOAD_ROWS:,}-row limit. Please "
+                    f"filter or split it before uploading."
+                ),
+            )
     return contents
 
 
@@ -529,6 +547,55 @@ async def api_patch_registry(
         "trace_id": trace_id,
         "contract_version": contract.get("version", 1),
         "locked": bool(contract.get("locked", False)),
+        "data": updated,
+    }
+
+
+@app.post("/api/dashboard/{trace_id}/ai-consent", response_model=AiConsentResponse)
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_ai_consent(
+    request: Request,
+    trace_id: str,
+    body: AiConsentRequest,
+    user=Depends(allow_clerk_or_guest),
+):
+    """Explicit user opt-in to run AI Insights on a PII-bearing dataset.
+
+    The deterministic dashboard already built without any egress. This re-runs
+    ONLY the AI layer against the transiently-cached cleaned frame, full-send
+    (no redaction) — the user has accepted that. Sharing one's own sensitive
+    data is the user's prerogative and responsibility.
+    """
+    if not body.consent:
+        raise HTTPException(
+            status_code=400,
+            detail="Please confirm you want AI to use this data before continuing.",
+        )
+
+    session_key = user["session_key"]
+    payload = get_repository().get(session_key)
+    if not payload:
+        raise HTTPException(status_code=404, detail="No dashboard found for this session yet.")
+
+    try:
+        updated = apply_ai_consent(payload)
+    except ValueError as e:
+        # Consent may have been recorded even if AI couldn't run (frame
+        # expired) — persist whatever apply_ai_consent returned is not
+        # available here, so just surface the friendly message.
+        raise HTTPException(status_code=409, detail=str(e))
+
+    get_repository().save(session_key, trace_id=trace_id, payload=updated)
+
+    consent = bool(
+        ((updated.get("dataset_profile") or {}).get("data_quality") or {}).get(
+            "ai_consent", True
+        )
+    )
+    return {
+        "status": "success",
+        "trace_id": trace_id,
+        "ai_consent": consent,
         "data": updated,
     }
 

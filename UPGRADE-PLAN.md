@@ -80,7 +80,7 @@
 
 ## Architectural invariants (must hold across all phases)
 - Deterministic numbers, AI decorative: every displayed figure traces to L1–L3/EDA via a provenance token; the LLM never computes or mutates a value.
-- PII is fail-closed: `pii_blocked` blocks LLM egress entirely; human approval does not unblock it.
+- ~~PII is fail-closed: `pii_blocked` blocks LLM egress entirely; human approval does not unblock it.~~ **SUPERSEDED 2026-05-17 (product decision):** the deterministic dashboard sends nothing externally, so it always builds regardless of PII. The LLM/AI Insights layer is the only egress and is now gated behind **explicit user consent** (`ai_consent`, surfaced as `ai_consent_required`), not a permanent wall — sharing one's own sensitive data is the user's prerogative and responsibility. `pii_blocked` is retained meaning "PII detected → AI needs consent" (it is still never cleared by a *role* override; consent is a separate, deliberate opt-in via `POST /api/dashboard/{trace_id}/ai-consent`). On consent the AI layer re-runs full-send (no redaction) against the transiently-cached frame; no new storage backend.
 - Contracts are immutable post-compile; the only mutation path is a HITL override producing a new locked version.
 - No new storage backend: the contract serializes into the existing `DashboardRecord`.
 - No hardcoded confidence/threshold literals in code; all live in `src/config.py`.

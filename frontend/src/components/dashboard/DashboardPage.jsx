@@ -190,7 +190,7 @@ const DashboardPage = () => {
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" />
               {hasData ? 'Active dataset' : 'Mission Control'}
             </div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight truncate" title={dashboardData?.original_filename || ''}>
+            <h1 className="text-3xl md:text-4xl font-bold leading-[1.2] tracking-tight truncate pb-1" title={dashboardData?.original_filename || ''}>
               <span className="bg-gradient-to-r from-sky-300 via-fuchsia-300 to-amber-200 bg-clip-text text-transparent">
                 {hasData ? cleanDatasetName(dashboardData.original_filename) : 'Dataset Intelligence'}
               </span>

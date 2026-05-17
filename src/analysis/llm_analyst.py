@@ -69,14 +69,17 @@ def _ground_truth(
     relational_insights: List[RelationalInsight],
     eda_summary: Dict[str, Any],
     contract: Any = None,
+    redact_sensitive: bool = True,
 ) -> Dict[str, Any]:
     """The ONLY numbers the model is allowed to reason about.
 
-    Contract-validated: sensitive/PII columns never expose raw category
-    values (``top_categories`` can leak emails, names, account numbers). Only
-    aggregate, non-identifying stats survive for those columns.
+    Contract-validated: by default sensitive/PII columns never expose raw
+    category values (``top_categories`` can leak emails, names, account
+    numbers). When the user has explicitly consented to AI on a PII dataset,
+    ``redact_sensitive=False`` sends everything (full consent — the user's
+    prerogative and responsibility).
     """
-    sensitive = _sensitive_columns(contract)
+    sensitive = set() if not redact_sensitive else _sensitive_columns(contract)
     columns = []
     for name, p in list(enriched_profiles.items())[: config.MAX_COLS]:
         stats = {k: _f(v) for k, v in (p.stats or {}).items()}
@@ -390,6 +393,7 @@ def run_ai_analyst(
     fallback_kpis: List[Dict[str, Any]],
     fallback_specs: List[Dict[str, Any]],
     contract: Any = None,
+    redact_sensitive: bool = True,
 ) -> Dict[str, Any]:
     """Returns {"kpis", "chart_specs", "narrative"}.
 
@@ -412,7 +416,10 @@ def run_ai_analyst(
         return fallback
 
     try:
-        payload = _ground_truth(enriched_profiles, relational_insights, eda_summary, contract)
+        payload = _ground_truth(
+            enriched_profiles, relational_insights, eda_summary, contract,
+            redact_sensitive=redact_sensitive,
+        )
         client = Groq(api_key=config.GROQ_API_KEY, timeout=config.GROQ_TIMEOUT_SECONDS)
         resp = client.chat.completions.create(
             model=config.GROQ_MODEL,

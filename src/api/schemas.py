@@ -114,3 +114,20 @@ class RegistryPatchResponse(BaseModel):
     contract_version: int
     locked: bool
     data: DashboardPayload
+
+
+class AiConsentRequest(BaseModel):
+    """Body of the explicit 'use AI on my PII data' opt-in. ``consent`` must
+    be True — a deliberate, non-default human action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    consent: bool = False
+
+
+class AiConsentResponse(BaseModel):
+    model_config = _PERMISSIVE
+    status: str
+    trace_id: str
+    ai_consent: bool
+    data: DashboardPayload

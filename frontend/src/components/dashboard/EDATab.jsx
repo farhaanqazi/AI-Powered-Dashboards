@@ -1,4 +1,5 @@
 import React from 'react';
+import { useDashboardStore } from '../../dashboardStore';
 
 const corrTone = (v) => {
   const a = Math.abs(v);
@@ -33,6 +34,61 @@ const EDATab = ({ data }) => {
     patterns_and_relationships,
     recommendations = [],
   } = eda_summary;
+
+  const report = data?.dataset_profile?.data_quality?.report || {};
+  const consentNeeded =
+    !!eda_summary.ai_consent_required || !!report.ai_consent_required;
+
+  const grantAiConsent = useDashboardStore((s) => s.grantAiConsent);
+  const aiConsentSubmitting = useDashboardStore((s) => s.aiConsentSubmitting);
+  const aiConsentError = useDashboardStore((s) => s.aiConsentError);
+
+  if (consentNeeded) {
+    const piiCols = Object.keys(report.pii_columns || {});
+    return (
+      <section id="eda-section" className="analysis-section">
+        <div className="mb-6">
+          <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">AI analysis</div>
+          <h2 className="text-xl md:text-2xl font-semibold text-slate-100">AI Insights are off for this dataset</h2>
+        </div>
+        <div className="glass-card p-6 space-y-4 border-rose-400/40">
+          <div className="text-sm text-slate-200">
+            <i className="fas fa-user-shield mr-2 text-rose-300" />
+            This dataset looks like it contains <b>personal data</b>
+            {piiCols.length ? <> (in <span className="text-rose-200 font-semibold">{piiCols.join(', ')}</span>)</> : null}.
+            Your charts and metrics are already built and never left this
+            server. AI Insights are the only feature that sends data to an
+            external AI service, so it’s held until you say it’s OK.
+          </div>
+          <div className="text-sm text-slate-400">
+            If you turn it on, the full dataset — including the personal
+            columns — is sent for analysis. That’s your decision and your
+            responsibility.
+          </div>
+          {aiConsentError && (
+            <div className="text-sm text-rose-200">
+              <i className="fas fa-triangle-exclamation mr-2" />{aiConsentError}
+            </div>
+          )}
+          <button
+            type="button"
+            disabled={aiConsentSubmitting}
+            onClick={() => { grantAiConsent().catch(() => {}); }}
+            className="inline-flex items-center gap-2 rounded-lg text-white text-sm font-semibold px-5 py-2.5 whitespace-nowrap disabled:opacity-50"
+            style={{
+              background: aiConsentSubmitting ? '#9f1239' : '#e11d48',
+              border: '1px solid rgba(253,164,175,0.6)',
+              boxShadow: '0 4px 14px rgba(225,29,72,0.35)',
+              cursor: aiConsentSubmitting ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <i className={`fas ${aiConsentSubmitting ? 'fa-spinner fa-spin' : 'fa-robot'}`} />
+            {aiConsentSubmitting ? 'Enabling AI…' : 'Yes, use AI on this data'}
+          </button>
+        </div>
+      </section>
+    );
+  }
 
   const correlations = patterns_and_relationships?.correlations || [];
   const outliers = patterns_and_relationships?.outliers || [];

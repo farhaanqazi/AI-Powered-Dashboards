@@ -318,7 +318,7 @@ const ProcessingPage = () => {
           {/* Headline + quote + progress */}
           <div className="text-center md:text-left">
             <div className="mb-1 text-xs uppercase tracking-[0.3em] text-white/40">Crunching numbers</div>
-            <h1 key={currentPhase?.label} className="proc-phase-fade bg-gradient-to-r from-blue-300 via-fuchsia-300 to-amber-200 bg-clip-text text-3xl font-bold tracking-tight text-transparent md:text-5xl">
+            <h1 key={currentPhase?.label} className="proc-phase-fade bg-gradient-to-r from-blue-300 via-fuchsia-300 to-amber-200 bg-clip-text pb-1 text-3xl font-bold leading-[1.2] tracking-tight text-transparent md:text-5xl">
               {currentPhase?.label || 'Starting…'}
             </h1>
             <p className="mt-3 text-base text-white/70 md:text-lg">{phaseMessage || 'Working…'}</p>

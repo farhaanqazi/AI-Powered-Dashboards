@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getDashboardData, patchRegistry } from './services/api';
+import { getDashboardData, patchRegistry, grantAiConsent } from './services/api';
 
 const GUEST_KEY = 'dataInsight:guestMode';
 const GUEST_SID_KEY = 'dataInsight:guestSessionId';
@@ -87,6 +87,29 @@ export const useDashboardStore = create((set, get) => ({
         reviewSubmitting: false,
         reviewError:
           err?.response?.data?.detail || err.message || 'Schema review failed',
+      });
+      throw err;
+    }
+  },
+  // PII consent: the dashboard already built; this opts AI Insights in.
+  aiConsentSubmitting: false,
+  aiConsentError: null,
+  async grantAiConsent() {
+    if (get().aiConsentSubmitting) return;
+    set({ aiConsentSubmitting: true, aiConsentError: null });
+    try {
+      const resp = await grantAiConsent(get().data?.trace_id);
+      set({
+        data: resp.data || resp,
+        aiConsentSubmitting: false,
+        lastUpdated: Date.now(),
+      });
+    } catch (err) {
+      set({
+        aiConsentSubmitting: false,
+        aiConsentError:
+          err?.response?.data?.detail || err.message ||
+          'Could not enable AI for this dataset',
       });
       throw err;
     }

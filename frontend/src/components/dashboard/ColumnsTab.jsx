@@ -17,6 +17,10 @@ const roleTone = (role) => {
   }
 };
 
+// Mirrors backend AUTO_ACCEPT_CONFIDENCE — used only as a display hint to
+// decide which rows to flag for the user; not a pipeline threshold.
+const LOW_CONFIDENCE = 0.7;
+
 const SORTABLE = [
   { key: 'name',          label: 'Column Name' },
   { key: 'dtype',         label: 'Data Type' },
@@ -38,8 +42,30 @@ const ColumnsTab = ({ data }) => {
   const reviewError = useDashboardStore((s) => s.reviewError);
 
   const contract = dataset_profile?.contract;
-  const report = dataset_profile?.data_quality?.report;
+  const dq = dataset_profile?.data_quality;
+  const report = dq?.report;
   const needsReview = !!report && report.status && report.status !== 'ok';
+
+  // Which specific columns the user should actually look at: any column the
+  // critic vetoed/flagged, plus any classified with low certainty. This is
+  // the same evidence the backend used for the "needs review" verdict — we
+  // just make it visible per row instead of leaving it as "some columns".
+  const flagInfo = React.useMemo(() => {
+    const m = new Map();   // name -> reason
+    const add = (n, why) => { if (n && !m.has(n)) m.set(n, why); };
+    (report?.vetoes || dq?.vetoes || []).forEach((v) =>
+      add(v?.column, 'Type was auto-corrected — please confirm it’s right.'));
+    (report?.flags || dq?.flags || []).forEach((f) =>
+      (f?.columns || []).forEach((c) => add(c, f?.detail || 'Flagged for a quick check.')));
+    (dataset_profile.columns || []).forEach((c) => {
+      if (typeof c.confidence === 'number' && c.confidence > 0 && c.confidence < LOW_CONFIDENCE)
+        add(c.name, `Type detected with low certainty (${Math.round(c.confidence * 100)}%).`);
+    });
+    return m;
+  }, [report, dq, dataset_profile]);
+  const flagSet = flagInfo;
+  const flaggedNames = [...flagInfo.keys()];
+  const reasons = report?.reasons || [];
   // Read-only by default; the editor appears only when the dataset needs
   // review OR the user explicitly enters edit mode (no silent regression of
   // the clean profile view).
@@ -79,11 +105,16 @@ const ColumnsTab = ({ data }) => {
   );
 
   const sorted = [...filtered].sort((a, b) => {
-    if (!sortConfig.key) return 0;
-    const av = a[sortConfig.key], bv = b[sortConfig.key];
-    if (av < bv) return sortConfig.direction === 'asc' ? -1 : 1;
-    if (av > bv) return sortConfig.direction === 'asc' ? 1 : -1;
-    return 0;
+    if (sortConfig.key) {
+      const av = a[sortConfig.key], bv = b[sortConfig.key];
+      if (av < bv) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (av > bv) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    }
+    // Default order: columns that need a look come first.
+    const fa = flagSet.has(a.name) ? 0 : 1;
+    const fb = flagSet.has(b.name) ? 0 : 1;
+    return fa - fb;
   });
 
   const handleSort = (key) => {
@@ -148,13 +179,22 @@ const ColumnsTab = ({ data }) => {
       {/* S7.3: non-skippable schema-review confirm */}
       {editable && (
         <div className={`glass-soft p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 ${needsReview ? 'border-amber-400/40' : 'border-emerald-400/30'}`}>
-          <div className="text-sm text-slate-200">
-            <i className={`fas ${needsReview ? 'fa-user-pen text-amber-300' : 'fa-circle-check text-emerald-300'} mr-2`} />
-            {needsReview
-              ? 'Some column types need a quick check. Fix any below, then confirm — this step can’t be skipped.'
-              : 'Column types look right. You can still adjust them and re-save.'}
-            {Object.keys(edits).length > 0 && (
-              <span className="ml-2 neon-badge neon-amber">{Object.keys(edits).length} change{Object.keys(edits).length > 1 ? 's' : ''}</span>
+          <div className="text-sm text-slate-200 space-y-1.5">
+            <div>
+              <i className={`fas ${needsReview ? 'fa-user-pen text-amber-300' : 'fa-circle-check text-emerald-300'} mr-2`} />
+              {needsReview
+                ? (flaggedNames.length
+                    ? <>Check {flaggedNames.length === 1 ? 'this column' : `these ${flaggedNames.length} columns`} (highlighted below, listed first): <span className="font-semibold text-amber-200">{flaggedNames.join(', ')}</span>. Fix the Type if it’s wrong, then confirm — this step can’t be skipped.</>
+                    : <>Review the column types below and correct any that look wrong, then confirm — this step can’t be skipped.</>)
+                : 'Column types look right. You can still adjust them and re-save.'}
+              {Object.keys(edits).length > 0 && (
+                <span className="ml-2 neon-badge neon-amber">{Object.keys(edits).length} change{Object.keys(edits).length > 1 ? 's' : ''}</span>
+              )}
+            </div>
+            {needsReview && reasons.length > 0 && (
+              <ul className="text-xs text-slate-400 list-disc list-inside">
+                {reasons.map((r, i) => <li key={i}>{r}</li>)}
+              </ul>
             )}
           </div>
           <button
@@ -210,9 +250,27 @@ const ColumnsTab = ({ data }) => {
               </tr>
             </thead>
             <tbody>
-              {sorted.map((col, index) => (
-                <tr key={index}>
-                  <td className="font-medium text-slate-100">{col.name}</td>
+              {sorted.map((col, index) => {
+                const flagged = flagSet.has(col.name);
+                return (
+                <tr
+                  key={index}
+                  style={flagged ? {
+                    background: 'rgba(245,158,11,0.08)',
+                    boxShadow: 'inset 3px 0 0 #f59e0b',
+                  } : undefined}
+                >
+                  <td className="font-medium text-slate-100">
+                    {col.name}
+                    {flagged && (
+                      <span
+                        className="ml-2 neon-badge neon-amber align-middle"
+                        title={flagInfo.get(col.name)}
+                      >
+                        <i className="fas fa-circle-exclamation mr-1" />Check
+                      </span>
+                    )}
+                  </td>
                   <td><span className="mono">{col.dtype}</span></td>
                   <td>
                     <div className="text-slate-200">{col.null_count ?? 0}</div>
@@ -270,7 +328,8 @@ const ColumnsTab = ({ data }) => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

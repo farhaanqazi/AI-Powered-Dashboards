@@ -98,6 +98,10 @@ def _contract_into_profile(viz_profile: dict, contract, ingest, crit, dq=None) -
         "cleaning": ingest.manifest.model_dump(mode="json"),
         "vetoes": [v.model_dump() for v in crit.vetoes],
         "flags": [f.model_dump() for f in crit.flags],
+        # Mutable runtime state (NOT in the frozen contract): whether the user
+        # has consented to AI on this PII-bearing dataset. The consent endpoint
+        # flips this and re-runs the AI layer.
+        "ai_consent": bool(getattr(dq, "ai_consent", False)) if dq is not None else False,
         "report": dq.model_dump(mode="json") if dq is not None else None,
     }
 
@@ -308,12 +312,17 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                 logger.exception(msg)
                 raise
 
-            # PII fail-closed: if egress is blocked, the LLM is NEVER called.
-            # Human approval does not unblock it (architectural invariant).
+            # PII model: the deterministic dashboard always builds (nothing
+            # leaves the server). The AI layer is the only egress, so when PII
+            # is present it is gated behind explicit user consent. No consent
+            # exists at first build → skip AI, flag the dataset so the UI can
+            # ask. The consent endpoint later re-runs AI on the cached frame.
             if ingest.pii_blocked:
-                logger.warning(
-                    "PII egress blocked; skipping LLM analyst entirely."
+                logger.info(
+                    "PII detected; AI Insights gated until the user consents."
                 )
+                if isinstance(eda_summary, dict):
+                    eda_summary["ai_consent_required"] = True
             else:
                 ai = run_ai_analyst(
                     enriched_profiles, relational_insights, eda_summary,
@@ -575,9 +584,11 @@ def build_dashboard_from_df_generator(
             tracer.record_chart_selection(trace_id, chart_specs)
 
             if ingest.pii_blocked:
-                logger.warning(
-                    "PII egress blocked; skipping LLM analyst entirely."
+                logger.info(
+                    "PII detected; AI Insights gated until the user consents."
                 )
+                if isinstance(eda_summary, dict):
+                    eda_summary["ai_consent_required"] = True
             else:
                 ai = run_ai_analyst(
                     enriched_profiles, relational_insights, eda_summary,

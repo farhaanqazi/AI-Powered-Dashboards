@@ -53,15 +53,22 @@ def test_override_to_identifier_drops_its_charts_and_kpis():
     assert p["dataset_profile"]["data_quality"]["report"]["human_reviewed"] is True
 
 
-def test_human_override_cannot_clear_pii_block():
+def test_human_override_cannot_clear_pii_detection():
+    # A role override never clears PII *detection* (pii_blocked stays True),
+    # but PII no longer "blocks": the dashboard builds and status is ok. AI is
+    # gated separately by explicit consent (ai_consent_required), which a role
+    # override does not grant.
     pay = _payload()
     c = pay["dataset_profile"]["contract"]
     c["pii_blocked"] = True
     c["fields"]["region"]["sensitivity"] = "sensitive"
     out = apply_registry_overrides(pay, [{"name": "region", "sensitivity": "public"}])
     oc = out["dataset_profile"]["contract"]
-    assert oc["pii_blocked"] is True  # fail-closed: review never unblocks
-    assert out["dataset_profile"]["data_quality"]["report"]["status"] == "blocked"
+    assert oc["pii_blocked"] is True  # PII detection is not role-overridable
+    rep = out["dataset_profile"]["data_quality"]["report"]
+    assert rep["status"] == "ok"
+    assert rep["ai_consent_required"] is True
+    assert rep["ai_consent"] is False
 
 
 def test_missing_contract_raises():

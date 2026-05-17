@@ -71,7 +71,10 @@ PII_BLOCK_EGRESS = _env_bool("PII_BLOCK_EGRESS", True)
 
 # Upload hard caps (S0.4). Enforced on the request stream, before full load.
 MAX_UPLOAD_BYTES = int(os.environ.get("MAX_UPLOAD_BYTES", 100 * 1024 * 1024))
-MAX_UPLOAD_ROWS = int(os.environ.get("MAX_UPLOAD_ROWS", 1_000_000))
+# A full Excel worksheet is 1,048,576 rows incl. header. The row cap must
+# admit a completely-filled sheet of real data, so default to that size.
+EXCEL_MAX_SHEET_ROWS = 1_048_576
+MAX_UPLOAD_ROWS = int(os.environ.get("MAX_UPLOAD_ROWS", EXCEL_MAX_SHEET_ROWS))
 MAX_UPLOAD_COLS = int(os.environ.get("MAX_UPLOAD_COLS", 512))
 
 # SSRF hardening for URL ingestion (S0.3).

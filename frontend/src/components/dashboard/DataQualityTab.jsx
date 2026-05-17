@@ -1,13 +1,14 @@
 import React from 'react';
+import { useDashboardStore } from '../../dashboardStore';
 
 // Phase 7 (S7.4): surfaces the backend DataQualityReport — cleaning manifest,
-// invariant vetoes/flags, PII verdict and the review status. Read-only; the
-// editable role corrections live in the Columns tab (S7.3).
+// invariant vetoes/flags, PII verdict and the review status. The PII consent
+// opt-in (AI Insights gate) lives here too — the dashboard itself always
+// builds; only AI egress needs the user's explicit consent.
 
 const STATUS_TONE = {
   ok: { c: 'neon-emerald', i: 'fa-circle-check', t: 'Looks good' },
   review: { c: 'neon-amber', i: 'fa-user-pen', t: 'Needs your review' },
-  blocked: { c: 'neon-rose', i: 'fa-shield-halved', t: 'Sensitive data — sharing blocked' },
 };
 
 const FLAG_LABEL = {
@@ -52,6 +53,15 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
   const flags = report.flags || dq.flags || [];
   const piiCols = report.pii_columns || dq.pii_columns || {};
 
+  const piiPresent = !!(report.pii_present ?? report.pii_blocked);
+  const aiConsent = !!(report.ai_consent ?? dq.ai_consent);
+  const consentNeeded = piiPresent && !aiConsent;
+  const piiColNames = Object.keys(piiCols);
+
+  const grantAiConsent = useDashboardStore((s) => s.grantAiConsent);
+  const aiConsentSubmitting = useDashboardStore((s) => s.aiConsentSubmitting);
+  const aiConsentError = useDashboardStore((s) => s.aiConsentError);
+
   return (
     <section className="analysis-section space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -63,9 +73,17 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
             Data check &amp; cleanup report
           </h2>
         </div>
-        <span className={`neon-badge ${tone.c} text-sm`}>
-          <i className={`fas ${tone.i} mr-1.5`} /> {tone.t}
-        </span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {piiPresent && (
+            <span className={`neon-badge ${aiConsent ? 'neon-emerald' : 'neon-rose'} text-sm`}>
+              <i className={`fas ${aiConsent ? 'fa-robot' : 'fa-user-shield'} mr-1.5`} />
+              {aiConsent ? 'AI enabled for this data' : 'Personal data — AI needs your OK'}
+            </span>
+          )}
+          <span className={`neon-badge ${tone.c} text-sm`}>
+            <i className={`fas ${tone.i} mr-1.5`} /> {tone.t}
+          </span>
+        </div>
       </div>
 
       {report.reasons?.length > 0 && (
@@ -73,6 +91,71 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
           {report.reasons.map((r, i) => (
             <div key={i}><i className="fas fa-circle-info mr-2" />{r}</div>
           ))}
+        </div>
+      )}
+
+      {/* PII consent gate — the dashboard already built with no data leaving
+          the server; only AI Insights needs the user's explicit go-ahead. */}
+      {piiPresent && (
+        <div className={`glass-soft p-4 space-y-3 ${aiConsent ? 'border-emerald-400/30' : 'border-rose-400/40'}`}>
+          {aiConsent ? (
+            <div className="text-sm text-emerald-100">
+              <i className="fas fa-circle-check mr-2 text-emerald-300" />
+              You allowed AI to use this dataset. AI Insights are generated from
+              your data, including the personal columns.
+            </div>
+          ) : (
+            <>
+              <div className="text-sm text-slate-200">
+                <i className="fas fa-user-shield mr-2 text-rose-300" />
+                We spotted what looks like <b>personal data</b> in{' '}
+                <span className="text-rose-200 font-semibold">
+                  {piiColNames.length ? piiColNames.join(', ') : 'one or more columns'}
+                </span>
+                {Object.values(piiCols).some((e) => e?.length) && (
+                  <span className="text-slate-400">
+                    {' '}({Object.entries(piiCols)
+                      .map(([c, e]) => `${c}: ${(e || []).join('/')}`)
+                      .join('; ')})
+                  </span>
+                )}
+                .
+              </div>
+              <div className="text-sm text-slate-300">
+                Your dashboard — charts, metrics and the data check — is{' '}
+                <b>already built</b> and never left this server. Only the{' '}
+                <b>AI Insights</b> tab sends data to an external AI service.
+                That’s your call: if you turn it on, the full dataset
+                (including the columns above) is sent for analysis. Sharing
+                your own data is your decision and responsibility.
+              </div>
+              {aiConsentError && (
+                <div className="text-sm text-rose-200">
+                  <i className="fas fa-triangle-exclamation mr-2" />{aiConsentError}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  disabled={aiConsentSubmitting}
+                  onClick={() => { grantAiConsent().catch(() => {}); }}
+                  className="inline-flex items-center gap-2 rounded-lg text-white text-sm font-semibold px-5 py-2.5 whitespace-nowrap disabled:opacity-50"
+                  style={{
+                    background: aiConsentSubmitting ? '#9f1239' : '#e11d48',
+                    border: '1px solid rgba(253,164,175,0.6)',
+                    boxShadow: '0 4px 14px rgba(225,29,72,0.35)',
+                    cursor: aiConsentSubmitting ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  <i className={`fas ${aiConsentSubmitting ? 'fa-spinner fa-spin' : 'fa-robot'}`} />
+                  {aiConsentSubmitting ? 'Enabling AI…' : 'Yes, use AI on this data'}
+                </button>
+                <span className="text-xs text-slate-400 self-center">
+                  Prefer not to? Just leave it — everything else works without AI.
+                </span>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -118,8 +201,12 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
                 ? 'contains personal data'
                 : 'no personal data found'}</b>
             </div>
-            <div>Sensitive data sharing:{' '}
-              <b>{report.pii_blocked ? 'blocked' : 'allowed'}</b>
+            <div>AI Insights on this data:{' '}
+              <b>{!piiPresent
+                ? 'allowed (no personal data)'
+                : aiConsent
+                  ? 'allowed (you consented)'
+                  : 'off until you allow it'}</b>
             </div>
             <div>
               Personal-data columns:{' '}

@@ -17,14 +17,16 @@ from src.contract.models import DatasetContract
 
 def evaluate_acceptance(contract: DatasetContract) -> Tuple[bool, List[str]]:
     """S6.3: a contract auto-accepts (auto-locks, no review) only when mean
-    per-field confidence ≥ ``config.AUTO_ACCEPT_CONFIDENCE`` AND it is not
-    pii_blocked AND a grain was detected. Returns (accepted, reasons)."""
+    per-field confidence ≥ ``config.AUTO_ACCEPT_CONFIDENCE`` AND a grain was
+    detected. Returns (accepted, reasons).
+
+    NOTE (PII model change, supersedes the original fail-closed invariant):
+    the deterministic dashboard never sends data anywhere, so PII does NOT
+    block dashboard acceptance. PII only gates the *AI Insights* layer behind
+    explicit user consent — see ``ai_consent_required`` below. Sharing one's
+    own sensitive data is the user's prerogative and responsibility.
+    """
     reasons: List[str] = []
-    if contract.pii_blocked:
-        reasons.append(
-            "This dataset contains sensitive personal data, so it can’t be "
-            "shared with the AI. A review won’t change that."
-        )
     if not contract.grain:
         reasons.append(
             "Couldn’t identify what each row represents (no clear unique "
@@ -39,7 +41,6 @@ def evaluate_acceptance(contract: DatasetContract) -> Tuple[bool, List[str]]:
             f"({config.AUTO_ACCEPT_CONFIDENCE * 100:.0f}%) — a quick check is "
             f"recommended."
         )
-    # PII never auto-accepts; everything else accepts iff no blocking reason.
     accepted = not reasons
     return accepted, reasons
 
@@ -51,12 +52,17 @@ class DataQualityReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    status: str  # "ok" | "review" | "blocked"
+    status: str  # "ok" | "review"  (PII no longer yields "blocked")
     reasons: List[str] = Field(default_factory=list)
     schema_fingerprint: str = ""
     grain: List[str] = Field(default_factory=list)
     sensitivity: str = "public"
+    # ``pii_blocked`` now means "PII present → AI egress needs consent", NOT a
+    # permanent wall. The dashboard still builds. Kept for back-compat.
     pii_blocked: bool = False
+    pii_present: bool = False
+    ai_consent: bool = False           # user explicitly allowed AI on this data
+    ai_consent_required: bool = False  # PII present AND consent not yet given
     pii_columns: dict = Field(default_factory=dict)
     mean_confidence: float = 0.0
     cleaning: dict = Field(default_factory=dict)
@@ -65,14 +71,15 @@ class DataQualityReport(BaseModel):
     auto_accepted: bool = False
 
 
-def build_dq_report(contract: DatasetContract, ingest: Any, crit: Any) -> DataQualityReport:
+def build_dq_report(
+    contract: DatasetContract, ingest: Any, crit: Any, ai_consent: bool = False
+) -> DataQualityReport:
     accepted, reasons = evaluate_acceptance(contract)
-    if contract.pii_blocked:
-        status = "blocked"
-    elif accepted:
-        status = "ok"
-    else:
-        status = "review"
+    # PII never produces "blocked" anymore — the dashboard always builds.
+    status = "ok" if accepted else "review"
+
+    pii_present = bool(contract.pii_blocked)
+    ai_consent_required = pii_present and not ai_consent
 
     confs = [f.confidence for f in contract.fields.values()] or [0.0]
     return DataQualityReport(
@@ -82,10 +89,13 @@ def build_dq_report(contract: DatasetContract, ingest: Any, crit: Any) -> DataQu
         grain=list(contract.grain),
         sensitivity=contract.sensitivity,
         pii_blocked=contract.pii_blocked,
+        pii_present=pii_present,
+        ai_consent=ai_consent,
+        ai_consent_required=ai_consent_required,
         pii_columns=dict(getattr(ingest, "pii_columns", {}) or {}),
         mean_confidence=round(sum(confs) / len(confs), 4),
         cleaning=ingest.manifest.model_dump(mode="json") if ingest is not None else {},
         vetoes=[v.model_dump() for v in getattr(crit, "vetoes", [])],
         flags=[f.model_dump() for f in getattr(crit, "flags", [])],
-        auto_accepted=accepted and not contract.pii_blocked,
+        auto_accepted=accepted,
     )
