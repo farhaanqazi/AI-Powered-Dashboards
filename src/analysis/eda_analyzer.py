@@ -11,6 +11,7 @@ import logging
 from scipy.stats import pearsonr
 from collections import Counter
 from src.analysis.data_structures import EnrichedProfile
+from src.contract.role_router import field_view, can_sum
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,21 @@ def _generate_key_indicators(df: pd.DataFrame, enriched_profiles: Dict[str, Enri
     # Add indicators for numeric columns
     for col_name, profile in enriched_profiles.items():
         if profile.role == 'numeric':
+            view = field_view(profile)
             stats = profile.stats
+            # Years are numeric by storage, not by meaning: report span, never
+            # an "average year" (router rule years→min/max/range).
+            if view.is_year:
+                mn = stats.get('min')
+                mx = stats.get('max')
+                if mn is not None and mx is not None:
+                    indicators.append({
+                        "indicator": f"{col_name} range",
+                        "description": f"{col_name} spans {int(mn)}–{int(mx)} ({int(mx - mn)} yrs)",
+                        "value": f"{int(mn)}–{int(mx)}",
+                        "type": "range"
+                    })
+                continue
             if 'mean' in stats:
                 indicators.append({
                     "indicator": f"Average {col_name}",
@@ -195,6 +210,10 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
     # Identify outliers in numeric columns
     for col_name, profile in enriched_profiles.items():
         if profile.role == 'numeric':
+            # IQR outliers are meaningless on identifiers/years — skip them.
+            _v = field_view(profile)
+            if _v.is_identifier or _v.is_year:
+                continue
             # A column's ROLE can be 'numeric' (heuristic or AI-arbitrated)
             # while its raw values are still strings. Quantiles on an object
             # series return strings → `Q3 - Q1` is `str - str` and the whole
@@ -307,6 +326,10 @@ def _generate_critical_totals(df: pd.DataFrame, enriched_profiles: Dict[str, Enr
             monetary_indicators = ['amount', 'revenue', 'cost', 'price', 'fee', 'charge', 'payment', 'income', 'expense', 'profit']
 
             if any(indicator in name_lower for indicator in monetary_indicators):
+                # Never sum a ratio/year/identifier even if its name looks
+                # monetary — the router is the authority on summability.
+                if not can_sum(profile):
+                    continue
                 # role can be 'numeric' on a string-valued column; coerce
                 # before summing or float() blows up (same class of bug as
                 # the outlier IQR path).

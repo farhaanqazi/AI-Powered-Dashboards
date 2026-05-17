@@ -124,3 +124,24 @@ PII_ENTITY_TYPES = [
 ]
 # Minimum Presidio confidence for an entity to count.
 PII_SCORE_THRESHOLD = float(os.environ.get("PII_SCORE_THRESHOLD", 0.5))
+
+# --- Invariant Critic (Phase 4) — config-driven tolerances ---
+# A numeric column this unique (and integer-like) is vetoed to identifier.
+CRITIC_ID_UNIQUE_RATIO = float(os.environ.get("CRITIC_ID_UNIQUE_RATIO", 0.99))
+# Row-wise |sum(components) - total| / |total| within this is a total match.
+CRITIC_TOTAL_TOLERANCE = float(os.environ.get("CRITIC_TOTAL_TOLERANCE", 0.01))
+# Per-row share columns summing to 1.0 (or 100) within this tolerance.
+CRITIC_SHARE_SUM_TOLERANCE = float(os.environ.get("CRITIC_SHARE_SUM_TOLERANCE", 0.02))
+# std / |mean| at or above this flags extreme dispersion.
+CRITIC_STD_MEAN_RATIO = float(os.environ.get("CRITIC_STD_MEAN_RATIO", 3.0))
+# Minimum rows before the critic trusts a statistical signal.
+CRITIC_MIN_ROWS = int(os.environ.get("CRITIC_MIN_ROWS", 12))
+
+# --- Pipeline Wiring (Phase 5) ---
+# The contract layer is always compiled, vetoed, cached and threaded into the
+# dashboard. The HITL schema-review GATE (halt before L3/L4/EDA/LLM/render
+# pending human approval) is shipped inert here: its activation criterion is
+# the auto-accept confidence rule (Phase 6 S6.3) and its UI is Phase 7. Until
+# then this stays False so behaviour — and the local pytest merge gate — is
+# unchanged.
+SCHEMA_REVIEW_ENABLED = _env_bool("SCHEMA_REVIEW_ENABLED", False)

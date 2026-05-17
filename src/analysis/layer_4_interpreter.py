@@ -12,6 +12,7 @@ import logging
 from typing import Dict, List, Any
 
 from src.analysis.data_structures import EnrichedProfile, RelationalInsight
+from src.contract.role_router import field_view
 try:
     from src.logger import get_logger
     logger = get_logger(__name__)
@@ -192,17 +193,13 @@ def select_charts(
     if datetimes and numerics:
         dt_col = datetimes[0] # Use the first datetime column found
         # Plot against the top 3 most significant numerics (excluding identifiers)
-        top_numerics = sorted([p for p in numerics if p.role != 'identifier'], key=_calculate_kpi_score, reverse=True)
+        # Router excludes identifiers AND year columns from time-series y.
+        candidates = [p for p in numerics if not field_view(p).is_identifier
+                      and not field_view(p).is_year]
+        top_numerics = sorted(candidates, key=_calculate_kpi_score, reverse=True)
         for num_col in top_numerics[:3]:
-            tags = getattr(num_col, "semantic_tags", []) or []
-            # Pick aggregation function based on semantic tag from layer_2:
-            # - 'additive' (revenue/cost/qty/etc.) must SUM across buckets
-            # - 'rate' (rate/score/temperature/age/etc.) averages
-            # - otherwise default to mean
-            if "additive" in tags:
-                agg_func = "sum"
-            else:
-                agg_func = "mean"
+            # Aggregation comes from the router: additive→sum, rate/ratio→mean.
+            agg_func = "sum" if field_view(num_col).aggregation == "additive" else "mean"
 
             title_verb = "Total" if agg_func == "sum" else "Trend of"
             chart_specs.append({

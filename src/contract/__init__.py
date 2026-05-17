@@ -11,6 +11,13 @@ from src.contract.models import (
 from src.contract.ingest_gate import run_ingest_gate
 from src.contract.compiler import compile_contract, schema_fingerprint
 from src.contract.cache import ContractCache, get_contract_cache
+from src.contract.invariant_critic import (
+    critique,
+    apply_vetoes,
+    CritiqueResult,
+    InvariantVeto,
+    InvariantFlag,
+)
 
 __all__ = [
     "run_ingest_gate",
@@ -22,4 +29,9 @@ __all__ = [
     "schema_fingerprint",
     "ContractCache",
     "get_contract_cache",
+    "critique",
+    "apply_vetoes",
+    "CritiqueResult",
+    "InvariantVeto",
+    "InvariantFlag",
 ]

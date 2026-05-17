@@ -28,17 +28,17 @@
 - **S2.3** — 2026-06-08 — `layer_2_classifier.py` emits `confidence` + top-2 `alternatives`; extend `EnrichedProfile` in `data_structures.py`. — ✅ 2026-06-08 -- 2026-05-17
 - **S2.4** — 2026-06-09 — `src/contract/cache.py` over `src/persistence/cache.py`; locked-hit skips recompile + LLM. — ✅ 2026-06-09 -- 2026-05-17
 
-## Phase 3 — Role-Aware Router — 2026-06-10 → 2026-06-15
-- **S3.1** — 2026-06-10 → 2026-06-11 — `src/contract/role_router.py`: `get_allowed_aggregations`, `is_correlatable`, `collapse_to_grain`, `recompute_ratio`.
-- **S3.2** — 2026-06-12 — `layer_3_relational.py` filters pairs via `is_correlatable`.
-- **S3.3** — 2026-06-15 — `layer_4_interpreter.py` + `eda_analyzer.py` use the router (ids excluded, years→min/max/range, ratio totals recomputed, panel→grain).
+## Phase 3 — Role-Aware Router — 2026-06-10 → 2026-06-15 — ✅ 2026-06-10 → 2026-06-15 -- 2026-05-17 → 2026-05-17
+- **S3.1** — 2026-06-10 → 2026-06-11 — `src/contract/role_router.py`: `get_allowed_aggregations`, `is_correlatable`, `collapse_to_grain`, `recompute_ratio`. — ✅ 2026-06-10 → 2026-06-11 -- 2026-05-17
+- **S3.2** — 2026-06-12 — `layer_3_relational.py` filters pairs via `is_correlatable`. — ✅ 2026-06-12 -- 2026-05-17
+- **S3.3** — 2026-06-15 — `layer_4_interpreter.py` + `eda_analyzer.py` use the router (ids excluded, years→min/max/range, ratio totals recomputed, panel→grain). — ✅ 2026-06-15 -- 2026-05-17 (ids excluded from corr/outliers, years→range indicator, ratios excluded from totals via `can_sum`; `collapse_to_grain`/`recompute_ratio` implemented + unit-tested in the router — layer invocation of grain-collapse activates when the contract grain is threaded in Phase 5 S5.1)
 
-## Phase 4 — Invariant Critic — 2026-06-16 → 2026-06-19
-- **S4.1** — 2026-06-16 → 2026-06-19 — `src/contract/invariant_critic.py`: unique-numeric→identifier veto, fractional-ID veto, total-vs-components flag, share-sum flag, std≫mean flag (config-driven tolerances).
+## Phase 4 — Invariant Critic — 2026-06-16 → 2026-06-19 — ✅ 2026-06-16 → 2026-06-19 -- 2026-05-17 → 2026-05-17
+- **S4.1** — 2026-06-16 → 2026-06-19 — `src/contract/invariant_critic.py`: unique-numeric→identifier veto, fractional-ID veto, total-vs-components flag, share-sum flag, std≫mean flag (config-driven tolerances). — ✅ 2026-06-16 → 2026-06-19 -- 2026-05-17
 
-## Phase 5 — Pipeline Wiring — 2026-06-22 → 2026-06-26
-- **S5.1** — 2026-06-22 → 2026-06-25 — `src/core/pipeline.py` (sync + generator): ingest gate, `pii_blocked` short-circuit, compile + vetoes + cache, `schema_review` gating before L3/L4/EDA/LLM/render, thread + persist contract.
-- **S5.2** — 2026-06-26 — `llm_analyst.py`: contract-validated aggregated payload only; never send raw `pii` rows.
+## Phase 5 — Pipeline Wiring — 2026-06-22 → 2026-06-26 — ✅ 2026-06-22 → 2026-06-26 -- 2026-05-17 → 2026-05-17
+- **S5.1** — 2026-06-22 → 2026-06-25 — `src/core/pipeline.py` (sync + generator): ingest gate, `pii_blocked` short-circuit, compile + vetoes + cache, `schema_review` gating before L3/L4/EDA/LLM/render, thread + persist contract. — ✅ 2026-06-22 → 2026-06-25 -- 2026-05-17 (both paths wired; rejected→DQ state; `schema_review` gate present but inert via `config.SCHEMA_REVIEW_ENABLED=False` until Phase 6 S6.3 sets the auto-accept criterion + Phase 7 ships the UI; contract+cleaning+vetoes+flags persisted in `dataset_profile`)
+- **S5.2** — 2026-06-26 — `llm_analyst.py`: contract-validated aggregated payload only; never send raw `pii` rows. — ✅ 2026-06-26 -- 2026-05-17 (PII-blocked → LLM never called; sensitive columns redacted from ground truth — no top_categories, no stats)
 
 ## Phase 6 — LLM Output Validator + Graceful Degradation — 2026-06-29 → 2026-07-03
 - **S6.1** — 2026-06-29 → 2026-06-30 — `LLMOutputContract` validation + per-number provenance tokens; explicit logged fallback.

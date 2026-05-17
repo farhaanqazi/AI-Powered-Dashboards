@@ -50,15 +50,37 @@ def _f(value: Any) -> Any:
     return value
 
 
+def _sensitive_columns(contract: Any) -> set:
+    """Names of columns the contract marks sensitive / PII-bearing."""
+    if contract is None:
+        return set()
+    fields = getattr(contract, "fields", {}) or {}
+    out = set()
+    for name, fc in fields.items():
+        if getattr(fc, "sensitivity", "public") == "sensitive" or getattr(
+            fc, "pii_entities", ()
+        ):
+            out.add(name)
+    return out
+
+
 def _ground_truth(
     enriched_profiles: Dict[str, EnrichedProfile],
     relational_insights: List[RelationalInsight],
     eda_summary: Dict[str, Any],
+    contract: Any = None,
 ) -> Dict[str, Any]:
-    """The ONLY numbers the model is allowed to reason about."""
+    """The ONLY numbers the model is allowed to reason about.
+
+    Contract-validated: sensitive/PII columns never expose raw category
+    values (``top_categories`` can leak emails, names, account numbers). Only
+    aggregate, non-identifying stats survive for those columns.
+    """
+    sensitive = _sensitive_columns(contract)
     columns = []
     for name, p in list(enriched_profiles.items())[: config.MAX_COLS]:
         stats = {k: _f(v) for k, v in (p.stats or {}).items()}
+        is_sensitive = name in sensitive
         columns.append(
             {
                 "name": name,
@@ -66,8 +88,11 @@ def _ground_truth(
                 "semantic_tags": p.semantic_tags or [],
                 "null_count": p.null_count,
                 "unique_count": p.unique_count,
-                "stats": stats,
-                "top_categories": (p.top_categories or [])[:5],
+                # Drop count-style numeric stats for sensitive cols too:
+                # min/max of an SSN/account number is still identifying.
+                "stats": {} if is_sensitive else stats,
+                "top_categories": [] if is_sensitive else (p.top_categories or [])[:5],
+                "redacted": is_sensitive,
             }
         )
 
@@ -351,6 +376,7 @@ def run_ai_analyst(
     *,
     fallback_kpis: List[Dict[str, Any]],
     fallback_specs: List[Dict[str, Any]],
+    contract: Any = None,
 ) -> Dict[str, Any]:
     """Returns {"kpis", "chart_specs", "narrative"}.
 
@@ -373,7 +399,7 @@ def run_ai_analyst(
         return fallback
 
     try:
-        payload = _ground_truth(enriched_profiles, relational_insights, eda_summary)
+        payload = _ground_truth(enriched_profiles, relational_insights, eda_summary, contract)
         client = Groq(api_key=config.GROQ_API_KEY, timeout=config.GROQ_TIMEOUT_SECONDS)
         resp = client.chat.completions.create(
             model=config.GROQ_MODEL,

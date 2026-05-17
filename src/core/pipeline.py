@@ -28,7 +28,65 @@ from src.analysis.llm_analyst import run_ai_analyst, arbitrate_column_roles
 from src.viz.plotly_renderer import build_charts_from_specs
 from src.analysis.data_structures import DashboardState, EnrichedProfile
 
+# --- Semantic Contract Layer (Phases 1-4) ---
+from src.contract import (
+    run_ingest_gate,
+    critique,
+    apply_vetoes,
+    compile_contract,
+    get_contract_cache,
+)
+
 logger = logging.getLogger(__name__)
+
+
+def _empty_dashboard_state(original_filename, *, errors=None, warnings=None,
+                           dataset_profile=None, eda_summary=None) -> DashboardState:
+    """A no-charts DashboardState used for rejected / review-gated datasets."""
+    return DashboardState(
+        dataset_profile=dataset_profile or {},
+        profile=[], kpis=[], charts=[], primary_chart=None,
+        category_charts={}, all_charts=[],
+        original_filename=original_filename,
+        errors=errors or [], warnings=warnings or [],
+        critical_totals={}, critical_full_dataset_aggregates={},
+        eda_summary=eda_summary or {},
+    )
+
+
+def _contract_compile_stage(df, enriched_profiles, ingest):
+    """Critique → apply vetoes → compile → cache (locked-hit aware).
+
+    Returns (enriched_profiles, contract). A locked cache hit short-circuits
+    recompilation (the caller then also skips the LLM)."""
+    crit = critique(df, enriched_profiles)
+    enriched_profiles = apply_vetoes(enriched_profiles, crit)
+    contract = compile_contract(df, enriched_profiles, ingest)
+    cache = get_contract_cache()
+    if cache.is_locked_hit(contract.schema_fingerprint):
+        cached = cache.get(contract.schema_fingerprint)
+        if cached is not None:
+            contract = cached
+    else:
+        cache.put(contract)
+    return enriched_profiles, contract, crit
+
+
+def _contract_into_profile(viz_profile: dict, contract, ingest, crit) -> None:
+    """Thread the contract + data-quality verdict into the dataset profile so
+    it persists in the existing DashboardRecord (no new storage backend)."""
+    viz_profile["contract"] = contract.model_dump(mode="json")
+    viz_profile["sensitivity"] = contract.sensitivity
+    viz_profile["pii_blocked"] = contract.pii_blocked
+    viz_profile["data_quality"] = {
+        "rejected": ingest.rejected,
+        "reject_reason": ingest.reject_reason,
+        "pii_columns": ingest.pii_columns,
+        "pii_scan_engine": ingest.pii_scan_engine,
+        "cleaning": ingest.manifest.model_dump(mode="json"),
+        "vetoes": [v.model_dump() for v in crit.vetoes],
+        "flags": [f.model_dump() for f in crit.flags],
+    }
 
 def _reshape_if_wide_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -131,6 +189,21 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                 eda_summary={}
             )
 
+        # --- INGEST CONTRACT GATE (Phase 1) ---
+        with _time_layer("ingest_gate"):
+            ingest = run_ingest_gate(df)
+        if ingest.rejected:
+            logger.warning(f"Ingest gate rejected dataset: {ingest.reject_reason}")
+            return _empty_dashboard_state(
+                original_filename,
+                errors=[ingest.reject_reason or "Dataset rejected by ingest gate."],
+                warnings=ingest.warnings,
+                dataset_profile={"data_quality": {
+                    "rejected": True, "reject_reason": ingest.reject_reason}},
+            )
+        df = ingest.df
+        ingest_warnings = list(ingest.warnings)
+
         # --- 4-LAYER ANALYSIS PIPELINE ---
         # Layer 1: Get raw facts
         try:
@@ -155,6 +228,25 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             logger.exception(msg)
             raise
         
+        # --- CONTRACT COMPILE + CRITIC + CACHE (Phases 2-4) ---
+        with _time_layer("contract"):
+            enriched_profiles, contract, crit = _contract_compile_stage(
+                df, enriched_profiles, ingest
+            )
+        # schema_review gate (Phase 5 mechanism; activation = Phase 6 S6.3,
+        # UI = Phase 7). Inert unless SCHEMA_REVIEW_ENABLED.
+        if config.SCHEMA_REVIEW_ENABLED and not contract.locked:
+            logger.info("Schema review gate engaged; halting before L3.")
+            viz = {"n_rows": len(df), "n_cols": len(enriched_profiles),
+                   "columns": [p.__dict__ for p in enriched_profiles.values()]}
+            _contract_into_profile(viz, contract, ingest, crit)
+            viz["status"] = "schema_review"
+            return _empty_dashboard_state(
+                original_filename, warnings=ingest_warnings,
+                dataset_profile=viz,
+                eda_summary={"status": "schema_review"},
+            )
+
         # Layer 3: Find relationships
         try:
             with _time_layer("relating"):
@@ -202,21 +294,29 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                 logger.exception(msg)
                 raise
 
-            ai = run_ai_analyst(
-                enriched_profiles, relational_insights, eda_summary,
-                fallback_kpis=kpis, fallback_specs=chart_specs,
-            )
-            kpis = ai["kpis"]
-            chart_specs = ai["chart_specs"]
-            if isinstance(eda_summary, dict):
-                if ai["narrative"]:
-                    eda_summary["ai_narrative"] = ai["narrative"]
-                if ai["key_indicators"]:
-                    eda_summary["key_indicators"] = ai["key_indicators"]
-                if ai["use_cases"]:
-                    eda_summary["use_cases"] = ai["use_cases"]
-                if ai["recommendations"]:
-                    eda_summary["recommendations"] = ai["recommendations"]
+            # PII fail-closed: if egress is blocked, the LLM is NEVER called.
+            # Human approval does not unblock it (architectural invariant).
+            if ingest.pii_blocked:
+                logger.warning(
+                    "PII egress blocked; skipping LLM analyst entirely."
+                )
+            else:
+                ai = run_ai_analyst(
+                    enriched_profiles, relational_insights, eda_summary,
+                    fallback_kpis=kpis, fallback_specs=chart_specs,
+                    contract=contract,
+                )
+                kpis = ai["kpis"]
+                chart_specs = ai["chart_specs"]
+                if isinstance(eda_summary, dict):
+                    if ai["narrative"]:
+                        eda_summary["ai_narrative"] = ai["narrative"]
+                    if ai["key_indicators"]:
+                        eda_summary["key_indicators"] = ai["key_indicators"]
+                    if ai["use_cases"]:
+                        eda_summary["use_cases"] = ai["use_cases"]
+                    if ai["recommendations"]:
+                        eda_summary["recommendations"] = ai["recommendations"]
 
         # --- Visualization Stage ---
         # The analysis output is now used to drive rendering.
@@ -232,6 +332,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             "dataset_grain": dataset_grain,  # Add dataset grain information
             "columns": [p.__dict__ for p in enriched_profiles.values()]
         }
+        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit)
 
         try:
             with _time_layer("rendering"):
@@ -254,6 +355,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             all_charts=all_charts,
             original_filename=original_filename,
             errors=errors,
+            warnings=ingest_warnings,
             critical_totals={},
             critical_full_dataset_aggregates={},
             eda_summary=eda_summary
@@ -381,6 +483,22 @@ def build_dashboard_from_df_generator(
             yield {"phase": "done", "message": "Empty dataset", "percent": 100, "state": empty_state}
             return
 
+        yield {"phase": "ingest_gate", "message": "Screening & cleaning data...", "percent": 15}
+        with _time_layer("ingest_gate"):
+            ingest = run_ingest_gate(df)
+        if ingest.rejected:
+            rej = _empty_dashboard_state(
+                original_filename,
+                errors=[ingest.reject_reason or "Dataset rejected by ingest gate."],
+                warnings=ingest.warnings,
+                dataset_profile={"data_quality": {
+                    "rejected": True, "reject_reason": ingest.reject_reason}},
+            )
+            yield {"phase": "done", "message": "Dataset rejected", "percent": 100, "state": rej}
+            return
+        df = ingest.df
+        ingest_warnings = list(ingest.warnings)
+
         yield {"phase": "profiling", "message": "Profiling columns...", "percent": 20}
         with _time_layer("profiling"):
             syntactic_profiles = run_syntactic_profiling(df, max_cols=max_cols)
@@ -393,6 +511,23 @@ def build_dashboard_from_df_generator(
             arbitrate_column_roles(enriched_profiles, df)
         tracer.record_custom_event(trace_id, "layer_2_complete",
                                    {"roles": {n: p.role for n, p in enriched_profiles.items()}})
+
+        with _time_layer("contract"):
+            enriched_profiles, contract, crit = _contract_compile_stage(
+                df, enriched_profiles, ingest
+            )
+        if config.SCHEMA_REVIEW_ENABLED and not contract.locked:
+            viz = {"n_rows": len(df), "n_cols": len(enriched_profiles),
+                   "columns": [p.__dict__ for p in enriched_profiles.values()]}
+            _contract_into_profile(viz, contract, ingest, crit)
+            viz["status"] = "schema_review"
+            sr = _empty_dashboard_state(
+                original_filename, warnings=ingest_warnings,
+                dataset_profile=viz, eda_summary={"status": "schema_review"},
+            )
+            yield {"phase": "done", "message": "Schema review required",
+                   "percent": 100, "state": sr}
+            return
 
         yield {"phase": "relating", "message": "Finding correlations and relationships...", "percent": 50}
         with _time_layer("relating"):
@@ -421,21 +556,27 @@ def build_dashboard_from_df_generator(
             chart_specs = select_charts(enriched_profiles, relational_insights)
             tracer.record_chart_selection(trace_id, chart_specs)
 
-            ai = run_ai_analyst(
-                enriched_profiles, relational_insights, eda_summary,
-                fallback_kpis=kpis, fallback_specs=chart_specs,
-            )
-            kpis = ai["kpis"]
-            chart_specs = ai["chart_specs"]
-            if isinstance(eda_summary, dict):
-                if ai["narrative"]:
-                    eda_summary["ai_narrative"] = ai["narrative"]
-                if ai["key_indicators"]:
-                    eda_summary["key_indicators"] = ai["key_indicators"]
-                if ai["use_cases"]:
-                    eda_summary["use_cases"] = ai["use_cases"]
-                if ai["recommendations"]:
-                    eda_summary["recommendations"] = ai["recommendations"]
+            if ingest.pii_blocked:
+                logger.warning(
+                    "PII egress blocked; skipping LLM analyst entirely."
+                )
+            else:
+                ai = run_ai_analyst(
+                    enriched_profiles, relational_insights, eda_summary,
+                    fallback_kpis=kpis, fallback_specs=chart_specs,
+                    contract=contract,
+                )
+                kpis = ai["kpis"]
+                chart_specs = ai["chart_specs"]
+                if isinstance(eda_summary, dict):
+                    if ai["narrative"]:
+                        eda_summary["ai_narrative"] = ai["narrative"]
+                    if ai["key_indicators"]:
+                        eda_summary["key_indicators"] = ai["key_indicators"]
+                    if ai["use_cases"]:
+                        eda_summary["use_cases"] = ai["use_cases"]
+                    if ai["recommendations"]:
+                        eda_summary["recommendations"] = ai["recommendations"]
 
         yield {"phase": "rendering", "message": "Building charts...", "percent": 92}
         role_counts: Dict[str, int] = {}
@@ -449,6 +590,7 @@ def build_dashboard_from_df_generator(
             "dataset_grain": dataset_grain,
             "columns": [p.__dict__ for p in enriched_profiles.values()],
         }
+        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit)
         with _time_layer("rendering"):
             all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
         primary_chart = next((c for c in all_charts if c.get("type") == "bar"), None)
@@ -463,6 +605,7 @@ def build_dashboard_from_df_generator(
             all_charts=all_charts,
             original_filename=original_filename,
             errors=errors,
+            warnings=ingest_warnings,
             critical_totals={},
             critical_full_dataset_aggregates={},
             eda_summary=eda_summary,

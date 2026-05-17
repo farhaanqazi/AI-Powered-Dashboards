@@ -23,7 +23,7 @@ def test_stream_emits_expected_phases_in_order(client, upload_files):
     assert phases[0] in ("reading", "preparing", "profiling")
     assert phases[-1] == "done"
     expected_phase_set = {
-        "reading", "preparing", "profiling", "classifying",
+        "reading", "preparing", "ingest_gate", "profiling", "classifying",
         "relating", "eda", "kpis", "rendering", "done",
     }
     assert set(phases).issubset(expected_phase_set | {"error"})

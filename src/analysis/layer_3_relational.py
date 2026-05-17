@@ -12,6 +12,7 @@ from typing import Dict, List, Any
 from scipy.stats import pearsonr
 
 from src.analysis.data_structures import EnrichedProfile, RelationalInsight
+from src.contract.role_router import is_correlatable
 from src import config as _cfg
 
 logger = logging.getLogger(__name__)
@@ -34,10 +35,11 @@ def run_relational_analysis(
     
     # --- 1. Correlation Analysis for Numeric Columns ---
     
-    # Identify numeric columns that are not identifiers and have meaningful variance.
+    # Identify numeric *measures* with meaningful variance. The role router
+    # excludes identifiers and year columns: numeric by storage, not meaning.
     numeric_cols_for_corr = [
-        profile.name for profile in enriched_profiles.values() 
-        if profile.role == 'numeric' and profile.stats.get('std', 0) > 0.001
+        profile.name for profile in enriched_profiles.values()
+        if is_correlatable(profile) and profile.stats.get('std', 0) > 0.001
     ]
     
     logger.info(f"Layer 3: Found {len(numeric_cols_for_corr)} numeric columns with variance for correlation analysis.")
