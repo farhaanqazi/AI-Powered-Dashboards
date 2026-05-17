@@ -20,7 +20,7 @@
 - **S1.1** — 2026-05-25 — Create `src/contract/__init__.py`, `src/contract/ingest_gate.py`. — ✅ 2026-05-25 -- 2026-05-17
 - **S1.2** — 2026-05-26 → 2026-05-28 — Implement `run_ingest_gate`: thousands/currency coercion, sentinel→`pd.NA`, null-row rejection, Presidio PII detection, `sensitivity`/`pii_blocked`. — ✅ 2026-05-26 → 2026-05-28 -- 2026-05-17
 - **S1.3** — 2026-05-28 — `src/contract/models.py`: `CleaningManifest`, `IngestResult`. — ✅ 2026-05-28 -- 2026-05-17
-- **S1.4** — 2026-05-29 — Add `presidio-analyzer`/`presidio-anonymizer` to `requirements.txt`. — ✅ 2026-05-29 -- 2026-05-17
+- **S1.4** — 2026-05-29 — Add `presidio-analyzer`/`presidio-anonymizer` to `requirements.txt`. — ✅ 2026-05-29 -- 2026-05-17 (HF build proved Presidio→spaCy→thinc has no installable build on the HF Python; relocated to optional `requirements-pii.txt`. `ingest_gate` regex fallback is the deployed PII tier — deployment is correct without it.)
 
 ## Phase 2 — Contract Models, Compiler, Fingerprint Cache — 2026-06-01 → 2026-06-09 — ✅ 2026-06-01 → 2026-06-09 -- 2026-05-17 → 2026-05-17
 - **S2.1** — 2026-06-01 → 2026-06-02 — Frozen Pydantic `FieldContract` + `DatasetContract` in `models.py`. — ✅ 2026-06-01 → 2026-06-02 -- 2026-05-17

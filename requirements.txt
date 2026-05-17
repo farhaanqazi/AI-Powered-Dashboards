@@ -31,5 +31,9 @@ psycopg2-binary==2.9.9
 redis==5.0.4
 groq==1.0.0
 slowapi==0.1.9
-presidio-analyzer==2.2.355
-presidio-anonymizer==2.2.355
+# PII detection: Presidio is an OPTIONAL extra (see requirements-pii.txt).
+# It drags in spaCy/thinc, which has no installable build on the HF runtime's
+# Python — installing it here breaks the deploy. src/contract/ingest_gate.py
+# degrades gracefully to a regex PII tier when Presidio is absent, so the
+# deployed image is correct without it. Install requirements-pii.txt only in
+# environments whose Python is in spaCy's supported range.
