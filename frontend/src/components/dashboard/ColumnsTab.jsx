@@ -20,9 +20,9 @@ const roleTone = (role) => {
 const SORTABLE = [
   { key: 'name',          label: 'Column Name' },
   { key: 'dtype',         label: 'Data Type' },
-  { key: 'null_count',    label: 'Missing' },
+  { key: 'null_count',    label: 'Empty cells' },
   { key: 'unique_count',  label: 'Unique' },
-  { key: 'role',          label: 'Role' },
+  { key: 'role',          label: 'Type' },
 ];
 
 const ColumnsTab = ({ data }) => {
@@ -101,14 +101,14 @@ const ColumnsTab = ({ data }) => {
     <section id="column_profiling-section" className="analysis-section space-y-6">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
         <div>
-          <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">Schema</div>
+          <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">Column types</div>
           <h2 className="text-xl md:text-2xl font-semibold text-slate-100">Column profile</h2>
           <p className="text-sm text-slate-400 mt-1">
             Inspect data types, missing values and statistics across every column.
             {canEdit && !editable && (
               <span className="block mt-1 text-sky-300/90">
                 <i className="fas fa-circle-info mr-1.5" />
-                Wrong type on a column? Use “Edit column roles” to correct it and re-lock the schema.
+                Wrong type on a column? Use “Edit column types” to fix it and confirm.
               </span>
             )}
           </p>
@@ -121,7 +121,7 @@ const ColumnsTab = ({ data }) => {
               className="inline-flex items-center gap-2 rounded-lg border border-sky-400/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-sm px-3 py-2 whitespace-nowrap transition-colors"
             >
               <i className={`fas ${editing ? 'fa-xmark' : 'fa-pen'}`} />
-              {editing ? 'Cancel' : 'Edit column roles'}
+              {editing ? 'Cancel' : 'Edit column types'}
             </button>
           )}
           <div className="relative w-full md:w-72">
@@ -151,10 +151,10 @@ const ColumnsTab = ({ data }) => {
           <div className="text-sm text-slate-200">
             <i className={`fas ${needsReview ? 'fa-user-pen text-amber-300' : 'fa-circle-check text-emerald-300'} mr-2`} />
             {needsReview
-              ? 'This dataset needs schema review. Correct any column roles below, then confirm — this step cannot be skipped.'
-              : 'Schema auto-accepted. You can still correct roles and re-lock the contract.'}
+              ? 'Some column types need a quick check. Fix any below, then confirm — this step can’t be skipped.'
+              : 'Column types look right. You can still adjust them and re-save.'}
             {Object.keys(edits).length > 0 && (
-              <span className="ml-2 neon-badge neon-amber">{Object.keys(edits).length} pending</span>
+              <span className="ml-2 neon-badge neon-amber">{Object.keys(edits).length} change{Object.keys(edits).length > 1 ? 's' : ''}</span>
             )}
           </div>
           <button
@@ -170,9 +170,9 @@ const ColumnsTab = ({ data }) => {
             onClick={confirmReview}
           >
             <i className="fas fa-check" />
-            {reviewSubmitting ? 'Confirming…'
-              : Object.keys(edits).length ? 'Apply & confirm schema'
-              : 'Confirm schema'}
+            {reviewSubmitting ? 'Saving…'
+              : Object.keys(edits).length ? 'Apply & confirm types'
+              : 'Confirm column types'}
           </button>
         </div>
       )}
@@ -183,7 +183,7 @@ const ColumnsTab = ({ data }) => {
       )}
       {acknowledged && !needsReview && (
         <div className="glass-soft p-3 text-emerald-200 border-emerald-400/30 text-sm">
-          <i className="fas fa-circle-check mr-2" />Schema confirmed and contract locked.
+          <i className="fas fa-circle-check mr-2" />Column types confirmed and saved.
         </div>
       )}
 

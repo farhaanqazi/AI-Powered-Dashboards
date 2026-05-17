@@ -10,10 +10,10 @@ import DataQualityTab from './DataQualityTab';
 import '../../styles/dashboard-futuristic.css';
 
 const TABS = [
-  { key: 'data_quality',      label: 'Data Quality', icon: 'fa-clipboard-check' },
+  { key: 'data_quality',      label: 'Data Check',   icon: 'fa-clipboard-check' },
   { key: 'overview',          label: 'Overview',     icon: 'fa-chart-line' },
-  { key: 'eda',               label: 'EDA Insights', icon: 'fa-brain' },
-  { key: 'visualizations',    label: 'Visual Gallery', icon: 'fa-chart-bar' },
+  { key: 'eda',               label: 'AI Insights',  icon: 'fa-brain' },
+  { key: 'visualizations',    label: 'Charts',       icon: 'fa-chart-bar' },
   { key: 'column_profiling',  label: 'Columns',      icon: 'fa-table' },
 ];
 

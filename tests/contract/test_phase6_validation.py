@@ -54,19 +54,19 @@ def test_high_confidence_non_pii_auto_accepts():
 def test_pii_never_auto_accepts():
     ok, reasons = evaluate_acceptance(_contract(0.99, pii=True))
     assert ok is False
-    assert any("PII" in r for r in reasons)
+    assert any("sensitive personal data" in r for r in reasons)
 
 
 def test_low_confidence_needs_review():
     ok, reasons = evaluate_acceptance(_contract(0.10))
     assert ok is False
-    assert any("threshold" in r for r in reasons)
+    assert any("low certainty" in r for r in reasons)
 
 
 def test_missing_grain_needs_review():
     ok, reasons = evaluate_acceptance(_contract(0.99, grain=()))
     assert ok is False
-    assert any("grain" in r.lower() for r in reasons)
+    assert any("each row represents" in r.lower() for r in reasons)
 
 
 # ---- S6.2 DQ report ----

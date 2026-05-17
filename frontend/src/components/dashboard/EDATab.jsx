@@ -46,7 +46,7 @@ const EDATab = ({ data }) => {
   return (
     <section id="eda-section" className="analysis-section">
       <div className="mb-6">
-        <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">Exploratory analysis</div>
+        <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">AI analysis</div>
         <h2 className="text-xl md:text-2xl font-semibold text-slate-100">What the AI noticed</h2>
         <p className="text-sm text-slate-400 mt-1 max-w-xl">
           Patterns, relationships and recommendations distilled from your dataset.
@@ -121,7 +121,7 @@ const EDATab = ({ data }) => {
                 <div className="glass-soft p-4">
                   <h3 className="font-medium text-slate-100 mb-3 flex items-center gap-2">
                     <i className="fas fa-link text-fuchsia-300" />
-                    Correlations
+                    Relationships
                   </h3>
                   <div className="space-y-3">
                     {correlations.slice(0, 4).map((corr, i) => {

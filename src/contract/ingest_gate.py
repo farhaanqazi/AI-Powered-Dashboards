@@ -74,7 +74,7 @@ def _coerce_numeric(df: pd.DataFrame, manifest: CleaningManifest) -> pd.DataFram
         if ok:
             df[col] = coerced
             manifest.coerced_numeric[col] = (
-                "stripped currency/grouping symbols; coerced to numeric"
+                "removed currency/grouping symbols and converted to numbers"
             )
     return df
 
@@ -180,7 +180,7 @@ def run_ingest_gate(df: pd.DataFrame) -> IngestResult:
         return IngestResult(
             ok=False,
             rejected=True,
-            reject_reason="All rows were empty/sentinel-only after cleaning.",
+            reject_reason="Every row was empty or contained only placeholder values (like 'NA' or '-'), so there's nothing to analyze.",
             manifest=manifest,
             sensitivity="sensitive" if config.SENSITIVITY_FAIL_CLOSED else "public",
         )
@@ -193,8 +193,9 @@ def run_ingest_gate(df: pd.DataFrame) -> IngestResult:
         # egress unless actual PII was detected (invariant: pii_blocked only
         # on detected PII).
         warnings.append(
-            "PII scan ran in regex-fallback mode (Presidio not installed); "
-            "treating dataset as sensitive (fail-closed)."
+            "Used basic pattern detection for personal data (the advanced "
+            "detector isn’t available here); treating this dataset as "
+            "sensitive to be safe."
         )
         sensitive = True
 

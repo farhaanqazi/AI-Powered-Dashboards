@@ -69,7 +69,7 @@ def apply_registry_overrides(
     profile = payload.get("dataset_profile") or {}
     raw_contract = profile.get("contract")
     if not raw_contract:
-        raise ValueError("No compiled contract on this dashboard to override.")
+        raise ValueError("There’s nothing to update for this dashboard yet.")
 
     contract = DatasetContract.model_validate(raw_contract)
     by_name = {o["name"]: o for o in overrides if o.get("name")}

@@ -84,9 +84,9 @@ def _critique_roles(
                         from_role=role,
                         to_role="identifier",
                         reason=(
-                            f"{unique_ratio:.3f} unique integer values "
-                            f"(≥ {config.CRITIC_ID_UNIQUE_RATIO}); a measure "
-                            f"would not be all-distinct."
+                            f"Almost every value is a different whole number "
+                            f"({unique_ratio * 100:.0f}% unique) — this looks "
+                            f"like an ID, not a measurement."
                         ),
                     )
                 )
@@ -100,7 +100,7 @@ def _critique_roles(
                         column=name,
                         from_role=role,
                         to_role="numeric",
-                        reason="Identifier has fractional values; not an ID.",
+                        reason="Has decimal values, so it isn’t an ID.",
                     )
                 )
     return vetoes
@@ -137,8 +137,9 @@ def _critique_totals(
                     type="total_vs_components",
                     columns=[total, *others],
                     detail=(
-                        f"'{total}' ≈ sum of {others}; aggregating both the "
-                        f"total and its components double-counts."
+                        f"'{total}' equals the sum of {others} — using both "
+                        f"the total and its parts would count the same "
+                        f"numbers twice."
                     ),
                 )
             )
@@ -163,8 +164,9 @@ def _critique_totals(
                         type="share_sum",
                         columns=share_cols,
                         detail=(
-                            f"{share_cols} sum to ≈{int(target)} per row — "
-                            f"these are shares; do not sum across rows."
+                            f"{share_cols} add up to about {int(target)} per "
+                            f"row — these look like percentages; don’t add "
+                            f"them across rows."
                         ),
                     )
                 )
@@ -190,9 +192,9 @@ def _critique_dispersion(
                     type="std_gg_mean",
                     columns=[name],
                     detail=(
-                        f"std/|mean| = {abs(std / mean):.1f} ≥ "
-                        f"{config.CRITIC_STD_MEAN_RATIO}; the mean is not a "
-                        f"representative summary of '{name}'."
+                        f"'{name}' varies a lot (spread is "
+                        f"{abs(std / mean):.1f}× the average) — the average "
+                        f"isn’t a good summary of a typical value."
                     ),
                     severity="info",
                 )

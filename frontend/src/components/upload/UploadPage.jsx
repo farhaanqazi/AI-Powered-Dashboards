@@ -332,7 +332,7 @@ const UploadPage = () => {
                 <i className="fas fa-brain text-blue-600"></i>
               </div>
               <h3 className="font-semibold text-gray-900 mb-2">AI-Powered</h3>
-              <p className="text-gray-600 text-sm">Advanced algorithms detect patterns and insights automatically</p>
+              <p className="text-gray-600 text-sm">AI detects patterns and insights automatically</p>
             </div>
 
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-100 text-center">

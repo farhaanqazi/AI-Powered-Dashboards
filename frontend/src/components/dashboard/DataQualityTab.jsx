@@ -5,9 +5,21 @@ import React from 'react';
 // editable role corrections live in the Columns tab (S7.3).
 
 const STATUS_TONE = {
-  ok: { c: 'neon-emerald', i: 'fa-circle-check', t: 'Auto-accepted' },
-  review: { c: 'neon-amber', i: 'fa-user-pen', t: 'Needs schema review' },
-  blocked: { c: 'neon-rose', i: 'fa-shield-halved', t: 'PII-blocked' },
+  ok: { c: 'neon-emerald', i: 'fa-circle-check', t: 'Looks good' },
+  review: { c: 'neon-amber', i: 'fa-user-pen', t: 'Needs your review' },
+  blocked: { c: 'neon-rose', i: 'fa-shield-halved', t: 'Sensitive data — sharing blocked' },
+};
+
+const FLAG_LABEL = {
+  total_vs_components: 'double-count risk',
+  share_sum: 'percentages',
+  std_gg_mean: 'wide spread',
+};
+
+const fmtShape = (shape) => {
+  if (!Array.isArray(shape) || shape.length < 2) return '—';
+  const [rows, cols] = shape;
+  return `${Number(rows).toLocaleString()} rows × ${Number(cols).toLocaleString()} columns`;
 };
 
 const Card = ({ title, icon, children }) => (
@@ -28,7 +40,7 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
       <section className="analysis-section">
         <div className="empty-state">
           <i className="fas fa-clipboard-check empty-icon" />
-          <p>No data-quality report for this dataset.</p>
+          <p>No data check is available for this dataset yet.</p>
         </div>
       </section>
     );
@@ -45,10 +57,10 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">
-            Data Quality
+            Data Check
           </div>
           <h2 className="text-xl md:text-2xl font-semibold text-slate-100">
-            Contract &amp; quality report
+            Data check &amp; cleanup report
           </h2>
         </div>
         <span className={`neon-badge ${tone.c} text-sm`}>
@@ -70,7 +82,7 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
           <i className="fas fa-circle-arrow-right text-sky-300 mr-2" />
           {report.status === 'ok'
             ? 'Column types look right. You can still review and adjust them in the Columns tab.'
-            : 'The column types need a human check. Open the Columns tab to correct any roles and confirm the schema.'}
+            : 'Some column types need a quick check. Open the Columns tab to fix any of them and confirm.'}
         </div>
         <button
           type="button"
@@ -84,38 +96,44 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
           }}
         >
           <i className="fas fa-table-columns" />
-          Review &amp; correct column roles
+          Review &amp; fix column types
         </button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
-        <Card title="Cleaning applied" icon="fa-broom">
+        <Card title="Cleanup applied" icon="fa-broom">
           <ul className="text-sm text-slate-300 space-y-1">
-            <li>Original shape: {JSON.stringify(cleaning.original_shape || [])}</li>
-            <li>Cleaned shape: {JSON.stringify(cleaning.cleaned_shape || [])}</li>
-            <li>Null rows dropped: {cleaning.dropped_null_rows ?? 0}</li>
-            <li>Numeric-coerced: {Object.keys(cleaning.coerced_numeric || {}).join(', ') || '—'}</li>
-            <li>Sentinels nulled: {Object.keys(cleaning.sentinels_nulled || {}).join(', ') || '—'}</li>
+            <li>Size before cleanup: {fmtShape(cleaning.original_shape)}</li>
+            <li>Size after cleanup: {fmtShape(cleaning.cleaned_shape)}</li>
+            <li>Empty rows removed: {cleaning.dropped_null_rows ?? 0}</li>
+            <li>Reformatted to numbers: {Object.keys(cleaning.coerced_numeric || {}).join(', ') || '—'}</li>
+            <li>Placeholder values cleared: {Object.keys(cleaning.sentinels_nulled || {}).join(', ') || '—'}</li>
           </ul>
         </Card>
 
-        <Card title="Sensitivity" icon="fa-user-shield">
+        <Card title="Privacy" icon="fa-user-shield">
           <div className="text-sm text-slate-300 space-y-1">
-            <div>Sensitivity: <b>{report.sensitivity}</b></div>
-            <div>PII blocked: <b>{String(report.pii_blocked)}</b></div>
+            <div>Privacy level:{' '}
+              <b>{report.sensitivity === 'sensitive'
+                ? 'contains personal data'
+                : 'no personal data found'}</b>
+            </div>
+            <div>Sensitive data sharing:{' '}
+              <b>{report.pii_blocked ? 'blocked' : 'allowed'}</b>
+            </div>
             <div>
-              PII columns:{' '}
+              Personal-data columns:{' '}
               {Object.keys(piiCols).length
                 ? Object.entries(piiCols).map(([c, e]) => `${c} (${e.join('/')})`).join(', ')
                 : '—'}
             </div>
-            <div>Mean confidence: {report.mean_confidence}</div>
+            <div>Type-detection accuracy: {Math.round((report.mean_confidence || 0) * 100)}%</div>
           </div>
         </Card>
       </div>
 
       {vetoes.length > 0 && (
-        <Card title="Invariant vetoes (auto-corrected roles)" icon="fa-gavel">
+        <Card title="Auto-corrected column types" icon="fa-gavel">
           <ul className="text-sm text-slate-300 space-y-1">
             {vetoes.map((v, i) => (
               <li key={i}>
@@ -127,11 +145,11 @@ const DataQualityTab = ({ data, onGoToColumns }) => {
       )}
 
       {flags.length > 0 && (
-        <Card title="Quality flags" icon="fa-flag">
+        <Card title="Things to check" icon="fa-flag">
           <ul className="text-sm text-slate-300 space-y-1">
             {flags.map((f, i) => (
               <li key={i}>
-                <span className="neon-badge neon-amber mr-2">{f.type}</span>
+                <span className="neon-badge neon-amber mr-2">{FLAG_LABEL[f.type] || f.type}</span>
                 {f.detail}
               </li>
             ))}

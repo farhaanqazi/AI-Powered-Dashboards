@@ -220,10 +220,10 @@ async def api_upload(request: Request, dataset: UploadFile = File(...), encoding
     try:
         state = build_dashboard_from_file(file_stream, original_filename=dataset.filename, encoding=encoding)
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Couldn’t generate the dashboard: {e}")
 
     if not state:
-        raise HTTPException(status_code=500, detail="Dashboard build failed: returned no state.")
+        raise HTTPException(status_code=500, detail="Couldn’t generate the dashboard (no result was produced).")
 
     response_data = {
         "dataset_profile": state.dataset_profile,
@@ -416,7 +416,7 @@ async def api_load_external(request: Request, req: LoadExternalRequest, user=Dep
     try:
         state = build_dashboard_from_df(result.df)
     except RuntimeError as e:
-        raise HTTPException(status_code=500, detail=f"Dashboard build failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Couldn’t generate the dashboard: {e}")
 
     if state is not None:
         state.warnings = result.warnings or []
@@ -507,12 +507,12 @@ async def api_patch_registry(
     (version+1) → persist by session → re-derive charts/KPIs. No re-profiling,
     no LLM. PII-blocked stays blocked (human review cannot clear it)."""
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Schema review must be explicitly confirmed.")
+        raise HTTPException(status_code=400, detail="Please confirm the column-type review before continuing.")
 
     session_key = user["session_key"]
     payload = get_repository().get(session_key)
     if not payload:
-        raise HTTPException(status_code=404, detail="No dashboard to review for this session.")
+        raise HTTPException(status_code=404, detail="No dashboard found for this session yet.")
 
     try:
         updated = apply_registry_overrides(

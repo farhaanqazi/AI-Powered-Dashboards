@@ -43,7 +43,7 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
         <div className="flex items-center justify-between mb-4">
           <h2 className="section-heading">
             <span className="section-icon"><i className="fas fa-chart-pie text-sky-300" /></span>
-            <span>Key Performance Indicators</span>
+            <span>Key metrics</span>
           </h2>
           {kpis && kpis.length > 0 && (
             <span className="neon-badge neon-blue">{kpis.length} signals</span>

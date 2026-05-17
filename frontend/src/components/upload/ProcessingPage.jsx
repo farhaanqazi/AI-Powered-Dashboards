@@ -5,11 +5,12 @@ import { uploadFileStream, loadExternalSource } from '../../services/api';
 const PHASES = [
   { key: 'reading',     label: 'Reading CSV',        icon: 'fa-cloud-arrow-up',         tint: 'from-sky-400 to-blue-500' },
   { key: 'preparing',   label: 'Preparing data',     icon: 'fa-shuffle',                tint: 'from-blue-400 to-indigo-500' },
-  { key: 'profiling',   label: 'Profiling columns',  icon: 'fa-magnifying-glass-chart', tint: 'from-indigo-400 to-purple-500' },
-  { key: 'classifying', label: 'Classifying types',  icon: 'fa-tags',                   tint: 'from-purple-400 to-fuchsia-500' },
-  { key: 'relating',    label: 'Finding relations',  icon: 'fa-diagram-project',        tint: 'from-fuchsia-400 to-pink-500' },
-  { key: 'eda',         label: 'Running EDA',        icon: 'fa-flask',                  tint: 'from-pink-400 to-rose-500' },
-  { key: 'kpis',        label: 'Computing KPIs',     icon: 'fa-gauge-high',             tint: 'from-rose-400 to-orange-500' },
+  { key: 'ingest_gate', label: 'Checking & cleaning',icon: 'fa-broom',                  tint: 'from-indigo-400 to-violet-500' },
+  { key: 'profiling',   label: 'Analyzing columns',  icon: 'fa-magnifying-glass-chart', tint: 'from-indigo-400 to-purple-500' },
+  { key: 'classifying', label: 'Detecting types',    icon: 'fa-tags',                   tint: 'from-purple-400 to-fuchsia-500' },
+  { key: 'relating',    label: 'Finding relationships', icon: 'fa-diagram-project',     tint: 'from-fuchsia-400 to-pink-500' },
+  { key: 'eda',         label: 'Finding insights',   icon: 'fa-flask',                  tint: 'from-pink-400 to-rose-500' },
+  { key: 'kpis',        label: 'Computing key metrics', icon: 'fa-gauge-high',          tint: 'from-rose-400 to-orange-500' },
   { key: 'rendering',   label: 'Building charts',    icon: 'fa-chart-line',             tint: 'from-orange-400 to-amber-500' },
 ];
 
@@ -336,7 +337,7 @@ const ProcessingPage = () => {
             {/* Progress bar */}
             <div className="mt-8">
               <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-widest text-white/40">
-                <span>Pipeline</span>
+                <span>Progress</span>
                 <span className="tabular-nums text-white/70">{progressPct}%</span>
               </div>
               <div className="relative h-2 w-full overflow-hidden rounded-full bg-white/10">

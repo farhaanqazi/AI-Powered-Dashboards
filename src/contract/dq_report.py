@@ -21,15 +21,23 @@ def evaluate_acceptance(contract: DatasetContract) -> Tuple[bool, List[str]]:
     pii_blocked AND a grain was detected. Returns (accepted, reasons)."""
     reasons: List[str] = []
     if contract.pii_blocked:
-        reasons.append("PII egress is blocked; human review cannot unblock it.")
+        reasons.append(
+            "This dataset contains sensitive personal data, so it can’t be "
+            "shared with the AI. A review won’t change that."
+        )
     if not contract.grain:
-        reasons.append("No row grain could be detected.")
+        reasons.append(
+            "Couldn’t identify what each row represents (no clear unique "
+            "record was found)."
+        )
     confs = [f.confidence for f in contract.fields.values()] or [0.0]
     mean_conf = sum(confs) / len(confs)
     if mean_conf < config.AUTO_ACCEPT_CONFIDENCE:
         reasons.append(
-            f"Mean field confidence {mean_conf:.2f} < "
-            f"auto-accept threshold {config.AUTO_ACCEPT_CONFIDENCE:.2f}."
+            f"Column types were detected with low certainty "
+            f"({mean_conf * 100:.0f}%), below the auto-approve level "
+            f"({config.AUTO_ACCEPT_CONFIDENCE * 100:.0f}%) — a quick check is "
+            f"recommended."
         )
     # PII never auto-accepts; everything else accepts iff no blocking reason.
     accepted = not reasons

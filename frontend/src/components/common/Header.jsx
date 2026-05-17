@@ -5,7 +5,7 @@ import { useDashboardStore } from '../../dashboardStore';
 
 const HELP_STEPS = [
   ['fa-file-csv', 'Bring any CSV', 'Sales, survey, finance, logs — any tabular .csv up to 50 MB. Or paste a URL / Kaggle “user/dataset” identifier.'],
-  ['fa-wand-magic-sparkles', 'AI reads it', 'Columns are typed, key metrics, charts, correlations and a plain-English summary are generated automatically.'],
+  ['fa-wand-magic-sparkles', 'AI reads it', 'Columns are categorized; key metrics, charts, relationships and a plain-English summary are generated automatically.'],
   ['fa-chart-line', 'Explore tabs', 'Overview (KPIs + AI summary), EDA Insights, Visual Gallery, Columns. Switch freely.'],
   ['fa-download', 'Export', 'Download the dashboard as a PDF from the header on the dashboard view.'],
 ];

@@ -114,10 +114,10 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
         {/* Correlation Heatmap */}
         {correlationMatrix && (
           <ChartPanel
-            eyebrow="Variable relationships"
+            eyebrow="Column relationships"
             icon="fa-link"
             iconColor="#d8b4fe"
-            title="Correlation Heatmap"
+            title="Relationship grid"
             badgeTone="neon-purple"
             badgeLabel="Correlation"
           >
@@ -147,7 +147,7 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
         {/* Key Indicators */}
         {key_indicators && key_indicators.length > 0 && (
           <ChartPanel
-            eyebrow="Top signals"
+            eyebrow="Top metrics"
             icon="fa-chart-bar"
             iconColor="#93c5fd"
             title="Key Indicators"
@@ -208,10 +208,10 @@ const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
         {/* Outliers */}
         {outliers && outliers.length > 0 && (
           <ChartPanel
-            eyebrow="Distribution tails"
+            eyebrow="Unusual values"
             icon="fa-triangle-exclamation"
             iconColor="#fda4af"
-            title="Outlier Visualization"
+            title="Unusual values"
             badgeTone="neon-rose"
             badgeLabel="Anomaly"
           >
