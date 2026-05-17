@@ -1,4 +1,10 @@
 import React, { useState } from 'react';
+import { useDashboardStore } from '../../dashboardStore';
+
+const EDITABLE_ROLES = [
+  'numeric', 'categorical', 'datetime', 'identifier',
+  'text', 'boolean', 'year', 'ratio',
+];
 
 const roleTone = (role) => {
   switch (role) {
@@ -23,6 +29,31 @@ const ColumnsTab = ({ data }) => {
   const { dataset_profile } = data || {};
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [edits, setEdits] = useState({});           // colName -> new role
+  const [acknowledged, setAcknowledged] = useState(false);
+
+  const submitSchemaReview = useDashboardStore((s) => s.submitSchemaReview);
+  const reviewSubmitting = useDashboardStore((s) => s.reviewSubmitting);
+  const reviewError = useDashboardStore((s) => s.reviewError);
+
+  const contract = dataset_profile?.contract;
+  const report = dataset_profile?.data_quality?.report;
+  const needsReview = !!report && report.status && report.status !== 'ok';
+  const editable = !!contract;          // a compiled contract can be corrected
+
+  const setRole = (name, role) =>
+    setEdits((e) => ({ ...e, [name]: role }));
+
+  const confirmReview = async () => {
+    const overrides = Object.entries(edits)
+      .filter(([, role]) => role)
+      .map(([name, role]) => ({ name, role }));
+    try {
+      await submitSchemaReview(overrides);
+      setEdits({});
+      setAcknowledged(true);
+    } catch { /* reviewError is surfaced from the store */ }
+  };
 
   if (!dataset_profile || !dataset_profile.columns) {
     return (
@@ -88,6 +119,40 @@ const ColumnsTab = ({ data }) => {
         <MiniStat tone="amber"   icon="fa-fingerprint"  label="Identifiers"  value={identifiers} />
       </div>
 
+      {/* S7.3: non-skippable schema-review confirm */}
+      {editable && (
+        <div className={`glass-soft p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3 ${needsReview ? 'border-amber-400/40' : 'border-emerald-400/30'}`}>
+          <div className="text-sm text-slate-200">
+            <i className={`fas ${needsReview ? 'fa-user-pen text-amber-300' : 'fa-circle-check text-emerald-300'} mr-2`} />
+            {needsReview
+              ? 'This dataset needs schema review. Correct any column roles below, then confirm — this step cannot be skipped.'
+              : 'Schema auto-accepted. You can still correct roles and re-lock the contract.'}
+            {Object.keys(edits).length > 0 && (
+              <span className="ml-2 neon-badge neon-amber">{Object.keys(edits).length} pending</span>
+            )}
+          </div>
+          <button
+            className="dash-btn dash-btn-primary whitespace-nowrap"
+            disabled={reviewSubmitting}
+            onClick={confirmReview}
+          >
+            {reviewSubmitting ? 'Confirming…'
+              : Object.keys(edits).length ? 'Apply & confirm schema'
+              : 'Confirm schema'}
+          </button>
+        </div>
+      )}
+      {reviewError && (
+        <div className="glass-soft p-3 text-rose-200 border-rose-400/30 text-sm">
+          <i className="fas fa-triangle-exclamation mr-2" />{reviewError}
+        </div>
+      )}
+      {acknowledged && !needsReview && (
+        <div className="glass-soft p-3 text-emerald-200 border-emerald-400/30 text-sm">
+          <i className="fas fa-circle-check mr-2" />Schema confirmed and contract locked.
+        </div>
+      )}
+
       {/* Table */}
       <div className="glass-card p-0 overflow-hidden">
         <div className="dash-scroll overflow-x-auto">
@@ -125,7 +190,19 @@ const ColumnsTab = ({ data }) => {
                   </td>
                   <td className="text-slate-200">{col.unique_count}</td>
                   <td>
-                    <span className={`neon-badge ${roleTone(col.role)}`}>{col.role}</span>
+                    {editable ? (
+                      <select
+                        className="dash-input py-1 text-xs"
+                        value={edits[col.name] ?? col.role}
+                        onChange={(e) => setRole(col.name, e.target.value)}
+                      >
+                        {EDITABLE_ROLES.map((r) => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className={`neon-badge ${roleTone(col.role)}`}>{col.role}</span>
+                    )}
                   </td>
                   <td className="text-slate-300 tabular-nums">{col.stats?.min !== undefined ? col.stats.min : '—'}</td>
                   <td className="text-slate-300 tabular-nums">{col.stats?.max !== undefined ? col.stats.max : '—'}</td>

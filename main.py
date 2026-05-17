@@ -32,7 +32,10 @@ from src.api.schemas import (
     LoadExternalResponse,
     ValidateExternalResponse,
     DashboardResponse,
+    RegistryPatchRequest,
+    RegistryPatchResponse,
 )
+from src.contract.registry_patch import apply_registry_overrides
 from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
 from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
@@ -491,6 +494,44 @@ async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
         "critical_full_dataset_aggregates": dashboard_data.get("critical_full_dataset_aggregates", {}),
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
+
+@app.patch("/api/dashboard/{trace_id}/registry", response_model=RegistryPatchResponse)
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_patch_registry(
+    request: Request,
+    trace_id: str,
+    body: RegistryPatchRequest,
+    user=Depends(allow_clerk_or_guest),
+):
+    """Phase 7 (S7.1): apply human schema overrides → lock contract
+    (version+1) → persist by session → re-derive charts/KPIs. No re-profiling,
+    no LLM. PII-blocked stays blocked (human review cannot clear it)."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Schema review must be explicitly confirmed.")
+
+    session_key = user["session_key"]
+    payload = get_repository().get(session_key)
+    if not payload:
+        raise HTTPException(status_code=404, detail="No dashboard to review for this session.")
+
+    try:
+        updated = apply_registry_overrides(
+            payload, [o.model_dump(exclude_none=True) for o in body.overrides]
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    get_repository().save(session_key, trace_id=trace_id, payload=updated)
+
+    contract = (updated.get("dataset_profile") or {}).get("contract") or {}
+    return {
+        "status": "success",
+        "trace_id": trace_id,
+        "contract_version": contract.get("version", 1),
+        "locked": bool(contract.get("locked", False)),
+        "data": updated,
+    }
+
 
 @app.get("/assets/{full_path:path}")
 async def serve_dynamic_assets(full_path: str):

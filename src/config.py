@@ -145,3 +145,9 @@ CRITIC_MIN_ROWS = int(os.environ.get("CRITIC_MIN_ROWS", 12))
 # then this stays False so behaviour — and the local pytest merge gate — is
 # unchanged.
 SCHEMA_REVIEW_ENABLED = _env_bool("SCHEMA_REVIEW_ENABLED", False)
+
+# --- LLM Output Validation + Auto-Accept (Phase 6) ---
+# A compiled contract auto-accepts (auto-locks, no human review) only when the
+# minimum per-field role confidence is at least this AND the dataset is not
+# pii_blocked AND a grain was detected. Below it → needs schema review.
+AUTO_ACCEPT_CONFIDENCE = float(os.environ.get("AUTO_ACCEPT_CONFIDENCE", 0.70))

@@ -6,9 +6,11 @@ import OverviewTab from './OverviewTab';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
 import ColumnsTab from './ColumnsTab';
+import DataQualityTab from './DataQualityTab';
 import '../../styles/dashboard-futuristic.css';
 
 const TABS = [
+  { key: 'data_quality',      label: 'Data Quality', icon: 'fa-clipboard-check' },
   { key: 'overview',          label: 'Overview',     icon: 'fa-chart-line' },
   { key: 'eda',               label: 'EDA Insights', icon: 'fa-brain' },
   { key: 'visualizations',    label: 'Visual Gallery', icon: 'fa-chart-bar' },
@@ -59,6 +61,18 @@ const DashboardPage = () => {
   const particleRootRef = useRef(null);
 
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
+
+  // S7.4: when the backend flags the dataset for schema review, land the user
+  // on Data Quality first (only auto-switch from the initial Overview).
+  const reviewedRef = useRef(false);
+  useEffect(() => {
+    const status = dashboardData?.dataset_profile?.data_quality?.report?.status;
+    if (status && status !== 'ok' && !reviewedRef.current
+        && activeTabRef.current === 'overview') {
+      reviewedRef.current = true;
+      setActiveTab('data_quality');
+    }
+  }, [dashboardData]);
 
   useEffect(() => {
     setExportHandler(async () => {
@@ -142,6 +156,8 @@ const DashboardPage = () => {
         return <VisualizationsTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
       case 'column_profiling':
         return <ColumnsTab data={dashboardData} />;
+      case 'data_quality':
+        return <DataQualityTab data={dashboardData} />;
       default:
         return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
     }

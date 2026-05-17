@@ -229,9 +229,16 @@ def _build_kpis(
             coeff = (corr_lookup[frozenset(corr)] or {}).get("correlation_coefficient")
             if coeff is None:
                 continue
+            a, b = list(corr)[0], list(corr)[1]
             out.append({"label": label, "value": f"{coeff:.2f}",
                         "type": "correlation", "score": score,
-                        "_src": ("corr", frozenset(corr))})
+                        "_src": ("corr", frozenset(corr)),
+                        # Provenance: this number traces to the L3 correlation.
+                        "provenance": {
+                            "source": f"corr:{a}|{b}",
+                            "metric": "correlation",
+                            "token": f"L3.correlation.{a}|{b}",
+                        }})
             continue
 
         col = item.get("column")
@@ -244,6 +251,12 @@ def _build_kpis(
                 "type": profile.role,
                 "score": score,
                 "_src": ("col", col),
+                # Provenance: every figure traces to a deterministic L1/L2 stat.
+                "provenance": {
+                    "source": f"column:{col}",
+                    "metric": metric,
+                    "token": f"L1.{col}.{metric}",
+                },
             })
     return out
 
@@ -433,6 +446,23 @@ def run_ai_analyst(
         ai_kis, ai_use_cases, ai_recs = _build_eda(parsed, enriched_profiles)
     except Exception as e:
         logger.warning(f"AI analyst output rejected, using heuristic fallback: {e}")
+        return fallback
+
+    # S6.1: validate the AI-built output against ground truth BEFORE merging in
+    # heuristic backfill. Every KPI must carry a provenance token tracing its
+    # number to a deterministic source; unknown columns / bad intents are
+    # rejected. Failure ⇒ explicit logged fallback.
+    from src.contract.models import LLMOutputContract
+
+    verdict = LLMOutputContract.validate_output(
+        kpis, charts, set(enriched_profiles.keys())
+    )
+    if not verdict.ok:
+        logger.warning(
+            "AI analyst output failed LLMOutputContract "
+            f"({len(verdict.reasons)} issues): {verdict.reasons[:5]} "
+            "— falling back to heuristic Layer 4."
+        )
         return fallback
 
     # Merge, never shrink: AI-labelled items come first (better titles), then

@@ -7,6 +7,12 @@ from src.contract.models import (
     IngestResult,
     FieldContract,
     DatasetContract,
+    LLMOutputContract,
+)
+from src.contract.dq_report import (
+    DataQualityReport,
+    build_dq_report,
+    evaluate_acceptance,
 )
 from src.contract.ingest_gate import run_ingest_gate
 from src.contract.compiler import compile_contract, schema_fingerprint
@@ -34,4 +40,8 @@ __all__ = [
     "CritiqueResult",
     "InvariantVeto",
     "InvariantFlag",
+    "LLMOutputContract",
+    "DataQualityReport",
+    "build_dq_report",
+    "evaluate_acceptance",
 ]

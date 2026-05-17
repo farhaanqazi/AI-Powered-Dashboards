@@ -115,3 +115,79 @@ class DatasetContract(BaseModel):
                 "version": self.version + 1 if bump_version else self.version,
             }
         )
+
+
+_LLM_ALLOWED_METRICS = {
+    "sum", "mean", "median", "min", "max", "std", "variance",
+    "count", "top_category", "correlation",
+}
+_LLM_ALLOWED_INTENTS = {
+    "category_count", "distribution", "histogram", "category_summary",
+    "group_comparison", "time_series", "scatter",
+}
+
+
+class LLMOutputContract(BaseModel):
+    """Validates AI-analyst output against ground truth before it is shown.
+
+    The LLM may only *select* and *label*; every figure is system-filled. This
+    contract enforces that: each KPI/chart references a real column (or a real
+    correlation pair), metrics/intents are in the allowed sets, and every KPI
+    carries a provenance token tracing its number to a deterministic source.
+    Validation failure ⇒ explicit logged fallback to the heuristic Layer 4.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    ok: bool = True
+    reasons: List[str] = Field(default_factory=list)
+    validated_kpis: int = 0
+    validated_charts: int = 0
+
+    @classmethod
+    def validate_output(
+        cls,
+        kpis: List[Dict[str, Any]],
+        charts: List[Dict[str, Any]],
+        known_columns: set,
+    ) -> "LLMOutputContract":
+        reasons: List[str] = []
+        good_k = 0
+        for k in kpis:
+            prov = k.get("provenance") or {}
+            src = prov.get("source", "")
+            if src.startswith("column:"):
+                col = src.split(":", 1)[1]
+                if col and col not in known_columns:
+                    reasons.append(f"KPI references unknown column '{col}'")
+                    continue
+            elif src.startswith("corr:"):
+                pair = src.split(":", 1)[1].split("|")
+                if any(c not in known_columns for c in pair if c):
+                    reasons.append(f"KPI correlation references unknown column: {pair}")
+                    continue
+            elif not src:
+                reasons.append(f"KPI '{k.get('label')}' has no provenance token")
+                continue
+            good_k += 1
+
+        good_c = 0
+        for c in charts:
+            intent = c.get("intent")
+            if intent not in _LLM_ALLOWED_INTENTS:
+                reasons.append(f"Chart has disallowed intent '{intent}'")
+                continue
+            for f in ("x_field", "y_field"):
+                v = c.get(f)
+                if v and v not in known_columns:
+                    reasons.append(f"Chart {f}='{v}' is not a real column")
+                    break
+            else:
+                good_c += 1
+
+        return cls(
+            ok=not reasons,
+            reasons=reasons,
+            validated_kpis=good_k,
+            validated_charts=good_c,
+        )

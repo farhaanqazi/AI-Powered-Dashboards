@@ -81,3 +81,36 @@ class ErrorResponse(BaseModel):
     error_type: Optional[str] = None
     error_detail: Optional[str] = None
     errors: Optional[List[Any]] = None
+
+
+# --- Phase 7: HITL schema-review (PATCH /api/dashboard/{id}/registry) ---
+
+
+class FieldOverride(BaseModel):
+    """One human correction to a column's contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    role: Optional[str] = None
+    domain: Optional[str] = None
+    sensitivity: Optional[str] = None
+
+
+class RegistryPatchRequest(BaseModel):
+    """Body of the schema-review confirm. ``confirm`` must be True — the UI
+    makes this a non-skippable, explicit human action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overrides: List[FieldOverride] = Field(default_factory=list)
+    confirm: bool = False
+
+
+class RegistryPatchResponse(BaseModel):
+    model_config = _PERMISSIVE
+    status: str
+    trace_id: str
+    contract_version: int
+    locked: bool
+    data: DashboardPayload

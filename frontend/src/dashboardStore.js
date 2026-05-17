@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { getDashboardData } from './services/api';
+import { getDashboardData, patchRegistry } from './services/api';
 
 const GUEST_KEY = 'dataInsight:guestMode';
 const GUEST_SID_KEY = 'dataInsight:guestSessionId';
@@ -59,6 +59,36 @@ export const useDashboardStore = create((set, get) => ({
         loading: false,
         error: err?.response?.data?.detail || err.message || 'Failed to load dashboard data',
       });
+    }
+  },
+  // Phase 7 (S7.5): true while the human schema review is being submitted.
+  reviewSubmitting: false,
+  reviewError: null,
+  // The data-quality verdict the backend threaded into the payload.
+  schemaReview() {
+    return get().data?.dataset_profile?.data_quality?.report || null;
+  },
+  needsSchemaReview() {
+    const r = get().schemaReview();
+    return !!r && r.status && r.status !== 'ok';
+  },
+  async submitSchemaReview(overrides) {
+    if (get().reviewSubmitting) return;
+    set({ reviewSubmitting: true, reviewError: null });
+    try {
+      const resp = await patchRegistry(get().data?.trace_id, overrides);
+      set({
+        data: resp.data || resp,
+        reviewSubmitting: false,
+        lastUpdated: Date.now(),
+      });
+    } catch (err) {
+      set({
+        reviewSubmitting: false,
+        reviewError:
+          err?.response?.data?.detail || err.message || 'Schema review failed',
+      });
+      throw err;
     }
   },
 }));

@@ -174,4 +174,15 @@ export const getDashboardData = async () => {
   return response.data;
 };
 
+// Phase 7 (S7.5): submit human schema-review overrides. The backend keys the
+// dashboard by session, so the trace id is only a guard — 'current' is fine
+// when the GET payload doesn't carry one.
+export const patchRegistry = async (traceId, overrides) => {
+  const response = await api.patch(
+    `/dashboard/${encodeURIComponent(traceId || 'current')}/registry`,
+    { overrides: overrides || [], confirm: true },
+  );
+  return response.data;
+};
+
 export default api;

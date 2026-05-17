@@ -40,17 +40,17 @@
 - **S5.1** — 2026-06-22 → 2026-06-25 — `src/core/pipeline.py` (sync + generator): ingest gate, `pii_blocked` short-circuit, compile + vetoes + cache, `schema_review` gating before L3/L4/EDA/LLM/render, thread + persist contract. — ✅ 2026-06-22 → 2026-06-25 -- 2026-05-17 (both paths wired; rejected→DQ state; `schema_review` gate present but inert via `config.SCHEMA_REVIEW_ENABLED=False` until Phase 6 S6.3 sets the auto-accept criterion + Phase 7 ships the UI; contract+cleaning+vetoes+flags persisted in `dataset_profile`)
 - **S5.2** — 2026-06-26 — `llm_analyst.py`: contract-validated aggregated payload only; never send raw `pii` rows. — ✅ 2026-06-26 -- 2026-05-17 (PII-blocked → LLM never called; sensitive columns redacted from ground truth — no top_categories, no stats)
 
-## Phase 6 — LLM Output Validator + Graceful Degradation — 2026-06-29 → 2026-07-03
-- **S6.1** — 2026-06-29 → 2026-06-30 — `LLMOutputContract` validation + per-number provenance tokens; explicit logged fallback.
-- **S6.2** — 2026-07-01 — `src/contract/dq_report.py` `DataQualityReport`; emitted on undetectable grain / `pii_blocked` / unlockable contract.
-- **S6.3** — 2026-07-02 → 2026-07-03 — Auto-accept rule via `config.AUTO_ACCEPT_CONFIDENCE` (no hardcoded literals); sub-threshold/pii blocks lock.
+## Phase 6 — LLM Output Validator + Graceful Degradation — 2026-06-29 → 2026-07-03 — ✅ 2026-06-29 → 2026-07-03 -- 2026-05-17 → 2026-05-17
+- **S6.1** — 2026-06-29 → 2026-06-30 — `LLMOutputContract` validation + per-number provenance tokens; explicit logged fallback. — ✅ 2026-06-29 → 2026-06-30 -- 2026-05-17 (every KPI carries a `provenance` token (`column:`/`corr:` + L1/L3 token); validator rejects unknown columns/bad intents/missing provenance → logged heuristic fallback)
+- **S6.2** — 2026-07-01 — `src/contract/dq_report.py` `DataQualityReport`; emitted on undetectable grain / `pii_blocked` / unlockable contract. — ✅ 2026-07-01 -- 2026-05-17 (status ok/review/blocked; threaded into `dataset_profile.data_quality.report` + `eda_summary.data_quality_report`)
+- **S6.3** — 2026-07-02 → 2026-07-03 — Auto-accept rule via `config.AUTO_ACCEPT_CONFIDENCE` (no hardcoded literals); sub-threshold/pii blocks lock. — ✅ 2026-07-02 → 2026-07-03 -- 2026-05-17 (`evaluate_acceptance`: mean-conf ≥ threshold ∧ ¬pii_blocked ∧ grain → auto-lock; else unlocked + DQ "review"/"blocked". Pipeline halt still gated by `SCHEMA_REVIEW_ENABLED` until Phase 7 UI)
 
-## Phase 7 — HITL Schema Review (API + Frontend) — 2026-07-06 → 2026-07-15
-- **S7.1** — 2026-07-06 → 2026-07-08 — `PATCH /api/dashboard/{id}/registry`: override → lock (`version+=1`) → persist by fingerprint → recompute L3→render (skip profiling + LLM).
-- **S7.2** — 2026-07-08 — Draft-contract + PATCH-body schemas in `src/api/schemas.py`.
-- **S7.3** — 2026-07-09 → 2026-07-11 — `ColumnsTab.jsx` editable contract table (role/domain/sensitivity, confidence, alternatives, badges); non-skippable confirm.
-- **S7.4** — 2026-07-12 → 2026-07-13 — `DataQualityTab.jsx` + register first-tab in `DashboardPage.jsx`.
-- **S7.5** — 2026-07-14 → 2026-07-15 — `dashboardStore.js` + `services/api.js` handle `schema_review`/draft/PATCH/`data_quality`.
+## Phase 7 — HITL Schema Review (API + Frontend) — 2026-07-06 → 2026-07-15 — ✅ 2026-07-06 → 2026-07-15 -- 2026-05-17 → 2026-05-17
+- **S7.1** — 2026-07-06 → 2026-07-08 — `PATCH /api/dashboard/{id}/registry`: override → lock (`version+=1`) → persist by fingerprint → recompute L3→render (skip profiling + LLM). — ✅ 2026-07-06 → 2026-07-08 -- 2026-05-17 (`src/contract/registry_patch.py`; override→re-derive allow-lists→lock(version+1)→drop now-invalid charts/KPIs→persist by session; no profiling/LLM. Raw-row L3 re-aggregation is out of scope — df is not persisted per the "no new storage backend" invariant; deterministic re-derivation from the persisted contract+payload instead. PII stays blocked through review.)
+- **S7.2** — 2026-07-08 — Draft-contract + PATCH-body schemas in `src/api/schemas.py`. — ✅ 2026-07-08 -- 2026-05-17 (`FieldOverride`, `RegistryPatchRequest` (non-skippable `confirm`), `RegistryPatchResponse`)
+- **S7.3** — 2026-07-09 → 2026-07-11 — `ColumnsTab.jsx` editable contract table (role/domain/sensitivity, confidence, alternatives, badges); non-skippable confirm. — ✅ 2026-07-09 → 2026-07-11 -- 2026-05-17 (per-row role `<select>`, pending-edit counter, mandatory confirm bar wired to the store)
+- **S7.4** — 2026-07-12 → 2026-07-13 — `DataQualityTab.jsx` + register first-tab in `DashboardPage.jsx`. — ✅ 2026-07-12 → 2026-07-13 -- 2026-05-17 (cleaning/vetoes/flags/PII/status report; auto-lands on review)
+- **S7.5** — 2026-07-14 → 2026-07-15 — `dashboardStore.js` + `services/api.js` handle `schema_review`/draft/PATCH/`data_quality`. — ✅ 2026-07-14 → 2026-07-15 -- 2026-05-17 (`patchRegistry`, `submitSchemaReview`, `schemaReview`/`needsSchemaReview` selectors). Backend `SCHEMA_REVIEW_ENABLED` remains False by default — the review *halt* is opt-in; the PATCH path + UI work whenever the gate is enabled. Frontend `npm run build` green; Python gate 137 passed.
 
 ## Phase 8 — CI/CD Contract Testing — 2026-07-16 → 2026-07-22
 - **S8.1** — 2026-07-16 → 2026-07-22 — `tests/contract/`: hypothesis normalization/rejection, snapshot contract mappings, backward-compat load; wire into local `pytest` gate.

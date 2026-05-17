@@ -36,6 +36,7 @@ from src.contract import (
     compile_contract,
     get_contract_cache,
 )
+from src.contract.dq_report import build_dq_report, evaluate_acceptance
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +69,18 @@ def _contract_compile_stage(df, enriched_profiles, ingest):
         if cached is not None:
             contract = cached
     else:
+        # S6.3 auto-accept: high-confidence, non-PII, grain-bearing datasets
+        # auto-lock (no human review needed). Sub-threshold/PII stay unlocked
+        # → DataQualityReport.status drives the Phase 7 HITL flow.
+        accepted, _ = evaluate_acceptance(contract)
+        if accepted and not contract.locked:
+            contract = contract.with_lock(bump_version=False)
         cache.put(contract)
-    return enriched_profiles, contract, crit
+    dq = build_dq_report(contract, ingest, crit)
+    return enriched_profiles, contract, crit, dq
 
 
-def _contract_into_profile(viz_profile: dict, contract, ingest, crit) -> None:
+def _contract_into_profile(viz_profile: dict, contract, ingest, crit, dq=None) -> None:
     """Thread the contract + data-quality verdict into the dataset profile so
     it persists in the existing DashboardRecord (no new storage backend)."""
     viz_profile["contract"] = contract.model_dump(mode="json")
@@ -86,6 +94,7 @@ def _contract_into_profile(viz_profile: dict, contract, ingest, crit) -> None:
         "cleaning": ingest.manifest.model_dump(mode="json"),
         "vetoes": [v.model_dump() for v in crit.vetoes],
         "flags": [f.model_dump() for f in crit.flags],
+        "report": dq.model_dump(mode="json") if dq is not None else None,
     }
 
 def _reshape_if_wide_timeseries(df: pd.DataFrame) -> pd.DataFrame:
@@ -230,21 +239,22 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         
         # --- CONTRACT COMPILE + CRITIC + CACHE (Phases 2-4) ---
         with _time_layer("contract"):
-            enriched_profiles, contract, crit = _contract_compile_stage(
+            enriched_profiles, contract, crit, dq = _contract_compile_stage(
                 df, enriched_profiles, ingest
             )
-        # schema_review gate (Phase 5 mechanism; activation = Phase 6 S6.3,
-        # UI = Phase 7). Inert unless SCHEMA_REVIEW_ENABLED.
-        if config.SCHEMA_REVIEW_ENABLED and not contract.locked:
-            logger.info("Schema review gate engaged; halting before L3.")
+        # schema_review gate (Phase 5 mechanism; criterion = Phase 6 S6.3
+        # auto-accept, UI = Phase 7). Inert unless SCHEMA_REVIEW_ENABLED.
+        if config.SCHEMA_REVIEW_ENABLED and dq.status != "ok":
+            logger.info(f"Schema review gate engaged ({dq.status}); halting before L3.")
             viz = {"n_rows": len(df), "n_cols": len(enriched_profiles),
                    "columns": [p.__dict__ for p in enriched_profiles.values()]}
-            _contract_into_profile(viz, contract, ingest, crit)
+            _contract_into_profile(viz, contract, ingest, crit, dq)
             viz["status"] = "schema_review"
             return _empty_dashboard_state(
                 original_filename, warnings=ingest_warnings,
                 dataset_profile=viz,
-                eda_summary={"status": "schema_review"},
+                eda_summary={"status": "schema_review",
+                             "data_quality_report": dq.model_dump(mode="json")},
             )
 
         # Layer 3: Find relationships
@@ -332,7 +342,9 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             "dataset_grain": dataset_grain,  # Add dataset grain information
             "columns": [p.__dict__ for p in enriched_profiles.values()]
         }
-        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit)
+        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit, dq)
+        if isinstance(eda_summary, dict):
+            eda_summary["data_quality_report"] = dq.model_dump(mode="json")
 
         try:
             with _time_layer("rendering"):
@@ -513,17 +525,19 @@ def build_dashboard_from_df_generator(
                                    {"roles": {n: p.role for n, p in enriched_profiles.items()}})
 
         with _time_layer("contract"):
-            enriched_profiles, contract, crit = _contract_compile_stage(
+            enriched_profiles, contract, crit, dq = _contract_compile_stage(
                 df, enriched_profiles, ingest
             )
-        if config.SCHEMA_REVIEW_ENABLED and not contract.locked:
+        if config.SCHEMA_REVIEW_ENABLED and dq.status != "ok":
             viz = {"n_rows": len(df), "n_cols": len(enriched_profiles),
                    "columns": [p.__dict__ for p in enriched_profiles.values()]}
-            _contract_into_profile(viz, contract, ingest, crit)
+            _contract_into_profile(viz, contract, ingest, crit, dq)
             viz["status"] = "schema_review"
             sr = _empty_dashboard_state(
                 original_filename, warnings=ingest_warnings,
-                dataset_profile=viz, eda_summary={"status": "schema_review"},
+                dataset_profile=viz,
+                eda_summary={"status": "schema_review",
+                             "data_quality_report": dq.model_dump(mode="json")},
             )
             yield {"phase": "done", "message": "Schema review required",
                    "percent": 100, "state": sr}
@@ -590,7 +604,9 @@ def build_dashboard_from_df_generator(
             "dataset_grain": dataset_grain,
             "columns": [p.__dict__ for p in enriched_profiles.values()],
         }
-        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit)
+        _contract_into_profile(dataset_profile_for_viz, contract, ingest, crit, dq)
+        if isinstance(eda_summary, dict):
+            eda_summary["data_quality_report"] = dq.model_dump(mode="json")
         with _time_layer("rendering"):
             all_charts = build_charts_from_specs(df, chart_specs, dataset_profile=dataset_profile_for_viz)
         primary_chart = next((c for c in all_charts if c.get("type") == "bar"), None)
