@@ -40,6 +40,7 @@ from src.observability.tracing import configure_tracing
 from src.observability.sentry import configure_sentry
 
 from src.persistence.repository import get_repository
+from src import config
 
 # ---------------- LOGGING ----------------
 from src.observability.logging import configure_observability_logging
@@ -81,6 +82,38 @@ app.add_middleware(MetricsMiddleware)
 
 app.add_middleware(RequestIDMiddleware)
 
+# ---------------- RATE LIMITING (S0.5) ----------------
+# Optional dependency: if slowapi is not installed (e.g. local pytest gate
+# before `pip install -r requirements.txt`), degrade to a no-op so the app
+# still imports. Production (HF) installs slowapi and gets real per-IP limits.
+import sys as _sys
+
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from slowapi.middleware import SlowAPIMiddleware
+
+    _under_pytest = "pytest" in _sys.modules
+    limiter = Limiter(
+        key_func=get_remote_address,
+        default_limits=[config.RATE_LIMIT_DEFAULT],
+        enabled=config.RATE_LIMIT_ENABLED and not _under_pytest,
+    )
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    app.add_middleware(SlowAPIMiddleware)
+    logger.info("Rate limiting enabled (slowapi)")
+except Exception:  # slowapi missing -> no-op limiter
+    class _NoopLimiter:
+        def limit(self, *_a, **_k):
+            def _deco(fn):
+                return fn
+            return _deco
+
+    limiter = _NoopLimiter()
+    logger.warning("slowapi unavailable; rate limiting disabled")
+
 # ---------------- OBSERVABILITY ROUTES ----------------
 # Must be registered before the SPA catch-all (`/{full_path:path}`) so the
 # catch-all does not intercept /healthz, /readyz and /metrics.
@@ -93,6 +126,45 @@ def _init_persistence() -> None:
     # Building the singleton also calls db.init_db() (create tables if absent).
     get_repository()
     logger.info("Persistence layer initialised")
+
+# ---------------- UPLOAD HARD CAPS (S0.4) ----------------
+async def _read_upload_capped(dataset: UploadFile) -> bytes:
+    """Read an UploadFile in chunks, rejecting on the stream as soon as the
+    byte cap is exceeded — never buffers an arbitrarily large body first.
+    Then enforces row/column hard caps before the bytes reach the pipeline."""
+    max_bytes = config.MAX_UPLOAD_BYTES
+    buf = bytearray()
+    while True:
+        chunk = await dataset.read(1024 * 1024)
+        if not chunk:
+            break
+        buf.extend(chunk)
+        if len(buf) > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {max_bytes // (1024*1024)} MB upload limit.",
+            )
+    contents = bytes(buf)
+
+    # Column cap: parse only the header row.
+    try:
+        ncols = pd.read_csv(io.BytesIO(contents), nrows=0).shape[1]
+    except Exception:
+        ncols = 0
+    if ncols > config.MAX_UPLOAD_COLS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File has {ncols} columns; limit is {config.MAX_UPLOAD_COLS}.",
+        )
+    # Row cap: cheap newline count (upper bound on data rows).
+    nrows = contents.count(b"\n")
+    if nrows > config.MAX_UPLOAD_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File has ~{nrows} rows; limit is {config.MAX_UPLOAD_ROWS}.",
+        )
+    return contents
+
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
@@ -126,7 +198,8 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ======================= API ==============================
 
 @app.post("/api/upload", response_model=UploadResponse)
-async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_upload(request: Request, dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
     if not dataset.filename:
@@ -138,7 +211,7 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files allowed.")
 
-    contents = await dataset.read()
+    contents = await _read_upload_capped(dataset)
     file_stream = io.BytesIO(contents)
 
     try:
@@ -175,7 +248,8 @@ async def api_upload(dataset: UploadFile = File(...), encoding: Optional[str] = 
     }
 
 @app.post("/api/upload/stream")
-async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_upload_stream(request: Request, dataset: UploadFile = File(...), encoding: Optional[str] = Form(None), user=Depends(allow_clerk_or_guest)):
     if not dataset.filename:
         raise HTTPException(status_code=400, detail="No file provided.")
 
@@ -185,7 +259,7 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
     if not filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files allowed.")
 
-    contents = await dataset.read()
+    contents = await _read_upload_capped(dataset)
     trace_id = str(uuid.uuid4())
 
     def event_source():
@@ -246,7 +320,8 @@ async def api_upload_stream(dataset: UploadFile = File(...), encoding: Optional[
 
 
 @app.post("/api/validate_external", response_model=ValidateExternalResponse)
-async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_validate_external(request: Request, req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     """Cheap pre-flight: confirm the source is reachable and looks like CSV before
     the user is sent to /processing. Returns 200 on success, 400 with a specific
     detail on failure."""
@@ -309,7 +384,8 @@ async def api_validate_external(req: LoadExternalRequest, user=Depends(allow_cle
 
 
 @app.post("/api/load_external", response_model=LoadExternalResponse)
-async def api_load_external(req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_load_external(request: Request, req: LoadExternalRequest, user=Depends(allow_clerk_or_guest)):
     trace_id = str(uuid.uuid4())
 
     if not req.external_source or not isinstance(req.external_source, str):
@@ -434,7 +510,9 @@ async def read_splash():
     return FileResponse("frontend/dist/splash.html")
 
 @app.get("/debug-build-files")
-async def debug_build_files():
+async def debug_build_files(user=Depends(require_clerk_user)):
+    if not config.ENABLE_DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404)
     dist_path = "frontend/dist"
     assets_path = "frontend/dist/assets"
 
@@ -482,7 +560,9 @@ async def serve_spa(full_path: str):
 TEST_FILE = Path("persistence_test.txt")
 
 @app.get("/test-persistence/{action}", response_class=PlainTextResponse)
-async def test_persistence(action: str):
+async def test_persistence(action: str, user=Depends(require_clerk_user)):
+    if not config.ENABLE_DEBUG_ENDPOINTS:
+        raise HTTPException(status_code=404)
     if action == "write":
         content = f"Written at {datetime.utcnow().isoformat()}"
         TEST_FILE.write_text(content)

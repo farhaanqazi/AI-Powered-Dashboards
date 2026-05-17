@@ -195,7 +195,11 @@ def _identify_patterns_and_relationships(df: pd.DataFrame, enriched_profiles: Di
     # Identify outliers in numeric columns
     for col_name, profile in enriched_profiles.items():
         if profile.role == 'numeric':
-            series = df[col_name].dropna()
+            # A column's ROLE can be 'numeric' (heuristic or AI-arbitrated)
+            # while its raw values are still strings. Quantiles on an object
+            # series return strings → `Q3 - Q1` is `str - str` and the whole
+            # patterns block dies. Coerce defensively; skip if not real numbers.
+            series = pd.to_numeric(df[col_name], errors='coerce').dropna()
             if len(series) > 10:  # Need sufficient data points
                 Q1 = series.quantile(0.25)
                 Q3 = series.quantile(0.75)
@@ -303,8 +307,13 @@ def _generate_critical_totals(df: pd.DataFrame, enriched_profiles: Dict[str, Enr
             monetary_indicators = ['amount', 'revenue', 'cost', 'price', 'fee', 'charge', 'payment', 'income', 'expense', 'profit']
 
             if any(indicator in name_lower for indicator in monetary_indicators):
-                total = df[col_name].sum()
-                critical_totals[f"total_{col_name}"] = float(total)
+                # role can be 'numeric' on a string-valued column; coerce
+                # before summing or float() blows up (same class of bug as
+                # the outlier IQR path).
+                numeric = pd.to_numeric(df[col_name], errors='coerce').dropna()
+                if numeric.empty:
+                    continue
+                critical_totals[f"total_{col_name}"] = float(numeric.sum())
 
     return critical_totals
 

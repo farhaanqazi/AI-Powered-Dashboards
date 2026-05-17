@@ -219,6 +219,54 @@ def _detect_datetime(series: pd.Series, min_rate: float = 0.85) -> Tuple[bool, O
 
     return False, None
 
+def _confidence_and_alternatives(
+    name: str,
+    series: pd.Series,
+    profile: SyntacticProfile,
+    role: str,
+) -> Tuple[float, List[Dict[str, Any]]]:
+    """Derive a calibrated confidence for the chosen ``role`` plus the top-2
+    runner-up roles. Metadata only — never changes the role decision, so
+    existing classification behaviour is preserved.
+    """
+    count = max(int(profile.stats.get("count", profile.unique_count or 1)), 1)
+    unique_ratio = (profile.unique_count or 0) / count
+
+    scores: Dict[str, float] = {}
+    if role == "identifier":
+        try:
+            scores["identifier"] = float(
+                is_likely_identifier_with_confidence(series, name)[2]
+            )
+        except Exception:
+            scores["identifier"] = 0.8
+        scores["numeric" if is_numeric_dtype(series) else "categorical"] = 0.3
+        scores["text"] = 0.2
+    elif role in ("numeric", "boolean", "datetime"):
+        scores[role] = 0.92
+        scores["identifier"] = 0.35 if unique_ratio > 0.9 else 0.1
+        scores["categorical"] = 0.2
+    elif role == "categorical":
+        scores["categorical"] = max(0.55, min(0.95, 1.0 - unique_ratio))
+        scores["text"] = unique_ratio
+        scores["identifier"] = 0.4 if unique_ratio > 0.9 else 0.1
+    elif role == "text":
+        scores["text"] = 0.6
+        scores["categorical"] = max(0.0, 0.5 - unique_ratio)
+        scores["identifier"] = 0.5 if unique_ratio > 0.95 else 0.1
+    else:  # unknown / other
+        scores[role] = 0.3
+        scores["text"] = 0.25
+
+    chosen = float(scores.get(role, 0.5))
+    alternatives = [
+        {"role": r, "confidence": round(float(s), 4)}
+        for r, s in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+        if r != role
+    ][:2]
+    return round(chosen, 4), alternatives
+
+
 def run_semantic_classification(
     profiles: Dict[str, SyntacticProfile],
     df: pd.DataFrame
@@ -332,8 +380,13 @@ def run_semantic_classification(
             elif agg_hint == 'rate':
                 semantic_tags.append('rate')
 
+        confidence, alternatives = _confidence_and_alternatives(
+            name, df[name], profile, role
+        )
         enriched_profiles[name] = EnrichedProfile(
             role=role,
+            confidence=confidence,
+            alternatives=alternatives,
             semantic_tags=semantic_tags,
             **profile.__dict__
         )

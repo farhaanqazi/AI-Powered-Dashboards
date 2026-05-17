@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, RedirectToSignIn, useUser } from '@clerk/clerk-react';
 import UploadPage from './components/upload/UploadPage';
 import ProcessingPage from './components/upload/ProcessingPage';
 import DashboardPage from './components/dashboard/DashboardPage';
@@ -21,6 +21,20 @@ function Protected({ children }) {
       </SignedOut>
     </>
   );
+}
+
+// S0.6: once a Clerk session exists, clear any lingering guest-mode flag so a
+// signed-in user is never silently treated as an anonymous guest.
+function GuestModeSync() {
+  const { isSignedIn } = useUser();
+  const disableGuest = useDashboardStore((s) => s.disableGuest);
+  const isGuest = useDashboardStore((s) => s.isGuest);
+  useEffect(() => {
+    if (isSignedIn && isGuest) {
+      disableGuest();
+    }
+  }, [isSignedIn, isGuest, disableGuest]);
+  return null;
 }
 
 function SplashScreen() {
@@ -161,6 +175,7 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-950">
+      <GuestModeSync />
       {showSplash && <SplashScreen />}
       {!showSplash && (
         <>

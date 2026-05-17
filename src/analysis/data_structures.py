@@ -24,6 +24,8 @@ class EnrichedProfile(SyntacticProfile):
     """A syntactic profile decorated with semantic meaning."""
     role: str = "unknown"
     confidence: float = 0.0
+    # Top-2 runner-up role guesses: [{"role": str, "confidence": float}, ...].
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)
     semantic_tags: List[str] = field(default_factory=list)
 
 @dataclass

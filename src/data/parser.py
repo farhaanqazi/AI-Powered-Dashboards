@@ -1,4 +1,6 @@
+import ipaddress
 import os
+import socket
 import pandas as pd
 import logging
 from typing import Optional, Union, NamedTuple, List, Tuple
@@ -8,10 +10,112 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import tempfile
 
+from src import config
+
 logger = logging.getLogger(__name__)
 
 # Define maximum file size (e.g., 100MB)
 MAX_FILE_SIZE = 100 * 1024 * 1024
+
+
+class SSRFError(Exception):
+    """Raised when a URL fails SSRF validation."""
+
+
+def _ip_is_blocked(ip: str) -> bool:
+    """Block loopback, private, link-local (incl. 169.254.169.254 metadata),
+    reserved, multicast and unspecified addresses."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    return (
+        addr.is_private
+        or addr.is_loopback
+        or addr.is_link_local
+        or addr.is_reserved
+        or addr.is_multicast
+        or addr.is_unspecified
+    )
+
+
+def _resolve_and_check_host(host: str) -> None:
+    """Resolve every A/AAAA record for ``host`` and reject if any address is
+    non-public. Defends against DNS-rebinding-style payloads at request time."""
+    if config.ALLOW_PRIVATE_URL_FETCH:
+        return
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise SSRFError(f"Could not resolve host '{host}': {exc}")
+    addresses = {info[4][0] for info in infos}
+    if not addresses:
+        raise SSRFError(f"Host '{host}' resolved to no addresses.")
+    for ip in addresses:
+        if _ip_is_blocked(ip):
+            raise SSRFError(
+                f"Refusing to fetch '{host}': resolves to non-public address {ip}."
+            )
+
+
+def _validate_fetch_url(url: str) -> None:
+    """Scheme allow-list + private/metadata IP block. Raises SSRFError."""
+    parsed = urlparse(url)
+    if parsed.scheme.lower() not in config.URL_FETCH_ALLOWED_SCHEMES:
+        raise SSRFError(f"Disallowed URL scheme '{parsed.scheme}'.")
+    host = parsed.hostname
+    if not host:
+        raise SSRFError("URL has no host.")
+    # If the host is a literal IP, check it directly; else resolve + check.
+    try:
+        ipaddress.ip_address(host)
+        if not config.ALLOW_PRIVATE_URL_FETCH and _ip_is_blocked(host):
+            raise SSRFError(f"Refusing to fetch non-public address {host}.")
+    except ValueError:
+        _resolve_and_check_host(host)
+
+
+def _ssrf_safe_get(url: str):
+    """GET ``url`` with redirects followed manually, re-validating every hop,
+    capping redirect count, enforcing a hard byte cap while streaming."""
+    timeout = config.URL_FETCH_TIMEOUT_SECONDS
+    max_bytes = config.URL_FETCH_MAX_BYTES
+    current = url
+    session = requests.Session()
+    retry_strategy = Retry(total=0)
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+
+    for _ in range(config.URL_FETCH_MAX_REDIRECTS + 1):
+        _validate_fetch_url(current)
+        resp = session.get(
+            current, timeout=timeout, allow_redirects=False, stream=True
+        )
+        if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
+            loc = resp.headers.get("Location")
+            resp.close()
+            if not loc:
+                raise SSRFError("Redirect without Location header.")
+            current = requests.compat.urljoin(current, loc)
+            continue
+        resp.raise_for_status()
+        body = bytearray()
+        for chunk in resp.iter_content(chunk_size=65536):
+            if not chunk:
+                continue
+            body.extend(chunk)
+            if len(body) > max_bytes:
+                resp.close()
+                raise SSRFError(
+                    f"Remote file exceeds {max_bytes} byte cap."
+                )
+        ctype = (resp.headers.get("Content-Type") or "").lower()
+        resp.close()
+        return bytes(body), ctype
+    raise SSRFError(
+        f"Exceeded {config.URL_FETCH_MAX_REDIRECTS} redirect hops."
+    )
 
 class LoadResult(NamedTuple):
     """Structured result for data loading operations"""
@@ -187,15 +291,13 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
 
     Returns: LoadResult containing success status, DataFrame, and error details.
     """
-    # Validate URL format
+    # Validate URL format + SSRF posture (scheme allow-list, private/metadata
+    # IP block, redirect cap, byte cap, content-type sniff before parse).
     try:
-        parsed = urlparse(url)
-        if not parsed.scheme or not parsed.netloc:
-            logger.error(f"Invalid URL format: {url}")
-            return LoadResult(success=False, error_code="INVALID_URL", detail="The provided URL is invalid.")
-        if parsed.scheme not in ['http', 'https']:
-            logger.error(f"Invalid URL scheme: {parsed.scheme}")
-            return LoadResult(success=False, error_code="INVALID_URL_SCHEME", detail="Only HTTP and HTTPS URLs are allowed.")
+        _validate_fetch_url(url)
+    except SSRFError as e:
+        logger.error(f"SSRF validation rejected URL {url}: {e}")
+        return LoadResult(success=False, error_code="SSRF_BLOCKED", detail=str(e))
     except Exception as e:
         logger.error(f"Error parsing URL: {e}")
         return LoadResult(success=False, error_code="URL_PARSE_ERROR", detail="Could not parse the URL.")
@@ -204,36 +306,33 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
     try:
         logger.info(f"Loading CSV from URL: {url}")
 
-        # Configure session with retry strategy
-        session = requests.Session()
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
-        response = session.get(url, timeout=timeout)
-        response.raise_for_status()  # Raise an exception for bad status codes (4xx, 5xx)
+        content, ctype = _ssrf_safe_get(url)
 
         # Check if response is empty
-        if not response.text.strip():
-             logger.error(f"Response from URL is empty: {url}")
-             return LoadResult(success=False, error_code="EMPTY_RESPONSE", detail="The URL returned an empty response.")
+        if not content.strip():
+            logger.error(f"Response from URL is empty: {url}")
+            return LoadResult(success=False, error_code="EMPTY_RESPONSE", detail="The URL returned an empty response.")
+
+        # Content-type sniff BEFORE parse: reject HTML/markup masquerading as CSV.
+        if any(t in ctype for t in ("text/html", "application/xhtml", "application/xml", "text/xml")):
+            logger.error(f"URL returned non-CSV content-type '{ctype}': {url}")
+            return LoadResult(success=False, error_code="NOT_CSV_CONTENT", detail=f"URL returned '{ctype.split(';')[0]}', not CSV.")
+        head = content[:4096].lstrip()
+        if head[:9].lower() in (b"<!doctype", b"<html><he") or head[:5].lower() == b"<html" or head[:5] == b"<?xml":
+            logger.error(f"URL returned HTML/XML body, not CSV: {url}")
+            return LoadResult(success=False, error_code="NOT_CSV_CONTENT", detail="URL returned HTML/XML, not CSV.")
 
         # Detect encoding from content
-        detected_encoding, confidence = _try_detect_encoding(response.content or b"")
+        detected_encoding, confidence = _try_detect_encoding(content)
         if detected_encoding is None:
-            detected_encoding = response.apparent_encoding or "utf-8"
-            warnings.append("Encoding detection unavailable; defaulting to response apparent encoding or UTF-8.")
+            detected_encoding = "utf-8"
+            warnings.append("Encoding detection unavailable; defaulting to UTF-8.")
         elif confidence is not None and confidence < 0.6:
             warnings.append(f"Low encoding confidence ({confidence:.2f}) for '{detected_encoding}'.")
 
         # Read CSV from response content
         import io
-        text = response.content.decode(detected_encoding, errors="replace")
+        text = content.decode(detected_encoding, errors="replace")
         df = pd.read_csv(io.StringIO(text))
         logger.info(f"Successfully loaded CSV from URL with {len(df)} rows and {len(df.columns)} columns")
 
@@ -263,6 +362,9 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
     except requests.exceptions.RequestException as e: # Catch other requests-related errors
         logger.error(f"Request error loading CSV from URL {url}: {e}")
         return LoadResult(success=False, error_code="REQUEST_ERROR", detail=f"A network request error occurred: {str(e)}", warnings=warnings)
+    except SSRFError as e:
+        logger.error(f"SSRF block during fetch of {url}: {e}")
+        return LoadResult(success=False, error_code="SSRF_BLOCKED", detail=str(e), warnings=warnings)
     except Exception as e:
         logger.exception(f"Unexpected error loading CSV from URL {url}: {e}")
         return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}", warnings=warnings)
