@@ -19,7 +19,7 @@ const Card = ({ title, icon, children }) => (
   </div>
 );
 
-const DataQualityTab = ({ data }) => {
+const DataQualityTab = ({ data, onGoToColumns }) => {
   const dq = data?.dataset_profile?.data_quality || {};
   const report = dq.report;
 
@@ -63,6 +63,30 @@ const DataQualityTab = ({ data }) => {
           ))}
         </div>
       )}
+
+      {/* Close the loop: tell the user WHERE to act and take them there. */}
+      <div className="glass-soft p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-sky-400/30">
+        <div className="text-sm text-slate-200">
+          <i className="fas fa-circle-arrow-right text-sky-300 mr-2" />
+          {report.status === 'ok'
+            ? 'Column types look right. You can still review and adjust them in the Columns tab.'
+            : 'The column types need a human check. Open the Columns tab to correct any roles and confirm the schema.'}
+        </div>
+        <button
+          type="button"
+          onClick={onGoToColumns}
+          className="inline-flex items-center gap-2 rounded-lg text-white text-sm font-semibold px-5 py-2.5 whitespace-nowrap"
+          style={{
+            background: '#0ea5e9',
+            border: '1px solid rgba(125,211,252,0.6)',
+            boxShadow: '0 4px 14px rgba(14,165,233,0.35)',
+            cursor: 'pointer',
+          }}
+        >
+          <i className="fas fa-table-columns" />
+          Review &amp; correct column roles
+        </button>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card title="Cleaning applied" icon="fa-broom">

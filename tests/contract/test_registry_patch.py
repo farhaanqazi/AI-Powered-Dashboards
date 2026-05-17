@@ -101,3 +101,67 @@ def test_patch_registry_404_without_dashboard(client):
     r = client.patch("/api/dashboard/none/registry",
                       json={"overrides": [], "confirm": True})
     assert r.status_code == 404
+
+
+# ---- Finding ② fix: cached df → real re-render on override ----
+
+def test_override_truly_rerenders_when_df_cached(client, upload_files):
+    """An override of a real column re-runs L3→render (recomputed=True) and
+    the dashboard charts reflect the corrected role."""
+    up = client.post("/api/upload", files=upload_files)
+    assert up.status_code == 200
+    tid = up.json()["trace_id"]
+    before = up.json()["data"]["all_charts"]
+
+    r = client.patch(
+        f"/api/dashboard/{tid}/registry",
+        json={"overrides": [{"name": "amount", "role": "identifier"}],
+              "confirm": True},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    report = data["dataset_profile"]["data_quality"]["report"]
+    # df was cached by the pipeline → genuine recompute, not contract-only.
+    assert report["recomputed"] is True
+    # 'amount' is now an identifier → it must not drive any chart.
+    for ch in data["all_charts"]:
+        assert ch.get("x_field") != "amount" and ch.get("y_field") != "amount"
+    assert isinstance(before, list)
+
+
+def test_rebuild_dashboard_uses_contract_roles_not_reclassified():
+    import pandas as pd
+    from src.contract import compile_contract, run_ingest_gate
+    from src.analysis.layer_1_profiler import run_syntactic_profiling
+    from src.analysis.layer_2_classifier import run_semantic_classification
+    from src.contract.rebuild import rebuild_dashboard
+
+    df = pd.DataFrame({
+        "region": ["N", "S", "E", "W"] * 8,
+        "spend": [10.0, 22.0, 31.0, 9.0] * 8,
+    })
+    res = run_ingest_gate(df)
+    profs = run_semantic_classification(run_syntactic_profiling(res.df), res.df)
+    contract = compile_contract(res.df, profs, res)
+    # Force 'spend' to identifier in the contract and rebuild.
+    fc = contract.fields["spend"].model_copy(update={"role": "identifier",
+                                                     "is_identifier": True})
+    locked = contract.model_copy(
+        update={"fields": {**contract.fields, "spend": fc}, "locked": True}
+    )
+    out = rebuild_dashboard(res.df, locked)
+    roles = {c["name"]: c["role"] for c in out["columns"]}
+    assert roles["spend"] == "identifier"  # contract role honored, not re-classified
+
+
+def test_df_cache_disabled_falls_back(monkeypatch):
+    import pandas as pd
+    from src import config
+    from src.contract.df_cache import get_df_cache, reset_df_cache_for_tests
+
+    monkeypatch.setattr(config, "CLEANED_DF_CACHE_ENABLED", False)
+    reset_df_cache_for_tests()
+    c = get_df_cache()
+    c.put("fp", pd.DataFrame({"a": [1]}))
+    assert c.get("fp") is None  # disabled → no storage, graceful fallback
+    reset_df_cache_for_tests()

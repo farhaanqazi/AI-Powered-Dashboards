@@ -157,7 +157,12 @@ const DashboardPage = () => {
       case 'column_profiling':
         return <ColumnsTab data={dashboardData} />;
       case 'data_quality':
-        return <DataQualityTab data={dashboardData} />;
+        return (
+          <DataQualityTab
+            data={dashboardData}
+            onGoToColumns={() => setActiveTab('column_profiling')}
+          />
+        );
       default:
         return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
     }
@@ -176,7 +181,7 @@ const DashboardPage = () => {
       <div className="dash-grid" />
       <div ref={particleRootRef} className="pointer-events-none absolute inset-0" />
 
-      <div ref={captureRef} className="relative z-10 container mx-auto px-4 py-8 max-w-7xl">
+      <div ref={captureRef} className="relative z-10 w-full mx-auto px-4 sm:px-6 lg:px-10 py-8 max-w-[1920px]">
 
         {/* Page header — dataset name + AI-generated one-liner */}
         <div className="mb-8 flex flex-col md:flex-row md:items-end md:justify-between gap-4">

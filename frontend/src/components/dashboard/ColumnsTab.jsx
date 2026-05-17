@@ -20,7 +20,7 @@ const roleTone = (role) => {
 const SORTABLE = [
   { key: 'name',          label: 'Column Name' },
   { key: 'dtype',         label: 'Data Type' },
-  { key: 'missing_count', label: 'Missing' },
+  { key: 'null_count',    label: 'Missing' },
   { key: 'unique_count',  label: 'Unique' },
   { key: 'role',          label: 'Role' },
 ];
@@ -31,6 +31,7 @@ const ColumnsTab = ({ data }) => {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [edits, setEdits] = useState({});           // colName -> new role
   const [acknowledged, setAcknowledged] = useState(false);
+  const [editing, setEditing] = useState(false);    // explicit edit mode
 
   const submitSchemaReview = useDashboardStore((s) => s.submitSchemaReview);
   const reviewSubmitting = useDashboardStore((s) => s.reviewSubmitting);
@@ -39,7 +40,11 @@ const ColumnsTab = ({ data }) => {
   const contract = dataset_profile?.contract;
   const report = dataset_profile?.data_quality?.report;
   const needsReview = !!report && report.status && report.status !== 'ok';
-  const editable = !!contract;          // a compiled contract can be corrected
+  // Read-only by default; the editor appears only when the dataset needs
+  // review OR the user explicitly enters edit mode (no silent regression of
+  // the clean profile view).
+  const canEdit = !!contract;
+  const editable = canEdit && (needsReview || editing);
 
   const setRole = (name, role) =>
     setEdits((e) => ({ ...e, [name]: role }));
@@ -52,6 +57,7 @@ const ColumnsTab = ({ data }) => {
       await submitSchemaReview(overrides);
       setEdits({});
       setAcknowledged(true);
+      setEditing(false);
     } catch { /* reviewError is surfaced from the store */ }
   };
 
@@ -97,17 +103,37 @@ const ColumnsTab = ({ data }) => {
         <div>
           <div className="text-[11px] uppercase tracking-[0.32em] text-slate-400 mb-1">Schema</div>
           <h2 className="text-xl md:text-2xl font-semibold text-slate-100">Column profile</h2>
-          <p className="text-sm text-slate-400 mt-1">Inspect data types, missing values and statistics across every column.</p>
+          <p className="text-sm text-slate-400 mt-1">
+            Inspect data types, missing values and statistics across every column.
+            {canEdit && !editable && (
+              <span className="block mt-1 text-sky-300/90">
+                <i className="fas fa-circle-info mr-1.5" />
+                Wrong type on a column? Use “Edit column roles” to correct it and re-lock the schema.
+              </span>
+            )}
+          </p>
         </div>
-        <div className="relative w-full md:w-72">
-          <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm" />
-          <input
-            type="text"
-            placeholder="Search columns..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="dash-input"
-          />
+        <div className="flex items-center gap-3 w-full md:w-auto">
+          {canEdit && !needsReview && (
+            <button
+              type="button"
+              onClick={() => setEditing((v) => !v)}
+              className="inline-flex items-center gap-2 rounded-lg border border-sky-400/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-sm px-3 py-2 whitespace-nowrap transition-colors"
+            >
+              <i className={`fas ${editing ? 'fa-xmark' : 'fa-pen'}`} />
+              {editing ? 'Cancel' : 'Edit column roles'}
+            </button>
+          )}
+          <div className="relative w-full md:w-72">
+            <i className="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm" />
+            <input
+              type="text"
+              placeholder="Search columns..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="dash-input"
+            />
+          </div>
         </div>
       </div>
 
@@ -132,10 +158,18 @@ const ColumnsTab = ({ data }) => {
             )}
           </div>
           <button
-            className="dash-btn dash-btn-primary whitespace-nowrap"
+            type="button"
+            className="inline-flex items-center gap-2 rounded-lg text-white text-sm font-semibold px-5 py-2.5 whitespace-nowrap disabled:opacity-50 shadow-lg"
+            style={{
+              background: reviewSubmitting ? '#0369a1' : '#0ea5e9',
+              border: '1px solid rgba(125,211,252,0.6)',
+              boxShadow: '0 4px 14px rgba(14,165,233,0.35)',
+              cursor: reviewSubmitting ? 'not-allowed' : 'pointer',
+            }}
             disabled={reviewSubmitting}
             onClick={confirmReview}
           >
+            <i className="fas fa-check" />
             {reviewSubmitting ? 'Confirming…'
               : Object.keys(edits).length ? 'Apply & confirm schema'
               : 'Confirm schema'}
@@ -181,10 +215,10 @@ const ColumnsTab = ({ data }) => {
                   <td className="font-medium text-slate-100">{col.name}</td>
                   <td><span className="mono">{col.dtype}</span></td>
                   <td>
-                    <div className="text-slate-200">{col.missing_count}</div>
-                    {col.missing_count > 0 && (
+                    <div className="text-slate-200">{col.null_count ?? 0}</div>
+                    {col.null_count > 0 && dataset_profile.n_rows > 0 && (
                       <div className="text-xs text-slate-500">
-                        {((col.missing_count / dataset_profile.n_rows) * 100).toFixed(1)}%
+                        {((col.null_count / dataset_profile.n_rows) * 100).toFixed(1)}%
                       </div>
                     )}
                   </td>
@@ -192,12 +226,27 @@ const ColumnsTab = ({ data }) => {
                   <td>
                     {editable ? (
                       <select
-                        className="dash-input py-1 text-xs"
+                        className="text-xs rounded-md"
+                        style={{
+                          background: '#1e293b',
+                          color: '#f1f5f9',
+                          border: '1px solid rgba(148,163,184,0.35)',
+                          padding: '0.35rem 0.5rem',
+                          minWidth: '128px',
+                          cursor: 'pointer',
+                        }}
                         value={edits[col.name] ?? col.role}
                         onChange={(e) => setRole(col.name, e.target.value)}
                       >
-                        {EDITABLE_ROLES.map((r) => (
-                          <option key={r} value={r}>{r}</option>
+                        {/* keep the current role selectable even if it's not
+                            in the standard editable set (e.g. 'unknown') */}
+                        {(EDITABLE_ROLES.includes(col.role)
+                          ? EDITABLE_ROLES
+                          : [col.role, ...EDITABLE_ROLES]
+                        ).map((r) => (
+                          <option key={r} value={r} style={{ background: '#1e293b', color: '#f1f5f9' }}>
+                            {r}
+                          </option>
                         ))}
                       </select>
                     ) : (

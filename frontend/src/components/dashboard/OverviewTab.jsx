@@ -34,7 +34,7 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
             <span className="section-icon"><i className="fas fa-wand-magic-sparkles text-sky-300" /></span>
             <span>AI Executive Summary</span>
           </h2>
-          <p className="text-slate-200 leading-relaxed text-[15px]">{aiNarrative}</p>
+          <p className="text-slate-200 leading-relaxed text-[15px] max-w-[75ch]">{aiNarrative}</p>
         </div>
       )}
 

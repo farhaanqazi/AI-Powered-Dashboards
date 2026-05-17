@@ -151,3 +151,15 @@ SCHEMA_REVIEW_ENABLED = _env_bool("SCHEMA_REVIEW_ENABLED", False)
 # minimum per-field role confidence is at least this AND the dataset is not
 # pii_blocked AND a grain was detected. Below it → needs schema review.
 AUTO_ACCEPT_CONFIDENCE = float(os.environ.get("AUTO_ACCEPT_CONFIDENCE", 0.70))
+
+# --- Cleaned-DataFrame cache (Phase 7 fix for HITL re-render) ---
+# When True, the post-ingest cleaned DataFrame is held in a transient,
+# auto-expiring cache (Redis if configured, else in-process), keyed by schema
+# fingerprint. This lets a HITL role override actually re-run L3→chart-render
+# with the corrected roles. It is NOT a durable store: TTL-bound, fingerprint-
+# keyed, and fully disableable here. Disabling falls back to the deterministic
+# contract-only re-derivation (override still locks, charts just aren't redrawn).
+CLEANED_DF_CACHE_ENABLED = _env_bool("CLEANED_DF_CACHE_ENABLED", True)
+CLEANED_DF_CACHE_TTL_SECONDS = int(
+    os.environ.get("CLEANED_DF_CACHE_TTL_SECONDS", 3600)
+)

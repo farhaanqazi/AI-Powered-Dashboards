@@ -102,28 +102,60 @@ def apply_registry_overrides(
             c["role"] = locked.fields[nm].role
     profile["columns"] = cols
 
-    # Drop charts/KPIs the corrected roles no longer permit.
-    def _chart_ok(ch: Dict[str, Any]) -> bool:
-        for fld in (ch.get("x_field"), ch.get("y_field")):
-            fc = locked.fields.get(fld) if fld else None
-            if fc is not None and fc.role == "identifier":
-                return False  # identifiers are never plotted as a measure
-        return True
+    # Preferred path: if the cleaned frame is still cached, truly re-run
+    # L3→render with the corrected roles (no LLM). Falls back to the
+    # contract-only re-derivation below on miss/disabled/failure.
+    recomputed = False
+    try:
+        from src.contract.df_cache import get_df_cache
+        from src.contract.rebuild import rebuild_dashboard
 
-    for key in ("all_charts", "charts"):
-        if isinstance(payload.get(key), list):
-            payload[key] = [c for c in payload[key] if _chart_ok(c)]
+        df = get_df_cache().get(locked.schema_fingerprint)
+        if df is not None:
+            rb = rebuild_dashboard(df, locked)
+            payload["kpis"] = rb["kpis"]
+            payload["charts"] = rb["charts"]
+            payload["all_charts"] = rb["all_charts"]
+            payload["primary_chart"] = rb["primary_chart"]
+            profile["columns"] = rb["columns"]
+            profile["role_counts"] = rb["role_counts"]
+            if rb.get("eda_summary"):
+                payload["eda_summary"] = {
+                    **(payload.get("eda_summary") or {}),
+                    **rb["eda_summary"],
+                }
+            recomputed = True
+    except Exception as exc:  # graceful: keep contract-only result
+        import logging
 
-    def _kpi_ok(k: Dict[str, Any]) -> bool:
-        prov = (k.get("provenance") or {}).get("source", "")
-        if prov.startswith("column:"):
-            fc = locked.fields.get(prov.split(":", 1)[1])
-            if fc is not None and fc.role == "identifier":
-                return False
-        return True
+        logging.getLogger(__name__).warning(
+            "HITL re-render failed (%s); using contract-only re-derivation.", exc
+        )
 
-    if isinstance(payload.get("kpis"), list):
-        payload["kpis"] = [k for k in payload["kpis"] if _kpi_ok(k)]
+    if not recomputed:
+        # Contract-only fallback: drop charts/KPIs the corrected roles no
+        # longer permit (bounded — cannot regenerate without the frame).
+        def _chart_ok(ch: Dict[str, Any]) -> bool:
+            for fld in (ch.get("x_field"), ch.get("y_field")):
+                fc = locked.fields.get(fld) if fld else None
+                if fc is not None and fc.role == "identifier":
+                    return False
+            return True
+
+        for key in ("all_charts", "charts"):
+            if isinstance(payload.get(key), list):
+                payload[key] = [c for c in payload[key] if _chart_ok(c)]
+
+        def _kpi_ok(k: Dict[str, Any]) -> bool:
+            prov = (k.get("provenance") or {}).get("source", "")
+            if prov.startswith("column:"):
+                fc = locked.fields.get(prov.split(":", 1)[1])
+                if fc is not None and fc.role == "identifier":
+                    return False
+            return True
+
+        if isinstance(payload.get("kpis"), list):
+            payload["kpis"] = [k for k in payload["kpis"] if _kpi_ok(k)]
 
     # Refresh the data-quality verdict: human-approved & locked ⇒ ok, unless
     # still PII-blocked (which review cannot clear).
@@ -132,6 +164,7 @@ def apply_registry_overrides(
     report["status"] = "blocked" if locked.pii_blocked else "ok"
     report["auto_accepted"] = False
     report["human_reviewed"] = True
+    report["recomputed"] = recomputed
     dq["report"] = report
     profile["data_quality"] = dq
     payload["dataset_profile"] = profile

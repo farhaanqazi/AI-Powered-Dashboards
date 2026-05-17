@@ -246,20 +246,23 @@
   gap: 1rem;
 }
 @media (min-width: 640px) {
-  .dash-shell .dash-tabs { grid-template-columns: repeat(2, 1fr); }
+  .dash-shell .dash-tabs { grid-template-columns: repeat(3, 1fr); }
 }
-@media (min-width: 1024px) {
-  .dash-shell .dash-tabs { grid-template-columns: repeat(4, 1fr); }
+/* All tabs equal width on one row from tablet up. */
+@media (min-width: 900px) {
+  .dash-shell .dash-tabs { grid-template-columns: repeat(5, 1fr); }
 }
 .dash-shell .dash-tab {
   position: relative;
-  padding: 1.25rem 1.25rem 1.1rem;
+  /* Compact horizontal pill so all five fit one equal-width row. */
+  padding: 0.85rem 1rem;
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-start;
-  gap: 0.85rem;
-  border-radius: 1rem;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-width: 0;            /* allow equal 1fr cells to shrink */
+  border-radius: 0.85rem;
   font-size: 0.9rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -273,19 +276,23 @@
   -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
 .dash-shell .dash-tab i {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.75rem;
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  border-radius: 0.6rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   background: rgba(15,23,42,0.6);
   border: 1px solid rgba(255,255,255,0.08);
 }
 .dash-shell .dash-tab > span:not(.tab-dot) {
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .dash-shell .dash-tab:hover {
   color: #f1f5f9;
@@ -398,6 +405,10 @@
 /* Table */
 .dash-shell .dash-table {
   width: 100%;
+  /* With many columns the last one (Top Categories) was squeezed against the
+     card edge and clipped; a min-width makes the .dash-scroll wrapper engage
+     horizontal scrolling instead of cutting it off. */
+  min-width: 1080px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.85rem;
@@ -415,6 +426,7 @@
   font-weight: 600;
   padding: 0.85rem 1.1rem;
   text-align: left;
+  white-space: nowrap;
   border-bottom: 1px solid rgba(255,255,255,0.08);
   cursor: pointer;
   user-select: none;

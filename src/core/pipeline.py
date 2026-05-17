@@ -37,6 +37,7 @@ from src.contract import (
     get_contract_cache,
 )
 from src.contract.dq_report import build_dq_report, evaluate_acceptance
+from src.contract.df_cache import get_df_cache
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,9 @@ def _contract_compile_stage(df, enriched_profiles, ingest):
             contract = contract.with_lock(bump_version=False)
         cache.put(contract)
     dq = build_dq_report(contract, ingest, crit)
+    # Stash the cleaned frame (transient, fingerprint-keyed) so a later HITL
+    # override can truly re-run L3→render. No-op when disabled.
+    get_df_cache().put(contract.schema_fingerprint, df)
     return enriched_profiles, contract, crit, dq
 
 
