@@ -103,6 +103,7 @@ const ProcessingPage = () => {
   const [elapsed, setElapsed] = useState(0);
   const [quoteIdx, setQuoteIdx] = useState(() => Math.floor(Math.random() * QUOTES.length));
   const [error, setError] = useState('');
+  const [finished, setFinished] = useState(false); // terminal: success or error
 
   const abortRef = useRef(null);
   const startedAt = useRef(Date.now());
@@ -174,12 +175,18 @@ const ProcessingPage = () => {
           });
           return finalized;
         });
+        setFinished(true);
         navigate('/dashboard', { replace: true });
       } catch (err) {
         if (err.name === 'AbortError') {
           navigate('/', { replace: true });
           return;
         }
+        // Terminal failure: freeze the live timing of the in-flight phase and
+        // stop the elapsed/quote tickers so the page doesn't keep counting
+        // forever behind the error card.
+        setTimings(prev => closeOutTimings(prev, Date.now()));
+        setFinished(true);
         setError(err?.response?.data?.detail || err.message || 'Processing failed');
       }
     };
@@ -206,21 +213,35 @@ const ProcessingPage = () => {
     });
   }, [phaseKey, phaseMessage]);
 
-  // Elapsed timer
+  // Elapsed timer. 1 Hz is enough — the UI only shows whole seconds and
+  // ~1 s-resolution durations; ticking at 500 ms doubled full re-renders of
+  // this heavy page for no visible benefit.
   useEffect(() => {
+    if (finished) return undefined;
     const id = setInterval(() => {
       setElapsed(Math.round((Date.now() - startedAt.current) / 1000));
-    }, 500);
+    }, 1000);
     return () => clearInterval(id);
+  }, [finished]);
+
+  // Pause all decorative animation while the tab is hidden.
+  const [animPaused, setAnimPaused] = useState(
+    typeof document !== 'undefined' && document.hidden,
+  );
+  useEffect(() => {
+    const onVis = () => setAnimPaused(document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
 
   // Rotating witty quotes
   useEffect(() => {
+    if (finished) return undefined;
     const id = setInterval(() => {
       setQuoteIdx(i => (i + 1 + Math.floor(Math.random() * (QUOTES.length - 1))) % QUOTES.length);
     }, 3800);
     return () => clearInterval(id);
-  }, []);
+  }, [finished]);
 
   // Auto-scroll feed
   useEffect(() => {
@@ -245,7 +266,7 @@ const ProcessingPage = () => {
   }, [file, source, elapsed]);
 
   return (
-    <div className="relative min-h-[calc(100vh-8rem)] overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 text-white">
+    <div className={`relative min-h-[calc(100vh-8rem)] overflow-hidden bg-gradient-to-br from-slate-950 via-blue-950 to-indigo-950 text-white ${animPaused ? 'proc-anim-paused' : ''}`}>
       {/* Aurora gradient mesh */}
       <div className="pointer-events-none absolute inset-0 opacity-70">
         <div className="proc-aurora proc-aurora-a" />
@@ -524,7 +545,7 @@ const ProcessingPage = () => {
             const root = document.getElementById('proc-particles');
             if (!root || root.dataset.seeded === '1') return;
             root.dataset.seeded = '1';
-            const N = 55;
+            var N = 14;
             for (let i = 0; i < N; i++) {
               const p = document.createElement('div');
               p.className = 'proc-particle';
@@ -547,9 +568,11 @@ const ProcessingPage = () => {
         .proc-aurora {
           position: absolute;
           border-radius: 9999px;
-          filter: blur(80px);
-          opacity: 0.45;
-          mix-blend-mode: screen;
+          /* Fast-lane: moderate blur, NO mix-blend-mode (it forced a full
+             recomposite every frame), transform-only animation. */
+          filter: blur(40px);
+          opacity: 0.42;
+          will-change: transform;
           animation: proc-drift 22s ease-in-out infinite;
         }
         .proc-aurora-a { width: 520px; height: 520px; top: -120px; left: -120px; background: radial-gradient(circle, rgba(96,165,250,0.9), transparent 70%); }
@@ -700,6 +723,7 @@ const ProcessingPage = () => {
           border-radius: 9999px;
           animation: proc-particle-float linear infinite;
           pointer-events: none;
+          will-change: transform;
         }
         @keyframes proc-particle-float {
           0%   { transform: translateY(0); opacity: 0; }
@@ -737,7 +761,23 @@ const ProcessingPage = () => {
           background: linear-gradient(110deg, transparent 40%, rgba(255,255,255,0.45) 50%, transparent 60%);
           background-size: 200% 100%;
           animation: proc-shimmer 1.6s linear infinite;
-          mix-blend-mode: overlay;
+        }
+
+        /* Pause every effect when the tab is hidden (Page Visibility) — no
+           point burning the GPU on a screen nobody is looking at. */
+        .proc-anim-paused .proc-aurora,
+        .proc-anim-paused .proc-particle,
+        .proc-anim-paused [class*="proc-"] {
+          animation-play-state: paused !important;
+        }
+
+        /* Accessibility + low-power: respect the OS "reduce motion" setting. */
+        @media (prefers-reduced-motion: reduce) {
+          .proc-aurora,
+          .proc-particle,
+          [class*="proc-"] { animation: none !important; }
+          .proc-particle { display: none; }
+          .proc-aurora { filter: blur(28px); }
         }
       `}</style>
     </div>

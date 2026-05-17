@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardStore } from '../../dashboardStore';
-import { exportDashboardToPDF } from '../../services/pdfExport';
+// The PDF/export stack (jsPDF + html-to-image, ~hundreds of KB) is loaded
+// on-demand only when the user actually clicks Export — never in the
+// dashboard's initial chunk.
 import OverviewTab from './OverviewTab';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
@@ -78,6 +80,7 @@ const DashboardPage = () => {
     setExportHandler(async () => {
       const original = activeTabRef.current;
       try {
+        const { exportDashboardToPDF } = await import('../../services/pdfExport');
         await exportDashboardToPDF({
           setActiveTab,
           getCaptureEl: () => captureRef.current,
@@ -105,7 +108,9 @@ const DashboardPage = () => {
     const root = particleRootRef.current;
     if (!root || root.dataset.seeded === '1') return;
     root.dataset.seeded = '1';
-    const N = 40;
+    // Slimmed from 40 → 12: decorative only; many independently-animated DOM
+    // nodes are pure compositor cost for negligible visual gain.
+    const N = 12;
     for (let i = 0; i < N; i++) {
       const p = document.createElement('div');
       p.className = 'dash-particle';

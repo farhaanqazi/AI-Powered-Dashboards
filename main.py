@@ -4,6 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
+import asyncio
 import io
 import logging
 import time
@@ -39,6 +40,7 @@ from src.api.schemas import (
 )
 from src.contract.registry_patch import apply_registry_overrides
 from src.contract.ai_consent import apply_ai_consent
+from src.jobs import get_job_store, submit_analysis_job, TERMINAL
 from src.observability.request_id import RequestIDMiddleware
 from src.observability.health import build_router as build_health_router
 from src.observability.metrics import MetricsMiddleware, build_router as build_metrics_router
@@ -598,6 +600,117 @@ async def api_ai_consent(
         "ai_consent": consent,
         "data": updated,
     }
+
+
+# ---------------- ASYNC ANALYSIS JOBS (Phase 10 S10.1) ----------------
+# Auth happens on this fast submit (sub-second, token fresh); the ~minutes-long
+# pipeline runs off-request as a job. Fixes the expired-token 401 AND the
+# blocked HTTP connection. Legacy /api/upload[/stream] remain for back-compat.
+
+def _require_owned_job(job_id: str, user) -> dict:
+    rec = get_job_store().get(job_id)
+    if not rec or rec.get("session_key") != user["session_key"]:
+        # Don't leak existence of other sessions' jobs.
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return rec
+
+
+@app.post("/api/jobs/upload")
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_jobs_upload(
+    request: Request,
+    dataset: UploadFile = File(...),
+    encoding: Optional[str] = Form(None),
+    user=Depends(allow_clerk_or_guest),
+):
+    if not dataset.filename:
+        raise HTTPException(status_code=400, detail="No file provided.")
+    filename = dataset.filename
+    if ".." in filename or filename.startswith("/"):
+        raise HTTPException(status_code=400, detail="Invalid filename.")
+    if not filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files allowed.")
+
+    # Caps enforced now, while we still hold the (fresh) auth context.
+    contents = await _read_upload_capped(dataset)
+
+    job_id = str(uuid.uuid4())
+    trace_id = str(uuid.uuid4())
+    os.makedirs(config.JOB_SPOOL_DIR, exist_ok=True)
+    file_path = os.path.join(config.JOB_SPOOL_DIR, f"{job_id}.csv")
+    with open(file_path, "wb") as fh:
+        fh.write(contents)
+
+    store = get_job_store()
+    store.create(job_id, session_key=user["session_key"],
+                 trace_id=trace_id, filename=filename)
+    backend = await submit_analysis_job(
+        job_id=job_id, session_key=user["session_key"], trace_id=trace_id,
+        file_path=file_path, filename=filename, encoding=encoding,
+    )
+    return JSONResponse(
+        status_code=202,
+        content={"status": "accepted", "job_id": job_id,
+                 "trace_id": trace_id, "backend": backend},
+    )
+
+
+@app.get("/api/jobs/{job_id}")
+async def api_job_status(job_id: str, user=Depends(allow_clerk_or_guest)):
+    rec = _require_owned_job(job_id, user)
+    return {k: rec.get(k) for k in (
+        "job_id", "status", "phase", "message", "percent", "error",
+        "trace_id", "filename")}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def api_job_cancel(job_id: str, user=Depends(allow_clerk_or_guest)):
+    _require_owned_job(job_id, user)
+    get_job_store().request_cancel(job_id)
+    return {"status": "cancelling", "job_id": job_id}
+
+
+@app.get("/api/jobs/{job_id}/events")
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_job_events(request: Request, job_id: str,
+                         user=Depends(allow_clerk_or_guest)):
+    _require_owned_job(job_id, user)
+    store = get_job_store()
+
+    async def event_source():
+        cursor = 0
+        idle = 0.0
+        while True:
+            if await request.is_disconnected():
+                return
+            events = await asyncio.to_thread(store.events, job_id, cursor)
+            if events:
+                idle = 0.0
+                cursor += len(events)
+                for ev in events:
+                    yield f"data: {json.dumps(ev)}\n\n"
+                    if ev.get("phase") in ("done", "error", "cancelled"):
+                        return
+            else:
+                # SSE heartbeat keeps proxies from killing the connection.
+                idle += config.JOB_STREAM_POLL_SECONDS
+                if idle >= 15:
+                    idle = 0.0
+                    yield ": keep-alive\n\n"
+            rec = await asyncio.to_thread(store.get, job_id)
+            if rec and rec.get("status") in TERMINAL and not events:
+                return
+            await asyncio.sleep(config.JOB_STREAM_POLL_SECONDS)
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.get("/assets/{full_path:path}")

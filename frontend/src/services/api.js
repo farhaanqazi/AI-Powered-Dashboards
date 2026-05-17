@@ -55,33 +55,28 @@ export const uploadFile = async (file) => {
   return response.data;
 };
 
-export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
-  const formData = new FormData();
-  formData.append('dataset', file);
+// FastAPI errors come back as {"detail": "..."} (or a validation array) —
+// surface the plain message, never the raw JSON envelope.
+function plainError(text, status) {
+  try {
+    const parsed = JSON.parse(text);
+    const msg = typeof parsed?.detail === 'string'
+      ? parsed.detail
+      : (Array.isArray(parsed?.detail)
+          ? parsed.detail.map((d) => d?.msg).filter(Boolean).join('; ')
+          : '');
+    if (msg) return msg;
+  } catch { /* not JSON — fall through */ }
+  return text || `Request failed with status ${status}`;
+}
 
-  const response = await fetch(`${API_BASE_URL}/upload/stream`, {
-    method: 'POST',
-    body: formData,
-    headers: await authHeaders(),
-    signal,
-  });
-
+// Consume an SSE phase stream, invoking onPhase for every event and resolving
+// with the terminal `done` event (same shape the UI already expects).
+async function consumeSse(response, onPhase) {
   if (!response.ok || !response.body) {
     const text = await response.text().catch(() => '');
-    let msg = text;
-    try {
-      // FastAPI errors come back as {"detail": "..."} — show the plain
-      // message, never the raw JSON envelope.
-      const parsed = JSON.parse(text);
-      msg = typeof parsed?.detail === 'string'
-        ? parsed.detail
-        : (Array.isArray(parsed?.detail)
-            ? parsed.detail.map((d) => d?.msg).filter(Boolean).join('; ')
-            : '') || text;
-    } catch { /* not JSON — keep raw text */ }
-    throw new Error(msg || `Upload failed with status ${response.status}`);
+    throw new Error(plainError(text, response.status));
   }
-
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -112,20 +107,49 @@ export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
       }
 
       if (typeof onPhase === 'function') onPhase(evt);
-
-      if (evt.phase === 'error') {
-        throw new Error(evt.message || 'Pipeline error');
-      }
-      if (evt.phase === 'done') {
-        finalPayload = evt;
-      }
+      if (evt.phase === 'error') throw new Error(evt.message || 'Analysis failed');
+      if (evt.phase === 'done') finalPayload = evt;
     }
   }
-
-  if (!finalPayload) {
-    throw new Error('Upload stream ended without a final event.');
-  }
+  if (!finalPayload) throw new Error('The analysis stream ended unexpectedly.');
   return finalPayload;
+}
+
+// Async-job upload (Phase 10 S10.1): authenticate + submit fast (token only
+// needs to live ~1s), then stream progress by job id. The pipeline runs
+// off-request, so a long analysis can no longer expire the auth token or
+// hold the connection open.
+export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
+  const formData = new FormData();
+  formData.append('dataset', file);
+
+  const submit = await fetch(`${API_BASE_URL}/jobs/upload`, {
+    method: 'POST',
+    body: formData,
+    headers: await authHeaders(),
+    signal,
+  });
+  if (!submit.ok) {
+    const text = await submit.text().catch(() => '');
+    throw new Error(plainError(text, submit.status));
+  }
+  const { job_id: jobId } = await submit.json();
+  const headers = await authHeaders();
+
+  // Cancel the server-side job too if the user aborts.
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/cancel`, {
+        method: 'POST', headers, keepalive: true,
+      }).catch(() => {});
+    }, { once: true });
+  }
+
+  const stream = await fetch(
+    `${API_BASE_URL}/jobs/${encodeURIComponent(jobId)}/events`,
+    { headers, signal },
+  );
+  return consumeSse(stream, onPhase);
 };
 
 export const loadExternalSource = async (source) => {

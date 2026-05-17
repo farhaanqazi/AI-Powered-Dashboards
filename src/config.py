@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -61,6 +62,27 @@ DATABASE_URL = os.environ.get(
 )
 REDIS_URL = os.environ.get("REDIS_URL", "")
 DASHBOARD_TTL_SECONDS = int(os.environ.get("DASHBOARD_TTL_SECONDS", 86400))
+
+# --- Async analysis jobs (Phase 10 S10.1, pulled forward) ---
+# Decouples auth from the long pipeline: the upload request authenticates and
+# returns in <1s; the analysis runs as a job and progress is streamed by id.
+#
+# JOB_QUEUE_ENABLED=True  → out-of-process Arq worker on Redis (the production-
+#                           correct path; run a separate `arq` worker process).
+# JOB_QUEUE_ENABLED=False → in-process asyncio task (HF single-container
+#                           fallback: still fixes the 401 + the blocked
+#                           request; in-flight jobs are lost on restart).
+# Either way the frontend uses ONE flow (submit → stream by job id); the
+# backend picks the strategy. Legacy /api/upload[/stream] stay intact.
+JOB_QUEUE_ENABLED = _env_bool("JOB_QUEUE_ENABLED", False)
+# Where the uploaded file is spooled so a separate worker process can read it
+# (the worker can't see the request's in-memory bytes).
+JOB_SPOOL_DIR = os.environ.get(
+    "JOB_SPOOL_DIR", os.path.join(tempfile.gettempdir(), "di_job_spool")
+)
+JOB_TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", 86400))
+# SSE poll cadence (seconds) for the job event stream.
+JOB_STREAM_POLL_SECONDS = float(os.environ.get("JOB_STREAM_POLL_SECONDS", 0.5))
 
 # --- Security Hardening (Phase 0) ---
 # Fail-closed posture for the Semantic Contract Layer. When sensitivity cannot

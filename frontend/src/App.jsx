@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { SignedIn, SignedOut, RedirectToSignIn, useUser } from '@clerk/clerk-react';
 import UploadPage from './components/upload/UploadPage';
-import ProcessingPage from './components/upload/ProcessingPage';
-import DashboardPage from './components/dashboard/DashboardPage';
+// Code-split the heavy routes. The upload screen (entry) ships in the small
+// initial chunk; the charting/dashboard stack and the processing screen are
+// fetched only when the user actually navigates to them.
+const ProcessingPage = lazy(() => import('./components/upload/ProcessingPage'));
+const DashboardPage = lazy(() => import('./components/dashboard/DashboardPage'));
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
 import { useDashboardStore } from './dashboardStore';
@@ -154,6 +157,18 @@ function SplashScreen() {
   );
 }
 
+// Tiny dependency-free fallback shown while a lazy route chunk loads.
+function RouteFallback() {
+  return (
+    <div className="flex min-h-[50vh] items-center justify-center text-slate-400">
+      <div className="flex items-center gap-3 text-sm">
+        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-600 border-t-sky-400" />
+        Loading…
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [showSplash, setShowSplash] = useState(true);
 
@@ -181,11 +196,13 @@ function App() {
         <>
           <Header />
           <main className="flex-grow">
-            <Routes>
-              <Route path="/" element={<UploadPage />} />
-              <Route path="/processing" element={<Protected><ProcessingPage /></Protected>} />
-              <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
-            </Routes>
+            <Suspense fallback={<RouteFallback />}>
+              <Routes>
+                <Route path="/" element={<UploadPage />} />
+                <Route path="/processing" element={<Protected><ProcessingPage /></Protected>} />
+                <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+              </Routes>
+            </Suspense>
           </main>
           <Footer />
         </>

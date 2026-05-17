@@ -26,10 +26,13 @@
 .dash-shell .dash-aurora {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.55;
-  mix-blend-mode: screen;
+  /* Fast-lane: a moderate blur the GPU can keep cached, no mix-blend-mode
+     (which forced a full-stacking-context recomposite every frame). Only
+     `transform` is animated, so this stays compositor-only. */
+  filter: blur(42px);
+  opacity: 0.5;
   pointer-events: none;
+  will-change: transform;
   animation: dash-drift 26s ease-in-out infinite;
 }
 .dash-shell .dash-aurora-a { width: 540px; height: 540px; top: -140px;  left: -120px;  background: radial-gradient(circle, rgba(96,165,250,0.9), transparent 70%); }
@@ -62,7 +65,16 @@
   background: rgba(255, 255, 255, 0.7);
   border-radius: 9999px;
   pointer-events: none;
+  will-change: transform;
   animation: dash-particle-float linear infinite;
+}
+/* Accessibility + low-power: honour the OS "reduce motion" setting — drop the
+   continuous animations and the blur entirely, keep a static gradient. */
+@media (prefers-reduced-motion: reduce) {
+  .dash-shell .dash-aurora,
+  .dash-shell .dash-particle { animation: none !important; }
+  .dash-shell .dash-aurora { filter: blur(30px); }
+  .dash-shell .dash-particle { display: none; }
 }
 @keyframes dash-particle-float {
   0%   { transform: translateY(0);    opacity: 0; }
