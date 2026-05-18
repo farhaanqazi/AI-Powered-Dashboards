@@ -55,6 +55,7 @@ const buildDescription = (data) => {
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const { data: dashboardData, loading, error, refresh, lastUpdated } = useDashboardStore();
+  const theme = useDashboardStore((s) => s.theme);
   const setExportHandler = useDashboardStore((s) => s.setExportHandler);
   const hasMounted = useRef(false);
   const navigate = useNavigate();
@@ -177,7 +178,7 @@ const DashboardPage = () => {
   const hasData = !!dashboardData?.original_filename;
 
   return (
-    <div className="dash-shell">
+    <div className={`dash-shell${theme === 'light' ? ' theme-light' : ''}`}>
       {/* Aurora gradient mesh */}
       <div className="dash-aurora dash-aurora-a" />
       <div className="dash-aurora dash-aurora-b" />

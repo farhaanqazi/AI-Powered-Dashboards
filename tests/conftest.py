@@ -62,6 +62,26 @@ def _reset_job_store():
     reset_job_store_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _isolate_clean_frame_caches(tmp_path):
+    """Phase 14: keep the durable cleaned-frame Parquet tier hermetic — point
+    it at a per-test tmp dir (never the real OS temp) and reset both the
+    df_cache singleton and the interaction LRU so fingerprint/state never
+    leaks across cases."""
+    import src.config as _cfg
+    from src.analysis.ask.interact import reset_interaction_cache_for_tests
+    from src.contract.df_cache import reset_df_cache_for_tests
+
+    prev = _cfg.CLEANED_DF_DURABLE_DIR
+    _cfg.CLEANED_DF_DURABLE_DIR = str(tmp_path / "clean_frames")
+    reset_df_cache_for_tests()
+    reset_interaction_cache_for_tests()
+    yield
+    _cfg.CLEANED_DF_DURABLE_DIR = prev
+    reset_df_cache_for_tests()
+    reset_interaction_cache_for_tests()
+
+
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient

@@ -576,6 +576,233 @@
 .dash-shell .dash-scroll::-webkit-scrollbar-track { background: transparent; }
 
 /* ============================================================
+   LIGHT THEME — `.dash-shell.theme-light`
+   A contrast-matched mirror of the futuristic dark theme: same
+   layout/structure, flipped to a bright surface. Placed BEFORE the
+   export-mode block so PDF capture (which adds .dash-export-mode)
+   still wins and renders dark regardless of the active theme.
+   Each rule re-themes a scoped component; the trailing block
+   re-maps the Tailwind color utilities used across the tabs.
+   ============================================================ */
+.dash-shell.theme-light {
+  background:
+    radial-gradient(1200px 800px at 10% -10%, rgba(59, 130, 246, 0.14), transparent 60%),
+    radial-gradient(1000px 700px at 110% 10%, rgba(168, 85, 247, 0.12), transparent 60%),
+    radial-gradient(900px 600px at 50% 110%, rgba(45, 212, 191, 0.12), transparent 60%),
+    linear-gradient(135deg, #f8fafc 0%, #eef2ff 45%, #f0f9ff 100%);
+  color: #1e293b;
+}
+
+.dash-shell.theme-light .dash-aurora { opacity: 0.32; }
+.dash-shell.theme-light .dash-grid {
+  background-image:
+    linear-gradient(rgba(15,23,42,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15,23,42,0.05) 1px, transparent 1px);
+  opacity: 0.6;
+}
+.dash-shell.theme-light .dash-particle { background: rgba(30, 41, 59, 0.18); }
+
+/* Glass surfaces → frosted white */
+.dash-shell.theme-light .glass-card {
+  border-color: rgba(15, 23, 42, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.92), rgba(255,255,255,0.72)),
+    rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.6) inset,
+    0 30px 80px -34px rgba(30,41,59,0.32),
+    0 0 0 1px rgba(15,23,42,0.02);
+}
+.dash-shell.theme-light .glass-card::before {
+  background: linear-gradient(135deg, rgba(59,130,246,0.35), rgba(168,85,247,0.18) 40%, transparent 70%);
+  opacity: 0.6;
+}
+.dash-shell.theme-light .glass-card:hover {
+  border-color: rgba(59,130,246,0.30);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,0.7) inset,
+    0 40px 100px -34px rgba(30,41,59,0.4),
+    0 0 30px -8px rgba(59,130,246,0.22);
+}
+.dash-shell.theme-light .glass-soft {
+  border-color: rgba(15,23,42,0.07);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* Headings / sections */
+.dash-shell.theme-light .section-heading { color: #0f172a; }
+.dash-shell.theme-light .section-heading .section-eyebrow { color: rgba(71,85,105,0.85); }
+.dash-shell.theme-light .section-icon {
+  background: linear-gradient(135deg, rgba(59,130,246,0.16), rgba(168,85,247,0.16));
+  border-color: rgba(15,23,42,0.10);
+  box-shadow: 0 0 18px -6px rgba(59,130,246,0.4);
+}
+
+/* Stat tiles */
+.dash-shell.theme-light .stat-tile {
+  border-color: rgba(15,23,42,0.08);
+  background: linear-gradient(160deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7)), rgba(255,255,255,0.6);
+}
+.dash-shell.theme-light .stat-tile:hover { border-color: rgba(59,130,246,0.30); }
+.dash-shell.theme-light .stat-tile .stat-icon {
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(15,23,42,0.08);
+}
+.dash-shell.theme-light .stat-tile .stat-label { color: rgba(71,85,105,0.9); }
+.dash-shell.theme-light .stat-tile .stat-value {
+  background: linear-gradient(180deg, #0f172a, #475569);
+  -webkit-background-clip: text;
+          background-clip: text;
+}
+.dash-shell.theme-light .stat-blue   .stat-icon { color: #2563eb; }
+.dash-shell.theme-light .stat-purple .stat-icon { color: #7c3aed; }
+.dash-shell.theme-light .stat-emerald .stat-icon { color: #059669; }
+.dash-shell.theme-light .stat-amber  .stat-icon { color: #b45309; }
+.dash-shell.theme-light .stat-tile .stat-glow { opacity: 0.32; }
+
+/* Tab tray */
+.dash-shell.theme-light .dash-tabs {
+  background: rgba(255,255,255,0.82);
+  border-color: rgba(15,23,42,0.10);
+  box-shadow: 0 18px 40px -28px rgba(30,41,59,0.5);
+}
+.dash-shell.theme-light .dash-tab {
+  color: rgba(51,65,85,0.85);
+  border-color: rgba(15,23,42,0.08);
+  background: linear-gradient(160deg, rgba(255,255,255,0.9), rgba(255,255,255,0.7)), rgba(255,255,255,0.6);
+}
+.dash-shell.theme-light .dash-tab i {
+  background: rgba(255,255,255,0.85);
+  border-color: rgba(15,23,42,0.08);
+}
+.dash-shell.theme-light .dash-tab:hover {
+  color: #0f172a;
+  border-color: rgba(59,130,246,0.32);
+}
+.dash-shell.theme-light .dash-tab.is-active {
+  color: #ffffff;
+  background: linear-gradient(135deg, rgba(37,99,235,0.95), rgba(147,51,234,0.95));
+  border-color: rgba(37,99,235,0.5);
+  box-shadow:
+    0 0 0 1px rgba(37,99,235,0.25) inset,
+    0 12px 30px -12px rgba(37,99,235,0.55),
+    0 0 30px -10px rgba(147,51,234,0.4);
+}
+.dash-shell.theme-light .dash-tab.is-active i { color: #ffffff; background: rgba(255,255,255,0.18); }
+
+/* Chart shell + KPI + chips */
+.dash-shell.theme-light .chart-shell {
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(59,130,246,0.10), transparent 60%),
+    rgba(255, 255, 255, 0.6);
+  border-color: rgba(15,23,42,0.06);
+}
+.dash-shell.theme-light .kpi-tile {
+  border-color: rgba(15,23,42,0.08);
+  background: linear-gradient(140deg, rgba(59,130,246,0.10), rgba(168,85,247,0.06) 60%, rgba(255,255,255,0.7));
+}
+.dash-shell.theme-light .kpi-tile:hover { border-color: rgba(59,130,246,0.35); }
+.dash-shell.theme-light .kpi-tile .kpi-label { color: rgba(71,85,105,0.95); }
+.dash-shell.theme-light .kpi-tile .kpi-value { color: #0f172a; }
+.dash-shell.theme-light .metric-chip {
+  border-color: rgba(15,23,42,0.10);
+  background: rgba(15,23,42,0.04);
+  color: rgba(51,65,85,0.95);
+}
+
+/* Table */
+.dash-shell.theme-light .dash-table thead th {
+  background: rgba(255,255,255,0.92);
+  color: rgba(71,85,105,0.95);
+  border-bottom-color: rgba(15,23,42,0.10);
+}
+.dash-shell.theme-light .dash-table thead th:hover { color: #0f172a; }
+.dash-shell.theme-light .dash-table tbody td {
+  color: rgba(30,41,59,0.92);
+  border-bottom-color: rgba(15,23,42,0.07);
+}
+.dash-shell.theme-light .dash-table tbody tr:hover { background: rgba(59,130,246,0.06); }
+.dash-shell.theme-light .dash-table .mono {
+  background: rgba(15,23,42,0.05);
+  color: #1d4ed8;
+}
+
+/* Empty state + input */
+.dash-shell.theme-light .empty-state {
+  border-color: rgba(15,23,42,0.14);
+  background: rgba(255,255,255,0.65);
+  color: rgba(71,85,105,0.9);
+}
+.dash-shell.theme-light .empty-state .empty-icon { color: rgba(71,85,105,0.55); }
+.dash-shell.theme-light .dash-input {
+  border-color: rgba(15,23,42,0.14);
+  background: rgba(255,255,255,0.85);
+  color: #0f172a;
+}
+.dash-shell.theme-light .dash-input::placeholder { color: rgba(71,85,105,0.55); }
+.dash-shell.theme-light .dash-input:focus {
+  border-color: rgba(37,99,235,0.55);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.16);
+}
+
+/* Spinner + plotly modebar + scrollbars */
+.dash-shell.theme-light .dash-spinner {
+  border-color: rgba(37,99,235,0.18);
+  border-top-color: #2563eb;
+  border-right-color: #7c3aed;
+  box-shadow: 0 0 20px rgba(37,99,235,0.25);
+}
+.dash-shell.theme-light .modebar-btn path { fill: rgba(71,85,105,0.8) !important; }
+.dash-shell.theme-light .modebar-btn:hover path { fill: #0f172a !important; }
+.dash-shell.theme-light .dash-scroll::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); }
+
+/* ---- Tailwind color utilities used across the tabs ----
+   Scoped under .theme-light so they outrank the global utility
+   (specificity 0,3,0 > 0,1,0) without touching the dark theme. */
+.dash-shell.theme-light .text-white,
+.dash-shell.theme-light .text-slate-100,
+.dash-shell.theme-light .text-slate-200 { color: #1e293b; }
+.dash-shell.theme-light .text-slate-300 { color: #334155; }
+.dash-shell.theme-light .text-slate-400 { color: #475569; }
+.dash-shell.theme-light .text-slate-500 { color: #64748b; }
+.dash-shell.theme-light .text-sky-300,
+.dash-shell.theme-light .text-sky-200 { color: #0284c7; }
+.dash-shell.theme-light .text-emerald-300,
+.dash-shell.theme-light .text-emerald-200,
+.dash-shell.theme-light .text-emerald-100 { color: #059669; }
+.dash-shell.theme-light .text-amber-300,
+.dash-shell.theme-light .text-amber-200,
+.dash-shell.theme-light .text-amber-100 { color: #b45309; }
+.dash-shell.theme-light .text-fuchsia-300 { color: #c026d3; }
+.dash-shell.theme-light .text-purple-300 { color: #7c3aed; }
+.dash-shell.theme-light .text-rose-200,
+.dash-shell.theme-light .text-rose-300 { color: #e11d48; }
+.dash-shell.theme-light .border-sky-400 { border-color: rgba(2,132,199,0.5); }
+.dash-shell.theme-light .border-emerald-400 { border-color: rgba(5,150,105,0.5); }
+.dash-shell.theme-light .border-amber-400 { border-color: rgba(180,83,9,0.5); }
+.dash-shell.theme-light .border-rose-400 { border-color: rgba(225,29,72,0.5); }
+/* Gradient bg-clip-text headings → deep tones readable on white */
+.dash-shell.theme-light .bg-clip-text {
+  background-image: linear-gradient(90deg, #0284c7, #c026d3 50%, #b45309) !important;
+}
+
+/* ---- Body-portaled chart modal (lives outside .dash-shell) ---- */
+:root[data-theme="light"] .chart-modal-overlay {
+  background: rgba(148, 163, 184, 0.45);
+}
+:root[data-theme="light"] .chart-modal-panel {
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(15, 23, 42, 0.12);
+  box-shadow: 0 30px 80px -24px rgba(30, 41, 59, 0.45);
+  color: #1e293b;
+}
+:root[data-theme="light"] .chart-modal-panel .text-slate-100 { color: #1e293b; }
+:root[data-theme="light"] .chart-modal-panel .text-slate-200,
+:root[data-theme="light"] .chart-modal-panel .text-slate-300 { color: #334155; }
+:root[data-theme="light"] .chart-modal-panel .text-sky-300 { color: #0284c7; }
+:root[data-theme="light"] .chart-modal-insight { border-top-color: rgba(15, 23, 42, 0.14); }
+
+/* ============================================================
    Export mode — applied during PDF capture (html2canvas).
    html2canvas does NOT support: backdrop-filter, mask-image,
    background-clip: text, mix-blend-mode. Swap those for solid

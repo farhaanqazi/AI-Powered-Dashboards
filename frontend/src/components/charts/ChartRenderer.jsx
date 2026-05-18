@@ -1,19 +1,50 @@
 import React from 'react';
 import Plotly from 'plotly.js-basic-dist';
 import createPlotlyComponent from 'react-plotly.js/factory';
+import { useDashboardStore } from '../../dashboardStore';
 
 const Plot = createPlotlyComponent(Plotly);
 
 const TRUNCATE_LEN = 18;
 
-// Dark-theme palette aligned with .dash-shell futuristic theme
-const DARK_THEME = {
-  font: '#cbd5e1',
-  tick: '#94a3b8',
-  axisLine: 'rgba(148,163,184,0.20)',
-  grid: 'rgba(148,163,184,0.10)',
-  zero: 'rgba(148,163,184,0.25)',
-  title: '#f1f5f9',
+// Plotly palettes that mirror the two .dash-shell themes. The dark variant is
+// aligned with the futuristic dark theme; the light variant is its
+// contrast-matched counterpart for the white theme.
+const THEMES = {
+  dark: {
+    font: '#cbd5e1',
+    tick: '#94a3b8',
+    axisLine: 'rgba(148,163,184,0.20)',
+    grid: 'rgba(148,163,184,0.10)',
+    zero: 'rgba(148,163,184,0.25)',
+    title: '#f1f5f9',
+    markerLine: 'rgba(255,255,255,0.10)',
+    pointLine: 'rgba(15,23,42,0.8)',
+    pieLine: 'rgba(2,6,23,0.85)',
+    pieText: '#f1f5f9',
+    hoverBg: 'rgba(15,23,42,0.92)',
+    hoverBorder: 'rgba(96,165,250,0.45)',
+    hoverFont: '#f1f5f9',
+    legendBorder: 'rgba(148,163,184,0.15)',
+    heatMid: '#1e293b',
+  },
+  light: {
+    font: '#334155',
+    tick: '#475569',
+    axisLine: 'rgba(71,85,105,0.30)',
+    grid: 'rgba(71,85,105,0.12)',
+    zero: 'rgba(71,85,105,0.30)',
+    title: '#0f172a',
+    markerLine: 'rgba(15,23,42,0.10)',
+    pointLine: 'rgba(255,255,255,0.85)',
+    pieLine: 'rgba(255,255,255,0.9)',
+    pieText: '#0f172a',
+    hoverBg: 'rgba(255,255,255,0.96)',
+    hoverBorder: 'rgba(37,99,235,0.45)',
+    hoverFont: '#0f172a',
+    legendBorder: 'rgba(71,85,105,0.20)',
+    heatMid: '#e2e8f0',
+  },
 };
 
 // Neon-friendly categorical palette
@@ -25,7 +56,7 @@ const truncateLabel = (label, maxLen = 14) => {
   return `${str.slice(0, maxLen - 3)}...`;
 };
 
-const buildCategoryAxis = (labels) => {
+const buildCategoryAxis = (labels, T) => {
   const full = labels.map(l => String(l ?? ''));
   const truncated = full.map(l => truncateLabel(l, TRUNCATE_LEN));
   const count = full.length;
@@ -45,15 +76,15 @@ const buildCategoryAxis = (labels) => {
     tickvals: full,
     ticktext: truncated,
     tickangle: angle,
-    tickfont: { size: fontSize, color: DARK_THEME.tick },
+    tickfont: { size: fontSize, color: T.tick },
     automargin: true,
-    linecolor: DARK_THEME.axisLine,
-    gridcolor: DARK_THEME.grid,
-    zerolinecolor: DARK_THEME.zero,
+    linecolor: T.axisLine,
+    gridcolor: T.grid,
+    zerolinecolor: T.zero,
   };
 };
 
-const horizontalCategoryAxis = (labels) => {
+const horizontalCategoryAxis = (labels, T) => {
   const full = labels.map(l => String(l ?? ''));
   const truncated = full.map(l => truncateLabel(l, TRUNCATE_LEN));
   return {
@@ -61,11 +92,11 @@ const horizontalCategoryAxis = (labels) => {
     tickvals: full,
     ticktext: truncated,
     tickangle: 0,
-    tickfont: { size: 11, color: DARK_THEME.tick },
+    tickfont: { size: 11, color: T.tick },
     automargin: true,
-    linecolor: DARK_THEME.axisLine,
-    gridcolor: DARK_THEME.grid,
-    zerolinecolor: DARK_THEME.zero,
+    linecolor: T.axisLine,
+    gridcolor: T.grid,
+    zerolinecolor: T.zero,
   };
 };
 
@@ -85,12 +116,12 @@ const shouldUseLogScale = (values) => {
   return max / median > 100;
 };
 
-const themedAxis = (extra = {}) => ({
-  tickfont: { size: 11, color: DARK_THEME.tick },
-  titlefont: { color: DARK_THEME.tick, size: 12 },
-  linecolor: DARK_THEME.axisLine,
-  gridcolor: DARK_THEME.grid,
-  zerolinecolor: DARK_THEME.zero,
+const themedAxis = (extra = {}, T) => ({
+  tickfont: { size: 11, color: T.tick },
+  titlefont: { color: T.tick, size: 12 },
+  linecolor: T.axisLine,
+  gridcolor: T.grid,
+  zerolinecolor: T.zero,
   automargin: true,
   ...extra,
 });
@@ -115,21 +146,21 @@ const wrapAxisTitle = (text, maxLen = 18) => {
   return lines.join('<br>');
 };
 
-const baseLayout = (_title, extras = {}) => {
+const baseLayout = (_title, extras = {}, T) => {
   // The chart title is intentionally NOT rendered inside the Plotly figure —
   // every chart is wrapped in a card that already shows the title as a heading.
   // Rendering it here too caused a duplicated title.
 
   // Merge axis defaults if caller supplied them
   const mergeAxis = (override) => {
-    if (!override) return themedAxis();
+    if (!override) return themedAxis({}, T);
     const { title: t, ...rest } = override;
-    const merged = themedAxis(rest);
+    const merged = themedAxis(rest, T);
     if (t) {
       const titleText = typeof t === 'string' ? t : t.text;
       merged.title = {
         text: wrapAxisTitle(titleText),
-        font: { color: DARK_THEME.tick, size: 11 },
+        font: { color: T.tick, size: 11 },
         standoff: 12,
         ...(typeof t === 'object' ? { ...t, text: wrapAxisTitle(t.text) } : {}),
       };
@@ -145,17 +176,17 @@ const baseLayout = (_title, extras = {}) => {
     margin: { t: 24, b: 64, l: 72, r: 36 },
     paper_bgcolor: 'transparent',
     plot_bgcolor: 'transparent',
-    font: { color: DARK_THEME.font, family: 'Inter, ui-sans-serif, system-ui, sans-serif' },
+    font: { color: T.font, family: 'Inter, ui-sans-serif, system-ui, sans-serif' },
     colorway: CAT_PALETTE,
     hoverlabel: {
-      bgcolor: 'rgba(15,23,42,0.92)',
-      bordercolor: 'rgba(96,165,250,0.45)',
-      font: { color: '#f1f5f9', size: 12 },
+      bgcolor: T.hoverBg,
+      bordercolor: T.hoverBorder,
+      font: { color: T.hoverFont, size: 12 },
     },
     legend: {
-      font: { color: DARK_THEME.font, size: 11 },
-      bgcolor: 'rgba(15,23,42,0.0)',
-      bordercolor: 'rgba(148,163,184,0.15)',
+      font: { color: T.font, size: 11 },
+      bgcolor: 'rgba(0,0,0,0)',
+      bordercolor: T.legendBorder,
     },
     xaxis: mergeAxis(xaxis),
     yaxis: mergeAxis(yaxis),
@@ -166,10 +197,10 @@ const baseLayout = (_title, extras = {}) => {
 const pickX = (item) => item.x ?? item.category ?? item.bin_range ?? item.date ?? '';
 const pickY = (item) => item.y ?? item.count ?? item.value ?? item.agg_value ?? 0;
 
-const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle }) => {
+const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle, T }) => {
   const useHorizontal = shouldUseHorizontalBars(xValues);
-  const catAxisVertical = buildCategoryAxis(xValues);
-  const catAxisHorizontal = horizontalCategoryAxis(xValues);
+  const catAxisVertical = buildCategoryAxis(xValues, T);
+  const catAxisHorizontal = horizontalCategoryAxis(xValues, T);
   const yIsLog = shouldUseLogScale(yValues);
 
   const data = [{
@@ -179,7 +210,7 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
     orientation: useHorizontal ? 'h' : 'v',
     marker: {
       color,
-      line: { color: 'rgba(255,255,255,0.10)', width: 0.5 },
+      line: { color: T.markerLine, width: 0.5 },
     },
     hovertext: xValues,
     hovertemplate: useHorizontal
@@ -195,12 +226,15 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
     yaxis: useHorizontal
       ? { title: xTitle, ...catAxisHorizontal }
       : { title: yTitle, type: yIsLog ? 'log' : 'linear' },
-  });
+  }, T);
 
   return { data, layout };
 };
 
 const ChartRenderer = ({ chartData }) => {
+  const themeMode = useDashboardStore((s) => s.theme);
+  const T = THEMES[themeMode] || THEMES.dark;
+
   if (!chartData || chartData.data == null) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center p-8">
@@ -226,7 +260,7 @@ const ChartRenderer = ({ chartData }) => {
     const neonDiverging = [
       [0.0, '#f472b6'],
       [0.25, '#a78bfa'],
-      [0.5, '#1e293b'],
+      [0.5, T.heatMid],
       [0.75, '#22d3ee'],
       [1.0, '#34d399'],
     ];
@@ -240,7 +274,7 @@ const ChartRenderer = ({ chartData }) => {
       zmax: src.zmax,
       zmid: src.zmid,
       colorbar: {
-        tickfont: { color: DARK_THEME.tick, size: 10 },
+        tickfont: { color: T.tick, size: 10 },
         outlinewidth: 0,
         thickness: 14,
       },
@@ -249,7 +283,7 @@ const ChartRenderer = ({ chartData }) => {
       ...layout,
       xaxis: { title: src.xaxis?.title || 'Variables', automargin: true },
       yaxis: { title: src.yaxis?.title || 'Variables', automargin: true },
-    });
+    }, T);
   }
   else if (chartType === 'bar' || chartType === 'category_count' || chartType === 'histogram'
            || chartType === 'distribution' || chartType === 'category_summary' || chartType === 'group_comparison') {
@@ -266,7 +300,7 @@ const ChartRenderer = ({ chartData }) => {
     const yTitle = chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
     const color = chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa';
     ({ data: plotlyData, layout } = renderCategoricalSeries(xValues, yValues, {
-      title, color, layoutExtras: layout, xTitle, yTitle,
+      title, color, layoutExtras: layout, xTitle, yTitle, T,
     }));
   }
   else if (chartType === 'scatter') {
@@ -289,7 +323,7 @@ const ChartRenderer = ({ chartData }) => {
         color: '#fbbf24',
         size: 7,
         opacity: 0.8,
-        line: { color: 'rgba(15,23,42,0.8)', width: 1 },
+        line: { color: T.pointLine, width: 1 },
       },
       hovertemplate: '%{x}<br>%{y}<extra></extra>',
     }];
@@ -297,7 +331,7 @@ const ChartRenderer = ({ chartData }) => {
       ...layout,
       xaxis: { title: chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'X', automargin: true },
       yaxis: { title: chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || 'Y', type: yIsLog ? 'log' : 'linear', automargin: true },
-    });
+    }, T);
   }
   else if (chartType === 'time_series' || chartType === 'line') {
     let xValues = [];
@@ -316,7 +350,7 @@ const ChartRenderer = ({ chartData }) => {
       type: 'scatter',
       mode: xValues.length > 2000 ? 'lines' : 'lines+markers',
       line: { color: '#34d399', width: 2.5, shape: 'spline', smoothing: 0.6 },
-      marker: { color: '#34d399', size: 6, line: { color: 'rgba(15,23,42,0.8)', width: 1 } },
+      marker: { color: '#34d399', size: 6, line: { color: T.pointLine, width: 1 } },
       fill: 'tozeroy',
       fillcolor: 'rgba(52,211,153,0.10)',
       hovertemplate: '%{x}<br>%{y}<extra></extra>',
@@ -325,11 +359,11 @@ const ChartRenderer = ({ chartData }) => {
       ...layout,
       xaxis: { title: chartData.x_title || chartData.x_column || 'Date', automargin: true },
       yaxis: { title: chartData.y_title || chartData.y_column || 'Value', type: yIsLog ? 'log' : 'linear', automargin: true },
-    });
+    }, T);
   }
   else if (chartType === 'box' || chartType === 'box_plot') {
     const boxStyle = {
-      marker: { color: '#fb7185', outliercolor: '#f43f5e', line: { width: 1, color: 'rgba(15,23,42,0.6)' } },
+      marker: { color: '#fb7185', outliercolor: '#f43f5e', line: { width: 1, color: T.pointLine } },
       line: { color: '#f87171' },
       fillcolor: 'rgba(248,113,113,0.18)',
       boxpoints: 'outliers',
@@ -353,7 +387,7 @@ const ChartRenderer = ({ chartData }) => {
       xaxis: { title: chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || '', automargin: true },
       yaxis: { title: chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || 'Values', automargin: true },
       showlegend: plotlyData.length > 1,
-    });
+    }, T);
   }
   else if (chartType === 'pie') {
     let labels = [];
@@ -371,14 +405,14 @@ const ChartRenderer = ({ chartData }) => {
       type: 'pie',
       hole: 0.55,
       textinfo: 'label+percent',
-      textfont: { color: '#f1f5f9', size: 11 },
+      textfont: { color: T.pieText, size: 11 },
       marker: {
         colors: CAT_PALETTE,
-        line: { color: 'rgba(2,6,23,0.85)', width: 2 },
+        line: { color: T.pieLine, width: 2 },
       },
       hovertemplate: '%{label}<br>%{value} (%{percent})<extra></extra>',
     }];
-    layout = baseLayout(title, { ...layout, margin: { t: 40, b: 40, l: 40, r: 40 } });
+    layout = baseLayout(title, { ...layout, margin: { t: 40, b: 40, l: 40, r: 40 } }, T);
   }
   else {
     // Fallback: treat array-of-records as a bar chart
@@ -391,6 +425,7 @@ const ChartRenderer = ({ chartData }) => {
         layoutExtras: layout,
         xTitle: 'X',
         yTitle: 'Y',
+        T,
       }));
     } else {
       return (

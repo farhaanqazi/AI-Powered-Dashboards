@@ -228,4 +228,13 @@ export const grantAiConsent = async (traceId) => {
   return response.data;
 };
 
+// Phase 14 S14.2 — structured interaction (NO natural language, NO LLM). The
+// UI maps a click straight to one deterministic Phase 11 catalogue
+// calculation + an optional contract-guarded filter set. Used only for the
+// server-backed path; cross-highlight / simple narrowing stay client-side.
+export const runInteraction = async ({ calculation, params = {}, filters = [] }) => {
+  const response = await api.post('/interact', { calculation, params, filters });
+  return response.data;
+};
+
 export default api;

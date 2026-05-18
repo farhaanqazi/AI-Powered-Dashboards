@@ -172,6 +172,7 @@ function RouteFallback() {
 
 function App() {
   const [showSplash, setShowSplash] = useState(true);
+  const theme = useDashboardStore((s) => s.theme);
 
   useEffect(() => {
     // Check if splash has already been shown in this session
@@ -190,7 +191,7 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950">
+    <div className={`min-h-screen flex flex-col ${theme === 'light' ? 'bg-slate-100' : 'bg-slate-950'}`}>
       <GuestModeSync />
       {showSplash && <SplashScreen />}
       {!showSplash && (

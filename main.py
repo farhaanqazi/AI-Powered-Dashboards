@@ -286,6 +286,15 @@ class LoadExternalRequest(BaseModel):
 class AskRequest(BaseModel):
     question: str
 
+
+class InteractRequest(BaseModel):
+    # Structured interaction — NO natural language, NO LLM. The UI maps a
+    # click directly to one Phase 11 catalogue calculation + an optional
+    # contract-guarded filter set (Phase 14 S14.2).
+    calculation: str
+    params: dict = {}
+    filters: list = []
+
 # ---------------- EXCEPTION HANDLERS ----------------
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -688,6 +697,56 @@ async def api_ask(request: Request, body: AskRequest,
 
     from src.analysis.ask import run_ask
     result = await asyncio.to_thread(run_ask, df, contract, body.question)
+    return result
+
+
+# ---------------- INTERACTIVE DASHBOARD (Phase 14 S14.2) ----------------
+# Structured interactions: the UI maps a click straight to one deterministic
+# Phase 11 catalogue calculation + an optional contract-guarded filter set.
+# No LLM, no new engine, no WASM. The cleaned frame is now durable (S14.1) so
+# this survives a container restart instead of going "unavailable".
+
+@app.post("/api/interact")
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_interact(request: Request, body: InteractRequest,
+                       user=Depends(allow_clerk_or_guest)):
+    if not config.INTERACT_ENABLED:
+        raise HTTPException(status_code=404,
+                            detail="Interactive mode is disabled.")
+
+    payload = get_repository().get(user["session_key"])
+    contract_dict = (
+        (payload or {}).get("dataset_profile", {}).get("contract")
+    )
+    if not payload or not contract_dict:
+        raise HTTPException(
+            status_code=404,
+            detail="Run an analysis first, then interact with it.",
+        )
+
+    from src.contract.models import DatasetContract
+    from src.contract.df_cache import get_df_cache
+
+    try:
+        contract = DatasetContract.model_validate(contract_dict)
+    except Exception:
+        raise HTTPException(status_code=409,
+                            detail="This analysis's contract is unreadable.")
+
+    df = get_df_cache().get(contract.schema_fingerprint)
+    if df is None:
+        return {
+            "status": "unavailable",
+            "error": "The working data for this analysis has expired. "
+                     "Re-run the analysis to interact again.",
+        }
+
+    from src.analysis.ask import run_interaction_cached
+    spec = {"calculation": body.calculation, "params": body.params,
+            "filters": body.filters}
+    result = await asyncio.to_thread(
+        run_interaction_cached, contract.schema_fingerprint, df, contract, spec
+    )
     return result
 
 

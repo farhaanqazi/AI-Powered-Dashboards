@@ -166,9 +166,14 @@ def test_df_cache_disabled_falls_back(monkeypatch):
     from src import config
     from src.contract.df_cache import get_df_cache, reset_df_cache_for_tests
 
+    # Phase 14 S14.1: df_cache is now two-tier. The durable Parquet tier is
+    # deliberately independent of the transient toggle (it is the restart-
+    # survivability guarantee). The graceful-fallback contract still holds when
+    # BOTH tiers are off, which is what this test asserts.
     monkeypatch.setattr(config, "CLEANED_DF_CACHE_ENABLED", False)
+    monkeypatch.setattr(config, "CLEANED_DF_DURABLE_ENABLED", False)
     reset_df_cache_for_tests()
     c = get_df_cache()
     c.put("fp", pd.DataFrame({"a": [1]}))
-    assert c.get("fp") is None  # disabled → no storage, graceful fallback
+    assert c.get("fp") is None  # all caching off → graceful fallback
     reset_df_cache_for_tests()

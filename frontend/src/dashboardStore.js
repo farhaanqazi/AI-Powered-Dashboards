@@ -3,9 +3,21 @@ import { getDashboardData, patchRegistry, grantAiConsent } from './services/api'
 
 const GUEST_KEY = 'dataInsight:guestMode';
 const GUEST_SID_KEY = 'dataInsight:guestSessionId';
+const THEME_KEY = 'dataInsight:theme';
 const readGuest = () => {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem(GUEST_KEY) === '1'; }
   catch { return false; }
+};
+const readTheme = () => {
+  try {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === 'light' ? 'light' : 'dark';
+  } catch { return 'dark'; }
+};
+// Mirror the theme onto <html data-theme> so global (non-.dash-shell) surfaces
+// — e.g. the body-portaled chart modal — can react via CSS too.
+const applyThemeToDom = (theme) => {
+  try { document.documentElement.setAttribute('data-theme', theme); } catch {}
 };
 const ensureGuestSessionId = () => {
   try {
@@ -26,6 +38,15 @@ export const useDashboardStore = create((set, get) => ({
   exporting: false,
   exportHandler: null,
   isGuest: readGuest(),
+  // 'dark' (default futuristic) | 'light' (white contrast theme).
+  theme: readTheme(),
+  setTheme: (theme) => {
+    const t = theme === 'light' ? 'light' : 'dark';
+    try { localStorage.setItem(THEME_KEY, t); } catch {}
+    applyThemeToDom(t);
+    set({ theme: t });
+  },
+  toggleTheme: () => get().setTheme(get().theme === 'dark' ? 'light' : 'dark'),
   enableGuest: () => {
     try { localStorage.setItem(GUEST_KEY, '1'); } catch {}
     ensureGuestSessionId();
@@ -114,4 +135,45 @@ export const useDashboardStore = create((set, get) => ({
       throw err;
     }
   },
+
+  // --- Phase 14 S14.3: Stage 1 interaction state -------------------------
+  // Cross-highlight + simple narrowing run client-side over data already in
+  // the shipped chart specs (zero server call, not WASM). Server-backed
+  // recompute (new aggregations) goes through services.runInteraction.
+  filters: [],
+  highlight: null,        // { column, value } | null
+  excludedKeys: [],
+  addFilter(filter) {
+    if (!filter || !filter.column) return;
+    const rest = get().filters.filter(
+      (f) => !(f.column === filter.column && f.op === (filter.op || 'eq')),
+    );
+    set({ filters: [...rest, { op: 'eq', ...filter }] });
+  },
+  removeFilter(column, op = 'eq') {
+    set({
+      filters: get().filters.filter(
+        (f) => !(f.column === column && f.op === op),
+      ),
+    });
+  },
+  clearFilters: () => set({ filters: [], highlight: null }),
+  setHighlight: (highlight) => set({ highlight: highlight || null }),
+  toggleExclude(key) {
+    const k = String(key);
+    const cur = get().excludedKeys;
+    set({
+      excludedKeys: cur.includes(k)
+        ? cur.filter((x) => x !== k)
+        : [...cur, k],
+    });
+  },
+  hasInteractions() {
+    const s = get();
+    return s.filters.length > 0 || !!s.highlight || s.excludedKeys.length > 0;
+  },
 }));
+
+// Reflect the persisted theme onto <html> immediately so the first paint
+// (modal CSS, etc.) matches the stored preference without a flash.
+applyThemeToDom(readTheme());

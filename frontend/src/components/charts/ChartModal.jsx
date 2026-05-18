@@ -1,18 +1,30 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import ChartRenderer from './ChartRenderer';
 
 const ChartModal = ({ chart, onClose }) => {
   useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Lock background scroll while the modal is open.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [onClose]);
 
   if (!chart) return null;
   const insight = chart.ai_insight;
   const title = chart.title || chart.id || 'Chart';
 
-  return (
+  // Portal to <body> so the fixed overlay escapes ancestors that establish a
+  // containing block (transform / filter / will-change / backdrop-filter on
+  // .dash-shell, .chart-card, etc.). Without this the "fixed" overlay is
+  // positioned relative to a transformed ancestor and the user has to scroll
+  // to find the enlarged chart.
+  return createPortal(
     <div
       className="chart-modal-overlay"
       onClick={onClose}
@@ -50,7 +62,8 @@ const ChartModal = ({ chart, onClose }) => {
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

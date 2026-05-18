@@ -268,3 +268,33 @@ CLEANED_DF_CACHE_ENABLED = _env_bool("CLEANED_DF_CACHE_ENABLED", True)
 CLEANED_DF_CACHE_TTL_SECONDS = int(
     os.environ.get("CLEANED_DF_CACHE_TTL_SECONDS", 3600)
 )
+
+# --- Durable cleaned-frame tier (Phase 14 S14.1 — Gap A) ---
+# The transient cache above is wiped on container restart, which kills
+# follow-up Ask/Interact ("working data has expired"). When enabled, the
+# cleaned frame is ALSO written once as a fingerprint-keyed Parquet file to a
+# local spool dir — the same filesystem-spool pattern already accepted for
+# JOB_SPOOL_DIR, NOT a new storage backend. df_cache.get() falls back
+# mem → client → parquet so interactivity survives a restart. Self-pruning by
+# age; fully disableable.
+CLEANED_DF_DURABLE_ENABLED = _env_bool("CLEANED_DF_DURABLE_ENABLED", True)
+CLEANED_DF_DURABLE_DIR = os.environ.get(
+    "CLEANED_DF_DURABLE_DIR",
+    os.path.join(tempfile.gettempdir(), "di_clean_frames"),
+)
+CLEANED_DF_DURABLE_TTL_SECONDS = int(
+    os.environ.get("CLEANED_DF_DURABLE_TTL_SECONDS", DASHBOARD_TTL_SECONDS)
+)
+
+# --- Interactive Dashboard (Phase 14 S14.2) ---
+# Structured, non-LLM interactions reuse the Phase 11 deterministic Ask tool
+# catalogue over the (now durable) cleaned frame. No WASM, no new engine. The
+# AI is not in this path at all. Results are memoised in-process keyed on
+# sha256(schema_fingerprint + canonical(spec)) with LRU eviction so repeated
+# filter states are instant and the single container memory stays bounded.
+INTERACT_ENABLED = _env_bool("INTERACT_ENABLED", True)
+INTERACT_RESULT_CACHE_MAX_ENTRIES = int(
+    os.environ.get("INTERACT_RESULT_CACHE_MAX_ENTRIES", 256)
+)
+# Hard cap on filter predicates per interaction request (abuse / cost guard).
+INTERACT_MAX_FILTERS = int(os.environ.get("INTERACT_MAX_FILTERS", 12))

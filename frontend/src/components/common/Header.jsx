@@ -72,10 +72,15 @@ const Header = () => {
   const isGuest = useDashboardStore((s) => s.isGuest);
   const enableGuest = useDashboardStore((s) => s.enableGuest);
   const disableGuest = useDashboardStore((s) => s.disableGuest);
+  const theme = useDashboardStore((s) => s.theme);
+  const toggleTheme = useDashboardStore((s) => s.toggleTheme);
   const [helpOpen, setHelpOpen] = useState(false);
   const exportDisabled = exporting || !exportHandler;
 
-  const isDark = location.pathname === '/dashboard' || location.pathname === '/processing';
+  // Dark chrome only on the dark-surface routes AND while the dark theme is
+  // active — in light theme the header flips to its light treatment too.
+  const onDarkRoute = location.pathname === '/dashboard' || location.pathname === '/processing';
+  const isDark = onDarkRoute && theme === 'dark';
 
   const headerClasses = isDark
     ? 'sticky top-0 z-50 border-b border-white/10 bg-slate-950/60 backdrop-blur-xl shadow-[0_8px_30px_-12px_rgba(2,6,23,0.8)]'
@@ -109,6 +114,16 @@ const Header = () => {
           </div>
 
           <div className="flex items-center space-x-3">
+            <button
+              onClick={toggleTheme}
+              className={ghostBtn}
+              title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              aria-label="Toggle color theme"
+              aria-pressed={theme === 'light'}
+            >
+              <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'}`} />
+              <span className="hidden sm:inline">{theme === 'dark' ? 'Light' : 'Dark'}</span>
+            </button>
             {location.pathname === '/' && (
               <button className={ghostBtn} onClick={() => setHelpOpen(true)}>
                 <i className="fas fa-question-circle"></i> Help
