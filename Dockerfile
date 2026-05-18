@@ -34,9 +34,14 @@ RUN cd frontend && \
     rm -rf dist/ node_modules/.cache && \
     npm run build
 
+# Entrypoint runs the API, plus the Arq worker iff JOB_QUEUE_ENABLED=true.
+# Default behaviour (flag unset) is identical to the previous single CMD —
+# Hugging Face is unaffected unless the flag is explicitly set.
+RUN chmod +x docker/entrypoint.sh
+
 # Non-root user
 RUN useradd -u 1001 appuser && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 7860
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
+CMD ["sh", "/app/docker/entrypoint.sh"]

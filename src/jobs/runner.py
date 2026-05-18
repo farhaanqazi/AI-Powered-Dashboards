@@ -35,6 +35,11 @@ def run_analysis_job(
     failure is recorded as a job event."""
     store = get_job_store()
     try:
+        size = os.path.getsize(file_path) if os.path.exists(file_path) else -1
+        logger.info(
+            "job %s start: file=%s bytes=%s session=%s",
+            job_id, filename, size, session_key,
+        )
         with open(file_path, "rb") as fh:
             import io
 
@@ -59,6 +64,10 @@ def run_analysis_job(
                 get_repository().save(
                     session_key, trace_id=trace_id, payload=payload
                 )
+                logger.info(
+                    "job %s done: persisted dashboard trace=%s",
+                    job_id, trace_id,
+                )
                 store.append_event(job_id, {
                     "phase": "done",
                     "message": event.get("message", "Complete"),
@@ -68,6 +77,10 @@ def run_analysis_job(
                 })
                 return
             else:
+                logger.debug(
+                    "job %s phase=%s pct=%s", job_id,
+                    event.get("phase"), event.get("percent"),
+                )
                 store.append_event(job_id, event)
 
     except _Cancelled:

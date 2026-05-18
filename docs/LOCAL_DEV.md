@@ -43,6 +43,20 @@ cd frontend; npm run dev
 
 Restarting the API no longer loses an in-flight analysis — the worker owns it.
 
+## Run locally — full production-like stack (Docker Compose)
+
+One command brings up the real out-of-process topology — API, a **separate**
+Arq worker, Redis, and Postgres (shared DB so the worker's result is visible
+to the API; a per-container SQLite would not be):
+
+```
+docker compose up --build
+# app on http://localhost:7860
+```
+
+This is the closest local mirror of a correct production deployment — use it
+to validate Option B end-to-end before trusting it.
+
 ## Run locally — quick (in-process, no Redis/worker)
 
 Leave `JOB_QUEUE_ENABLED=false` (default). Just run the API + frontend; jobs
@@ -71,22 +85,23 @@ Face will behave.
 * The pipeline itself (`src/core/pipeline.py`) is **unchanged** — the job layer
   only changed *who calls it*.
 
-### Later (Phase 10 hardening, not now)
+### The Docker image already supports both modes
 
-To make HF durable (survive container restarts) you would, deliberately:
+`docker/entrypoint.sh` (wired into the Dockerfile `CMD`) runs **only uvicorn
+by default**, so HF is byte-for-byte unchanged unless you opt in. When
+`JOB_QUEUE_ENABLED=true` it also starts the Arq worker in-container (unless
+`RUN_WORKER=false`, used by the compose `worker` service).
 
-1. Set `JOB_QUEUE_ENABLED=true` and point `REDIS_URL` at an **external**
-   managed Redis (in-container Redis dies with the Space and defeats the
-   purpose).
-2. Run the worker as a second process. The single-container way is a process
-   manager in the image; append to the Dockerfile CMD, e.g.:
+### To make HF durable later (deliberate, not automatic)
 
-   ```dockerfile
-   # supervisord/honcho running BOTH:
-   #   uvicorn main:app --host 0.0.0.0 --port 7860
-   #   arq src.jobs.worker.WorkerSettings
-   ```
+The image plumbing is done — no Dockerfile edits remain. What's left is an
+infrastructure decision only:
 
-   This is a real deployment-topology change — validate the Space boots both
-   processes before relying on it. It is intentionally out of scope for the
-   incident fix.
+1. Set Space secrets: `JOB_QUEUE_ENABLED=true` and `REDIS_URL` pointing at an
+   **external/managed Redis** (an in-container Redis dies with the Space and
+   defeats the durability point — this is the real cost, not code).
+2. (Optional) point `DATABASE_URL` at managed Postgres so results survive
+   restarts too.
+
+Until you do that, leave the flag unset: HF keeps working exactly as before,
+still with the incident fix (auth on fast submit, pipeline off the request).

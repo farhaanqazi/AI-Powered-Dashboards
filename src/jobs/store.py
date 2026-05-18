@@ -113,7 +113,7 @@ class _MemoryJobStore(JobStore):
 
 class _RedisJobStore(JobStore):
     def __init__(self, url: str) -> None:
-        import redis  # redis==5.x, sync client
+        import redis  # redis-py 4.x sync client (pinned <5 for Arq compat)
 
         self._r = redis.Redis.from_url(url, decode_responses=True)
         self._ttl = config.JOB_TTL_SECONDS

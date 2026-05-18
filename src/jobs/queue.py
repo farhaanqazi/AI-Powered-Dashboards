@@ -59,10 +59,13 @@ async def submit_analysis_job(
         try:
             pool = await _get_arq_pool()
             await pool.enqueue_job("run_analysis_task", **kwargs)
+            logger.info("job %s enqueued to arq (file=%s)", job_id, filename)
             return "arq"
         except Exception as exc:  # pragma: no cover - dev never gets stuck
             logger.warning(
-                "Arq enqueue failed (%s); running job in-process instead.", exc
+                "Arq enqueue failed (%s); running job %s in-process instead.",
+                exc, job_id,
             )
     _run_in_process(**kwargs)
+    logger.info("job %s dispatched in-process (file=%s)", job_id, filename)
     return "inprocess"

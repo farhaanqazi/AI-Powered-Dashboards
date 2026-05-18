@@ -9,6 +9,11 @@ __pycache__
 .pytest_cache
 .vscode
 .idea
+venv
+_local
+*.db
+.env
+di_job_spool
 
 # DO copy these
 !frontend/package.json

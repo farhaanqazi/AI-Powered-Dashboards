@@ -1,0 +1,84 @@
+# Local production-like Option B: API + dedicated Arq worker + Redis.
+# One command:  docker compose up --build
+#
+# This mirrors the real out-of-process topology (separate worker process,
+# durable Redis) so you can validate it locally before any deploy. The shared
+# `spool` volume is REQUIRED: the API writes the uploaded file and the worker
+# (a different container) reads it.
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Shared DB so the worker's result is visible to the API. With separate
+  # containers a per-container SQLite file would NOT be shared — the dashboard
+  # would 'vanish'. This is the result-handoff requirement made concrete.
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: dashboards
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d dashboards"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+    environment:
+      JOB_QUEUE_ENABLED: "true"
+      RUN_WORKER: "false"            # worker runs as its own service below
+      REDIS_URL: redis://redis:6379
+      JOB_SPOOL_DIR: /spool
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg2://app:app@db:5432/dashboards
+    env_file:
+      - .env
+    ports:
+      - "7860:7860"
+    volumes:
+      - spool:/spool
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+    command: ["arq", "src.jobs.worker.WorkerSettings"]
+    environment:
+      JOB_QUEUE_ENABLED: "true"
+      REDIS_URL: redis://redis:6379
+      JOB_SPOOL_DIR: /spool
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: postgresql+psycopg2://app:app@db:5432/dashboards
+    env_file:
+      - .env
+    volumes:
+      - spool:/spool
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+
+volumes:
+  spool:
+  pgdata:

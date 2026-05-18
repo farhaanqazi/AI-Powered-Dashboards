@@ -14,36 +14,21 @@ export default defineConfig({
     sourcemap: false,
     minify: 'terser',
     chunkSizeWarningLimit: 900,
-    // Vite otherwise injects <link rel="modulepreload"> for async-chunk deps
-    // too, so the upload screen would eagerly download plotly/export anyway —
-    // defeating the lazy-loading. Keep preload for the genuine first-paint
-    // vendors (react/clerk/etc) but strip the heavy lazy chunks.
-    modulePreload: {
-      resolveDependencies: (_filename, deps) =>
-        deps.filter((d) => !d.includes('plotly') && !/(^|\/)export\./.test(d)),
-    },
+    // NO custom manualChunks. A hand-rolled React/vendor split repeatedly
+    // produced circular cross-chunk ESM imports (react <-> vendor/plotly),
+    // leaving `React` undefined at chunk init ("Cannot read properties of
+    // undefined (reading 'useState'/'createContext')"). Cutting one edge just
+    // relocated the cycle — the mechanism itself was the defect. Vite's
+    // default chunking handles shared deps correctly, and the real load-time
+    // win comes from route-level React.lazy + the dynamic-imported export
+    // stack (App.jsx / DashboardPage.jsx), which keep plotly/jsPDF out of the
+    // initial chunk regardless of vendor grouping.
     rollupOptions: {
       output: {
-        // Add content hash to filenames to ensure cache busting
-        assetFileNames: (assetInfo) => {
-          if (assetInfo.name.endsWith('.css')) {
-            return `assets/${BUILD_ID}/[name].[hash][extname]`;
-          }
-          return `assets/${BUILD_ID}/[name].[hash][extname]`;
-        },
+        // Content-hashed filenames for cache busting.
+        assetFileNames: `assets/${BUILD_ID}/[name].[hash][extname]`,
         chunkFileNames: `assets/${BUILD_ID}/[name].[hash].js`,
         entryFileNames: `assets/${BUILD_ID}/[name].[hash].js`,
-        // Split heavy, independently-cacheable vendors into their own chunks
-        // so they (a) don't bloat the entry and (b) only download with the
-        // route that needs them (dashboard pulls plotly; export pulls jspdf).
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return undefined;
-          if (id.includes('plotly') || id.includes('react-plotly')) return 'plotly';
-          if (id.includes('jspdf') || id.includes('html-to-image') || id.includes('html2canvas')) return 'export';
-          if (id.includes('@clerk')) return 'clerk';
-          if (id.includes('react-router') || id.includes('/react-dom/') || id.includes('/react/') || id.includes('scheduler')) return 'react';
-          return 'vendor';
-        },
       }
     }
   },

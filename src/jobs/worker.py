@@ -20,6 +20,21 @@ async def run_analysis_task(ctx, **kwargs) -> None:
     await asyncio.to_thread(run_analysis_job, **kwargs)
 
 
+async def _on_startup(ctx) -> None:
+    # The worker is a separate process and never imports main.py, so it would
+    # otherwise have NO structured logging. Initialise the same structlog/JSON
+    # stack the API uses so worker logs are parseable and correlated.
+    try:
+        from src.observability.logging import configure_observability_logging
+
+        configure_observability_logging()
+    except Exception:  # pragma: no cover - never fail the worker on logging
+        pass
+    import logging
+
+    logging.getLogger(__name__).info("arq worker started")
+
+
 def _redis_settings():
     from arq.connections import RedisSettings
 
@@ -28,6 +43,7 @@ def _redis_settings():
 
 class WorkerSettings:
     functions = [run_analysis_task]
+    on_startup = _on_startup
     redis_settings = _redis_settings()
     # A single big analysis at a time per worker keeps memory predictable;
     # scale by running more worker processes.
