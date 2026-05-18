@@ -77,8 +77,16 @@ def test_metrics_records_request(client):
     assert 'path="/api/dashboard"' in response.text
 
 
-def test_pipeline_records_layer_metrics(client, upload_files):
+def test_pipeline_records_layer_metrics(client, upload_files, monkeypatch):
     from src.observability import metrics as obs_metrics
+    from src.core import pipeline as _pl
+
+    # This test exercises the FULL layer pipeline (L1→render) to assert each
+    # layer emits a metric. With the HITL schema-review gate enabled by
+    # default, a borderline dataset halts before L3 and the later layers
+    # legitimately never run — that behaviour is covered by the pipeline-wiring
+    # tests. Disable the gate here so this test measures what it intends.
+    monkeypatch.setattr(_pl.config, "SCHEMA_REVIEW_ENABLED", False)
 
     obs_metrics.pipeline_layer_seconds.clear()
     client.post("/api/upload", files=upload_files)

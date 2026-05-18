@@ -48,12 +48,14 @@ async def submit_analysis_job(
     file_path: str,
     filename: str,
     encoding: Optional[str] = None,
+    owner_key: Optional[str] = None,
 ) -> str:
     """Dispatch the job. Returns the chosen backend name ('arq' | 'inprocess')
     for observability. Always succeeds (falls back to in-process)."""
     kwargs = dict(
         job_id=job_id, session_key=session_key, trace_id=trace_id,
         file_path=file_path, filename=filename, encoding=encoding,
+        owner_key=owner_key,
     )
     if config.JOB_QUEUE_ENABLED and config.REDIS_URL:
         try:

@@ -26,13 +26,20 @@ def _now() -> float:
 
 class JobStore:
     def create(self, job_id: str, *, session_key: str, trace_id: str,
-               filename: str) -> None: ...
+               filename: str, data_hash: Optional[str] = None,
+               owner_key: Optional[str] = None) -> None: ...
     def append_event(self, job_id: str, event: Dict[str, Any]) -> None: ...
     def set_error(self, job_id: str, message: str) -> None: ...
     def get(self, job_id: str) -> Optional[Dict[str, Any]]: ...
     def events(self, job_id: str, since: int = 0) -> List[Dict[str, Any]]: ...
     def request_cancel(self, job_id: str) -> bool: ...
     def is_cancelled(self, job_id: str) -> bool: ...
+    # S10.1 idempotency: same session re-submitting identical bytes must reuse
+    # the in-flight / completed job instead of recomputing. A failed or
+    # cancelled prior run does NOT block a fresh attempt.
+    def find_active_by_hash(
+        self, session_key: str, data_hash: str
+    ) -> Optional[str]: ...
 
 
 def _apply_event(rec: Dict[str, Any], event: Dict[str, Any]) -> None:
@@ -66,17 +73,32 @@ class _MemoryJobStore(JobStore):
         self._rec: Dict[str, Dict[str, Any]] = {}
         self._ev: Dict[str, List[Dict[str, Any]]] = {}
         self._cancel: set[str] = set()
+        self._idem: Dict[str, str] = {}  # f"{session_key}:{hash}" -> job_id
 
-    def create(self, job_id, *, session_key, trace_id, filename):
+    def create(self, job_id, *, session_key, trace_id, filename,
+               data_hash=None, owner_key=None):
         with self._lock:
             self._rec[job_id] = {
                 "job_id": job_id, "session_key": session_key,
                 "trace_id": trace_id, "filename": filename,
                 "status": "queued", "phase": "queued", "message": "Queued…",
-                "percent": 0, "error": None,
+                "percent": 0, "error": None, "data_hash": data_hash,
+                "owner_key": owner_key,
                 "created_at": _now(), "updated_at": _now(),
             }
             self._ev[job_id] = []
+            if data_hash:
+                self._idem[f"{session_key}:{data_hash}"] = job_id
+
+    def find_active_by_hash(self, session_key, data_hash):
+        with self._lock:
+            job_id = self._idem.get(f"{session_key}:{data_hash}")
+            if not job_id:
+                return None
+            rec = self._rec.get(job_id)
+            if rec is None or rec.get("status") in ("failed", "cancelled"):
+                return None
+            return job_id
 
     def append_event(self, job_id, event):
         with self._lock:
@@ -121,18 +143,34 @@ class _RedisJobStore(JobStore):
     def _k(self, job_id: str) -> str:
         return f"dijob:{job_id}"
 
-    def create(self, job_id, *, session_key, trace_id, filename):
+    def _idem_k(self, session_key: str, data_hash: str) -> str:
+        return f"dijob:idem:{session_key}:{data_hash}"
+
+    def create(self, job_id, *, session_key, trace_id, filename,
+               data_hash=None, owner_key=None):
         rec = {
             "job_id": job_id, "session_key": session_key,
             "trace_id": trace_id, "filename": filename,
             "status": "queued", "phase": "queued", "message": "Queued…",
-            "percent": 0, "error": None,
+            "percent": 0, "error": None, "data_hash": data_hash,
+            "owner_key": owner_key,
             "created_at": _now(), "updated_at": _now(),
         }
         p = self._r.pipeline()
         p.set(self._k(job_id), json.dumps(rec), ex=self._ttl)
         p.delete(f"{self._k(job_id)}:ev")
+        if data_hash:
+            p.set(self._idem_k(session_key, data_hash), job_id, ex=self._ttl)
         p.execute()
+
+    def find_active_by_hash(self, session_key, data_hash):
+        job_id = self._r.get(self._idem_k(session_key, data_hash))
+        if not job_id:
+            return None
+        rec = self.get(job_id)
+        if rec is None or rec.get("status") in ("failed", "cancelled"):
+            return None
+        return job_id
 
     def append_event(self, job_id, event):
         raw = self._r.get(self._k(job_id))
@@ -187,3 +225,11 @@ def get_job_store() -> JobStore:
             else:
                 _store = _MemoryJobStore()
     return _store
+
+
+def reset_job_store_for_tests() -> None:
+    """Drop the singleton so each test gets a clean in-memory store (the
+    idempotency index is per-process state that must not leak across tests)."""
+    global _store
+    with _store_lock:
+        _store = None

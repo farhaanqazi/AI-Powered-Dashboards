@@ -42,6 +42,25 @@ logger = logging.getLogger(__name__)
 
 
 
+# Phase 13 S13.1 — deterministic dashboard sectioning. Maps an existing chart
+# intent to a presentation section so the frontend can compose a navigable,
+# themed dashboard instead of one flat chart dump. Pure taxonomy (no
+# thresholds), no Layer-4/LLM change — the rendered chart is just tagged.
+_SECTION_BY_INTENT = {
+    "category_count": "Breakdowns",
+    "category_summary": "Breakdowns",
+    "group_comparison": "Breakdowns",
+    "histogram": "Distributions",
+    "distribution": "Distributions",
+    "time_series": "Trends",
+    "scatter": "Relationships",
+}
+
+
+def _section_for_intent(intent) -> str:
+    return _SECTION_BY_INTENT.get(intent or "", "Other")
+
+
 def build_charts_from_specs(
     df: pd.DataFrame,
     chart_specs,
@@ -145,6 +164,10 @@ def build_charts_from_specs(
                         chart_data['y_title'] = spec['y_label']
                     if spec.get('rationale'):
                         chart_data['ai_insight'] = spec['rationale']
+                # S13.1: tag for frontend dashboard composition. Never
+                # overwrites anything a builder already set.
+                chart_data.setdefault('intent', intent)
+                chart_data.setdefault('section', _section_for_intent(intent))
                 charts.append(chart_data) # FIX: Append to list
                 chart_ids.add(chart_id)
             else:

@@ -62,7 +62,7 @@ def test_pii_does_not_block_dashboard_acceptance():
 def test_low_confidence_needs_review():
     ok, reasons = evaluate_acceptance(_contract(0.10))
     assert ok is False
-    assert any("low certainty" in r for r in reasons)
+    assert any(("uncertain" in r) or ("certainty is low" in r) for r in reasons)
 
 
 def test_missing_grain_needs_review():

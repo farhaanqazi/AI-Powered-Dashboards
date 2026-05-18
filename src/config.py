@@ -55,6 +55,21 @@ AI_ANALYST_ENABLED = os.environ.get(
     "AI_ANALYST_ENABLED", "true" if GROQ_API_KEY else "false"
 ).lower() == "true"
 
+# Phase 9 S9.1 — provider-agnostic AI. `llm_analyst` depends only on the
+# `src.analysis.llm.LLMProvider` interface; the concrete provider and model are
+# selected here, never hardcoded in analysis code.
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "groq").strip().lower()
+# Deterministic response cache keyed on the ground-truth hash (provider+model+
+# system+user). In-process + TTL-bound — no new storage backend (mirrors the
+# df_cache invariant). Identical ground truth ⇒ no duplicate paid LLM call.
+LLM_RESPONSE_CACHE_ENABLED = _env_bool("LLM_RESPONSE_CACHE_ENABLED", True)
+LLM_RESPONSE_CACHE_TTL_SECONDS = int(
+    os.environ.get("LLM_RESPONSE_CACHE_TTL_SECONDS", 3600)
+)
+LLM_RESPONSE_CACHE_MAX_ENTRIES = int(
+    os.environ.get("LLM_RESPONSE_CACHE_MAX_ENTRIES", 256)
+)
+
 # --- Persistence Configuration ---
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -83,6 +98,44 @@ JOB_SPOOL_DIR = os.environ.get(
 JOB_TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", 86400))
 # SSE poll cadence (seconds) for the job event stream.
 JOB_STREAM_POLL_SECONDS = float(os.environ.get("JOB_STREAM_POLL_SECONDS", 0.5))
+
+# --- Statistical depth (Phase 9 S9.2) ---
+# Deterministic advanced analytics (Spearman/MI/Cramér's V/η, Mann-Kendall +
+# STL, IsolationForest/LOF, KMeans/HDBSCAN, skew/kurtosis/normality, RandomForest
+# driver analysis). Every figure is computed here, never by the LLM. sklearn/
+# statsmodels are optional: each block degrades to {} when a dep is absent so
+# the deployed image stays correct (and slim) without them.
+# --- DataFrame engine seam (Phase 10 S10.2) ---
+# The whole pipeline consumes pandas; this only chooses HOW bytes become a
+# frame. "polars"/"duckdb" read larger-than-memory inputs efficiently then
+# materialize to pandas (downstream unchanged). Unknown/missing backend ⇒
+# graceful pandas fallback.
+DATAFRAME_ENGINE = os.environ.get("DATAFRAME_ENGINE", "pandas").strip().lower()
+
+# --- Multi-format ingestion (Phase 10 S10.3) ---
+# Extensions accepted by the upload endpoints, behind the parser interface.
+INGEST_ALLOWED_FORMATS = [
+    s.strip().lower()
+    for s in os.environ.get(
+        "INGEST_ALLOWED_FORMATS",
+        "csv,parquet,xlsx,xls,json,ndjson,jsonl",
+    ).split(",")
+    if s.strip()
+]
+
+# --- Ask Your Data (Phase 11) ---
+# Conversational follow-up. The LLM only PROPOSES a deterministic query/stat
+# from a fixed tool catalog and narrates the returned numbers — it never
+# computes a figure. The bounded agent caps tool iterations so it always
+# terminates and every number stays traceable.
+ASK_DATA_ENABLED = _env_bool("ASK_DATA_ENABLED", True)
+ASK_MAX_ITERATIONS = int(os.environ.get("ASK_MAX_ITERATIONS", 3))
+
+STATISTICAL_DEPTH_ENABLED = _env_bool("STATISTICAL_DEPTH_ENABLED", True)
+# Row sample cap (deterministic, seeded) so heavy estimators stay bounded.
+STAT_DEPTH_MAX_ROWS = int(os.environ.get("STAT_DEPTH_MAX_ROWS", 20000))
+STAT_DEPTH_MAX_COLS = int(os.environ.get("STAT_DEPTH_MAX_COLS", 40))
+STAT_DEPTH_RANDOM_STATE = int(os.environ.get("STAT_DEPTH_RANDOM_STATE", 0))
 
 # --- Security Hardening (Phase 0) ---
 # Fail-closed posture for the Semantic Contract Layer. When sensitivity cannot
@@ -118,6 +171,24 @@ RATE_LIMIT_UPLOAD = os.environ.get("RATE_LIMIT_UPLOAD", "20/minute")
 
 # Diagnostic endpoints are off unless explicitly enabled AND authenticated.
 ENABLE_DEBUG_ENDPOINTS = _env_bool("ENABLE_DEBUG_ENDPOINTS", False)
+
+# Admin allow-list for diagnostic endpoints (S0.5). Comma-separated Clerk user
+# ids (the JWT 'sub' claim). Empty => nobody is admin, so the debug endpoints
+# stay closed even to authenticated users (fail-closed).
+ADMIN_USER_IDS = frozenset(
+    s.strip()
+    for s in os.environ.get("ADMIN_USER_IDS", "").split(",")
+    if s.strip()
+)
+
+# Secret used to HMAC-sign guest session ids so one guest cannot forge another
+# guest's id and read their history (S10.4 IDOR fix). When unset a random
+# per-process secret is generated — secure, but guest history will not survive
+# a restart or span containers. Set GUEST_SESSION_SECRET in the environment for
+# persistent, cross-container guest history.
+GUEST_SESSION_SECRET = (
+    os.environ.get("GUEST_SESSION_SECRET", "").strip() or os.urandom(32).hex()
+)
 
 # --- Ingest Contract Gate (Phase 1) ---
 # Case-insensitive exact-match cell values coerced to NA before profiling.
@@ -165,17 +236,26 @@ CRITIC_MIN_ROWS = int(os.environ.get("CRITIC_MIN_ROWS", 12))
 # --- Pipeline Wiring (Phase 5) ---
 # The contract layer is always compiled, vetoed, cached and threaded into the
 # dashboard. The HITL schema-review GATE (halt before L3/L4/EDA/LLM/render
-# pending human approval) is shipped inert here: its activation criterion is
-# the auto-accept confidence rule (Phase 6 S6.3) and its UI is Phase 7. Until
-# then this stays False so behaviour — and the local pytest merge gate — is
-# unchanged.
-SCHEMA_REVIEW_ENABLED = _env_bool("SCHEMA_REVIEW_ENABLED", False)
+# pending human approval) activates when a dataset does NOT auto-accept (Phase
+# 6 S6.3: minimum per-field confidence ≥ threshold ∧ grain ∧ ¬pii_blocked).
+# Enabled by default 2026-05-18 — the safety net the upgrade promised is now
+# live; set SCHEMA_REVIEW_ENABLED=0 only for a deliberate bypass.
+SCHEMA_REVIEW_ENABLED = _env_bool("SCHEMA_REVIEW_ENABLED", True)
 
 # --- LLM Output Validation + Auto-Accept (Phase 6) ---
-# A compiled contract auto-accepts (auto-locks, no human review) only when the
-# minimum per-field role confidence is at least this AND the dataset is not
-# pii_blocked AND a grain was detected. Below it → needs schema review.
+# Calibrated 2026-05-18 — a compiled contract auto-accepts (auto-locks, no
+# human review) only when ALL hold: a grain was detected, the dataset is not
+# pii_blocked, the MEAN per-field confidence ≥ AUTO_ACCEPT_CONFIDENCE (overall
+# quality bar), AND no single column is below CRITICAL_FIELD_CONFIDENCE_FLOOR
+# (the "one catastrophically mis-typed column" guard the audit flagged).
+# Two gates instead of a raw minimum: the mean keeps the overall bar while the
+# floor only trips on worse-than-coin-flip columns — so normal fuzzy text
+# columns (~0.6) no longer force review, but a 0.10 column hidden among 0.95s
+# still does.
 AUTO_ACCEPT_CONFIDENCE = float(os.environ.get("AUTO_ACCEPT_CONFIDENCE", 0.70))
+CRITICAL_FIELD_CONFIDENCE_FLOOR = float(
+    os.environ.get("CRITICAL_FIELD_CONFIDENCE_FLOOR", 0.50)
+)
 
 # --- Cleaned-DataFrame cache (Phase 7 fix for HITL re-render) ---
 # When True, the post-ingest cleaned DataFrame is held in a transient,

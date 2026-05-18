@@ -38,3 +38,29 @@ class DashboardRecord(Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True
     )
+
+
+class AnalysisHistoryRecord(Base):
+    """Phase 10 S10.4 — per-owner history of past analyses.
+
+    Append-only snapshots (unlike DashboardRecord, which holds only the
+    *current* dashboard per session). ``owner_key`` is org-scoped when a Clerk
+    org token is present (multi-tenancy: org members share history), else the
+    Clerk user, else the guest session. Same DB/engine as DashboardRecord —
+    a new table, not a new storage backend. TTL-bound like dashboards.
+    """
+
+    __tablename__ = "analysis_history"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    owner_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    session_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    original_filename: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )

@@ -1,3 +1,11 @@
+# Phase 12 S12.3 — automated merge gate: lint + pytest + frontend build +
+# vitest + AI eval.
+#
+# BILLING-GATED. Per the project protocol, GitHub Actions is billing-locked and
+# the local `pytest` run is the real merge gate. Every job below is guarded by
+# the `CI_ENABLED` repository variable, so this workflow is a no-op until
+# billing is enabled — at which point setting `CI_ENABLED=true` (Settings →
+# Variables) turns it into the enforced gate with zero further edits.
 name: CI
 
 on:
@@ -5,22 +13,28 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   backend:
-    name: Backend tests
+    name: Backend tests + AI eval
+    if: ${{ vars.CI_ENABLED == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.9
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: "3.9"
+          python-version: "3.12"
           cache: pip
 
       - name: Install Python deps
@@ -28,8 +42,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run pytest with coverage
-        run: pytest --cov --cov-report=term-missing --cov-report=xml -v
+      - name: Run pytest with coverage (the gate)
+        run: pytest --cov --cov-report=term-missing --cov-report=xml -q
+
+      - name: AI eval harness (golden classification, must be 100%)
+        run: pytest tests/eval -q
 
       - name: Upload coverage artefact
         uses: actions/upload-artifact@v4
@@ -38,8 +55,9 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
-  frontend-build:
-    name: Frontend build
+  frontend:
+    name: Frontend lint + test + build
+    if: ${{ vars.CI_ENABLED == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -59,6 +77,10 @@ jobs:
       - name: Lint
         working-directory: frontend
         run: npm run lint --if-present
+
+      - name: Unit/component tests (Vitest + a11y)
+        working-directory: frontend
+        run: npm test
 
       - name: Build
         working-directory: frontend

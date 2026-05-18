@@ -42,6 +42,22 @@ from src.contract.df_cache import get_df_cache
 logger = logging.getLogger(__name__)
 
 
+def _attach_statistical_depth(eda_summary, df, enriched_profiles) -> None:
+    """Phase 9 S9.2 — fold the deterministic statistical-depth report into the
+    EDA summary so it persists and becomes ground truth. Best-effort: a failure
+    here never breaks the pipeline (the report itself never raises)."""
+    if not isinstance(eda_summary, dict):
+        return
+    try:
+        from src.analysis.statistical_depth import compute_statistical_depth
+
+        eda_summary["statistical_depth"] = compute_statistical_depth(
+            df, enriched_profiles
+        )
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("statistical depth attach failed: %s", e)
+
+
 def _empty_dashboard_state(original_filename, *, errors=None, warnings=None,
                            dataset_profile=None, eda_summary=None) -> DashboardState:
     """A no-charts DashboardState used for rejected / review-gated datasets."""
@@ -286,6 +302,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
+            _attach_statistical_depth(eda_summary, df, enriched_profiles)
         except Exception as e:
             msg = f"EDA failed: {e}"
             errors.append(msg)
@@ -417,11 +434,13 @@ def build_dashboard_from_file(
     """
     Orchestrates the full dashboard build from an uploaded file.
     """
-    from src.data.parser import load_csv_from_file
+    from src.data.parser import load_table_from_file
 
-    load_result = load_csv_from_file(file_storage, encoding=encoding)
+    load_result = load_table_from_file(
+        file_storage, filename=original_filename, encoding=encoding
+    )
     if not load_result.success or load_result.df is None:
-        logger.error(f"Failed to load CSV from file: {load_result.detail}")
+        logger.error(f"Failed to load file: {load_result.detail}")
         return None
 
     state = build_dashboard_from_df(
@@ -445,14 +464,16 @@ def build_dashboard_from_file_generator(
     for SSE-style streaming. Final event has phase='done' with the
     DashboardState attached.
     """
-    from src.data.parser import load_csv_from_file
+    from src.data.parser import load_table_from_file
 
-    yield {"phase": "reading", "message": "Reading CSV file...", "percent": 5}
-    load_result = load_csv_from_file(file_storage, encoding=encoding)
+    yield {"phase": "reading", "message": "Reading data file...", "percent": 5}
+    load_result = load_table_from_file(
+        file_storage, filename=original_filename, encoding=encoding
+    )
     if not load_result.success or load_result.df is None:
         yield {
             "phase": "error",
-            "message": f"Failed to load CSV: {load_result.detail}",
+            "message": f"Failed to load file: {load_result.detail}",
             "percent": 100,
         }
         return
@@ -571,6 +592,7 @@ def build_dashboard_from_df_generator(
             eda_errors = eda_summary.get("errors") if isinstance(eda_summary, dict) else None
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
+            _attach_statistical_depth(eda_summary, df, enriched_profiles)
         except Exception as e:
             errors.append(f"EDA failed: {e}")
             logger.exception("EDA failure")

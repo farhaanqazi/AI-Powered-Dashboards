@@ -46,6 +46,8 @@ def test_stream_persists_via_repository(client, upload_files):
 
 from unittest.mock import patch
 
+from src.auth import sign_guest_session_id as _sgn
+
 
 def test_load_external_persists_via_repository(client):
     import pandas as pd
@@ -143,17 +145,17 @@ def test_repository_dispose_is_public_and_idempotent(tmp_path):
 def test_per_session_isolation_end_to_end(client, upload_files):
     a = client.post(
         "/api/upload", files=upload_files,
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("alice")},
     )
     assert a.status_code == 200
     b = client.get(
         "/api/dashboard",
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "bob"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("bob")},
     )
     assert b.json()["status"] == "empty"
     a2 = client.get(
         "/api/dashboard",
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("alice")},
     )
     assert a2.json()["status"] == "ready"
 

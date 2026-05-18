@@ -1,0 +1,78 @@
+# Phase 12 S12.1 — Prometheus alerting rules over emitted metrics.
+# Load alongside the scrape of the app's /metrics endpoint.
+groups:
+  - name: ai-dashboards-slo
+    rules:
+      # --- SLO 1: availability (multi-window burn rate) ---
+      - alert: HighErrorBudgetBurnFast
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[1h]))
+            /
+            sum(rate(http_requests_total[1h]))
+          ) > (14.4 * 0.005)
+        for: 5m
+        labels: { severity: page, slo: availability }
+        annotations:
+          summary: "Fast error-budget burn (>14.4x) on API availability"
+          description: "5xx ratio over 1h is burning the 99.5% budget; page."
+
+      - alert: HighErrorBudgetBurnSlow
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.."}[6h]))
+            /
+            sum(rate(http_requests_total[6h]))
+          ) > (6 * 0.005)
+        for: 30m
+        labels: { severity: ticket, slo: availability }
+        annotations:
+          summary: "Slow error-budget burn on API availability"
+
+      # --- SLO 2: fast-path latency ---
+      - alert: ApiLatencyP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_request_duration_seconds_bucket{path!~"/api/(jobs/upload|upload.*)"}[10m])
+            )
+          ) > 1.0
+        for: 15m
+        labels: { severity: ticket, slo: latency }
+        annotations:
+          summary: "p95 fast-path API latency above 1s SLO"
+
+      # --- SLO 3: upload submit latency ---
+      - alert: UploadSubmitSlow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(http_request_duration_seconds_bucket{path="/api/jobs/upload"}[10m])
+            )
+          ) > 2.0
+        for: 10m
+        labels: { severity: page, slo: upload_submit }
+        annotations:
+          summary: "Upload submit p95 > 2s — the auth-bearing call is slow"
+
+      # --- SLO 5: pipeline duration ---
+      - alert: PipelineP95Slow
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(pipeline_layer_seconds_bucket[30m]))
+          ) > 240
+        for: 30m
+        labels: { severity: ticket, slo: pipeline_duration }
+        annotations:
+          summary: "p95 pipeline layer time exceeds the 240s budget"
+
+      # --- saturation guardrail ---
+      - alert: RequestsInFlightSaturation
+        expr: http_requests_in_flight > 50
+        for: 5m
+        labels: { severity: ticket, slo: saturation }
+        annotations:
+          summary: "Sustained in-flight request saturation"

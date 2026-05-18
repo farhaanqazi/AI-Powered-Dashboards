@@ -404,15 +404,16 @@ def run_ai_analyst(
                 "narrative": "", "key_indicators": [],
                 "use_cases": [], "recommendations": []}
 
-    if not config.AI_ANALYST_ENABLED or not config.GROQ_API_KEY:
+    if not config.AI_ANALYST_ENABLED:
         return fallback
     if not enriched_profiles:
         return fallback
 
-    try:
-        from groq import Groq
-    except Exception as e:  # pragma: no cover - SDK optional
-        logger.warning(f"AI analyst disabled: groq SDK unavailable ({e})")
+    from src.analysis.llm import get_llm_provider
+
+    provider = get_llm_provider()
+    if not provider.available():
+        logger.warning("AI analyst disabled: no usable LLM provider")
         return fallback
 
     try:
@@ -420,26 +421,16 @@ def run_ai_analyst(
             enriched_profiles, relational_insights, eda_summary, contract,
             redact_sensitive=redact_sensitive,
         )
-        client = Groq(api_key=config.GROQ_API_KEY, timeout=config.GROQ_TIMEOUT_SECONDS)
-        resp = client.chat.completions.create(
-            model=config.GROQ_MODEL,
+        parsed = provider.complete_json(
+            system=_SYSTEM_PROMPT,
+            user=(
+                "GROUND-TRUTH DATA (the only facts you may use):\n"
+                + json.dumps(payload, default=str)
+                + "\n\nReturn JSON with exactly these keys: "
+                + json.dumps(_SCHEMA_HINT)
+            ),
             temperature=0.2,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        "GROUND-TRUTH DATA (the only facts you may use):\n"
-                        + json.dumps(payload, default=str)
-                        + "\n\nReturn JSON with exactly these keys: "
-                        + json.dumps(_SCHEMA_HINT)
-                    ),
-                },
-            ],
         )
-        content = resp.choices[0].message.content
-        parsed = json.loads(content)
     except Exception as e:
         logger.warning(f"AI analyst call failed, using heuristic fallback: {e}")
         return fallback
@@ -561,14 +552,19 @@ def arbitrate_column_roles(
     """Let the LLM correct ambiguous column roles BEFORE Layers 3/4 consume
     them. Mutates enriched_profiles in place. Returns the applied changes
     (empty when nothing changed / AI unavailable). Never raises."""
-    if not config.AI_ANALYST_ENABLED or not config.GROQ_API_KEY:
+    if not config.AI_ANALYST_ENABLED:
         return {}
     candidates = _role_candidates(enriched_profiles, df)
     if not candidates:
         return {}
 
+    from src.analysis.llm import get_llm_provider
+
+    provider = get_llm_provider()
+    if not provider.available():
+        return {}
+
     try:
-        from groq import Groq
         from src.utils.identifier_detector import (
             is_likely_identifier_with_confidence,
         )
@@ -599,19 +595,11 @@ def arbitrate_column_roles(
         })
 
     try:
-        client = Groq(api_key=config.GROQ_API_KEY,
-                      timeout=config.GROQ_TIMEOUT_SECONDS)
-        resp = client.chat.completions.create(
-            model=config.GROQ_MODEL,
+        parsed = provider.complete_json(
+            system=_ROLE_SYSTEM_PROMPT,
+            user=json.dumps({"columns": cols_payload}, default=str),
             temperature=0.0,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": _ROLE_SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(
-                    {"columns": cols_payload}, default=str)},
-            ],
         )
-        parsed = json.loads(resp.choices[0].message.content)
     except Exception as e:
         logger.warning(f"Role arbitration call failed, keeping heuristic: {e}")
         return {}

@@ -55,6 +55,21 @@ class CachedRepository:
             self._client.setex(self._key(session_key), self._ttl, json.dumps(value))
         return value
 
+    # Phase 10 S10.4 — history is not read-through cached (list/reopen are
+    # infrequent, owner-scoped, and must always reflect the source of truth).
+    def record_history(self, owner_key: str, *, session_key: str,
+                        trace_id: str, payload: dict) -> None:
+        self._base.record_history(
+            owner_key, session_key=session_key, trace_id=trace_id,
+            payload=payload,
+        )
+
+    def list_history(self, owner_key: str, limit: int = 50) -> list:
+        return self._base.list_history(owner_key, limit=limit)
+
+    def get_history(self, owner_key: str, trace_id: str):
+        return self._base.get_history(owner_key, trace_id)
+
     def purge_expired(self) -> int:
         return self._base.purge_expired()
 

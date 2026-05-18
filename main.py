@@ -9,6 +9,7 @@ import io
 import logging
 import time
 import uuid
+import hashlib
 import requests
 from typing import Optional
 from pathlib import Path
@@ -27,7 +28,7 @@ from src.core.pipeline import (
     build_dashboard_from_file_generator,
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
-from src.auth import require_clerk_user, allow_clerk_or_guest
+from src.auth import require_clerk_user, require_admin_user, allow_clerk_or_guest
 from src.api.schemas import (
     UploadResponse,
     LoadExternalResponse,
@@ -135,6 +136,30 @@ def _init_persistence() -> None:
     get_repository()
     logger.info("Persistence layer initialised")
 
+def _detect_upload_format(filename: str):
+    """Phase 10 S10.3 — accept any format the parser interface supports
+    (csv/parquet/xlsx/xls/json/ndjson/jsonl), not CSV-only."""
+    from src.data.formats import detect_format
+    return detect_format(filename)
+
+
+def _record_history_safe(user: dict, trace_id: str, payload: dict) -> None:
+    """Phase 10 S10.4 — append this analysis to the owner's history.
+    Best-effort: a history failure must never fail the analysis response."""
+    try:
+        from src.auth import owner_key
+        from src.persistence.repository import get_repository
+
+        get_repository().record_history(
+            owner_key(user),
+            session_key=user["session_key"],
+            trace_id=trace_id,
+            payload=payload,
+        )
+    except Exception:  # noqa: BLE001 - history is non-critical
+        logger.exception("Failed to record analysis history")
+
+
 # ---------------- UPLOAD HARD CAPS (S0.4) ----------------
 async def _read_upload_capped(dataset: UploadFile) -> bytes:
     """Read an UploadFile in chunks, rejecting on the stream as soon as the
@@ -154,44 +179,112 @@ async def _read_upload_capped(dataset: UploadFile) -> bytes:
             )
     contents = bytes(buf)
 
-    # Column cap: parse only the header row.
-    try:
-        ncols = pd.read_csv(io.BytesIO(contents), nrows=0).shape[1]
-    except Exception:
-        ncols = 0
-    if ncols > config.MAX_UPLOAD_COLS:
+    # Format-aware row/column caps. The previous implementation parsed only as
+    # CSV and, on any failure, set ncols=0 and ALLOWED the file — a fail-open
+    # path that let every non-CSV (Parquet/Excel/JSON) and every unreadable or
+    # malicious payload bypass the row/column limits entirely. Now each format
+    # is probed cheaply and an unreadable file is rejected (fail-closed).
+    ncols, nrows = _probe_upload_dims(contents, dataset.filename)
+    if ncols is not None and ncols > config.MAX_UPLOAD_COLS:
         raise HTTPException(
             status_code=413,
             detail=f"File has {ncols} columns; limit is {config.MAX_UPLOAD_COLS}.",
         )
-    # Row cap. A raw newline count is only a cheap UPPER bound — Excel exports
-    # routinely pad a worksheet with millions of empty ",,,," rows, which a
-    # newline count would wrongly reject. So trust the fast count only when it
-    # is already under the limit; otherwise count REAL data rows (lines with
-    # at least one byte that isn't a separator/quote/whitespace) so padded
-    # sheets pass while genuinely oversized files are still blocked.
-    if contents.count(b"\n") > config.MAX_UPLOAD_ROWS:
-        _PAD = b" ,;\t\r\"'"
-        data_lines = 0
-        for line in contents.splitlines():
-            if line.strip(_PAD):  # empty / separator-only padding -> skip
-                data_lines += 1
-        nrows = max(data_lines - 1, 0)  # exclude the header row
-        if nrows > config.MAX_UPLOAD_ROWS:
-            raise HTTPException(
-                status_code=413,
-                detail=(
-                    f"This file has about {nrows:,} rows of data, which is "
-                    f"over the {config.MAX_UPLOAD_ROWS:,}-row limit. Please "
-                    f"filter or split it before uploading."
-                ),
-            )
+    if nrows is not None and nrows > config.MAX_UPLOAD_ROWS:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"This file has about {nrows:,} rows of data, which is over "
+                f"the {config.MAX_UPLOAD_ROWS:,}-row limit. Please filter or "
+                f"split it before uploading."
+            ),
+        )
     return contents
+
+
+def _count_csv_data_rows(contents: bytes) -> int:
+    """Count REAL data rows (lines with at least one non-separator byte) so a
+    padded Excel/CSV export of empty ",,,," rows isn't wrongly rejected while a
+    genuinely oversized file still is. Excludes the header row."""
+    _PAD = b" ,;\t\r\"'"
+    data_lines = sum(1 for line in contents.splitlines() if line.strip(_PAD))
+    return max(data_lines - 1, 0)
+
+
+def _probe_upload_dims(contents: bytes, filename):
+    """Return ``(ncols, nrows)`` for the upload, each possibly ``None`` when a
+    recognised format can't cheaply yield that dimension (it stays bounded by
+    the streamed byte cap). Raises 415 for unreadable/unsupported files —
+    never fail-open."""
+    ext = os.path.splitext(filename or "")[1].lower().lstrip(".")
+
+    if ext in ("csv", "tsv", "txt", ""):
+        sep = "\t" if ext == "tsv" else ","
+        ncols = None
+        for enc in ("utf-8", "latin-1"):  # latin-1 decodes any byte stream
+            try:
+                ncols = pd.read_csv(
+                    io.BytesIO(contents), nrows=0, sep=sep, encoding=enc
+                ).shape[1]
+                break
+            except Exception:
+                continue
+        if ncols is None:
+            raise HTTPException(
+                status_code=415,
+                detail="The uploaded file could not be read as a valid table.",
+            )
+        nrows = None
+        if contents.count(b"\n") > config.MAX_UPLOAD_ROWS:
+            nrows = _count_csv_data_rows(contents)
+        return ncols, nrows
+
+    if ext == "parquet":
+        try:
+            import pyarrow.parquet as pq
+
+            md = pq.ParquetFile(io.BytesIO(contents)).metadata
+            return md.num_columns, md.num_rows  # both read from the footer, O(1)
+        except Exception:
+            raise HTTPException(
+                status_code=415,
+                detail="The uploaded Parquet file could not be read.",
+            )
+
+    if ext in ("xlsx", "xls"):
+        try:
+            ncols = pd.read_excel(io.BytesIO(contents), nrows=0).shape[1]
+        except Exception:
+            raise HTTPException(
+                status_code=415,
+                detail="The uploaded Excel file could not be read.",
+            )
+        # Row count for Excel is expensive; it's bounded by the worksheet's
+        # hard 1,048,576-row ceiling and the streamed byte cap.
+        return ncols, None
+
+    if ext == "json":
+        try:
+            obj = pd.read_json(io.BytesIO(contents))
+        except Exception:
+            raise HTTPException(
+                status_code=415,
+                detail="The uploaded JSON file could not be read as a table.",
+            )
+        return obj.shape[1], obj.shape[0]
+
+    raise HTTPException(
+        status_code=415, detail=f"Unsupported file type '.{ext}'."
+    )
 
 
 # ---------------- MODELS ----------------
 class LoadExternalRequest(BaseModel):
     external_source: str
+
+
+class AskRequest(BaseModel):
+    question: str
 
 # ---------------- EXCEPTION HANDLERS ----------------
 @app.exception_handler(RequestValidationError)
@@ -231,8 +324,12 @@ async def api_upload(request: Request, dataset: UploadFile = File(...), encoding
     filename = dataset.filename
     if '..' in filename or filename.startswith('/'):
         raise HTTPException(status_code=400, detail="Invalid filename.")
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed.")
+    if _detect_upload_format(filename) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Allowed: "
+            + ", ".join(config.INGEST_ALLOWED_FORMATS) + ".",
+        )
 
     contents = await _read_upload_capped(dataset)
     file_stream = io.BytesIO(contents)
@@ -263,6 +360,7 @@ async def api_upload(request: Request, dataset: UploadFile = File(...), encoding
     get_repository().save(
         user["session_key"], trace_id=trace_id, payload=response_data
     )
+    _record_history_safe(user, trace_id, response_data)
 
     return {
         "status": "success",
@@ -279,8 +377,12 @@ async def api_upload_stream(request: Request, dataset: UploadFile = File(...), e
     filename = dataset.filename
     if '..' in filename or filename.startswith('/'):
         raise HTTPException(status_code=400, detail="Invalid filename.")
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed.")
+    if _detect_upload_format(filename) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Allowed: "
+            + ", ".join(config.INGEST_ALLOWED_FORMATS) + ".",
+        )
 
     contents = await _read_upload_capped(dataset)
     trace_id = str(uuid.uuid4())
@@ -315,6 +417,7 @@ async def api_upload_stream(request: Request, dataset: UploadFile = File(...), e
                     get_repository().save(
                         user["session_key"], trace_id=trace_id, payload=response_data
                     )
+                    _record_history_safe(user, trace_id, response_data)
                     final = {
                         "phase": "done",
                         "message": event.get("message", "Complete"),
@@ -459,6 +562,7 @@ async def api_load_external(request: Request, req: LoadExternalRequest, user=Dep
     get_repository().save(
         user["session_key"], trace_id=trace_id, payload=response_data
     )
+    _record_history_safe(user, trace_id, response_data)
 
     return {
         "status": "success",
@@ -515,6 +619,78 @@ async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
 
+
+# ---------------- ANALYSIS HISTORY (Phase 10 S10.4) ----------------
+# Per-owner list/reopen of past analyses. Owner scope is org > user > guest
+# (Clerk org members share history). Reopening re-publishes the stored
+# snapshot as the current dashboard for the session.
+
+@app.get("/api/history")
+async def api_list_history(user=Depends(allow_clerk_or_guest)):
+    from src.auth import owner_key
+    items = get_repository().list_history(owner_key(user), limit=50)
+    return {"status": "ok", "count": len(items), "items": items}
+
+
+@app.get("/api/history/{trace_id}")
+async def api_reopen_history(trace_id: str, user=Depends(allow_clerk_or_guest)):
+    from src.auth import owner_key
+    repo = get_repository()
+    payload = repo.get_history(owner_key(user), trace_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Analysis not found.")
+    # Reopen = make it the session's current dashboard again.
+    repo.save(user["session_key"], trace_id=trace_id, payload=payload)
+    return {"status": "reopened", "trace_id": trace_id,
+            "original_filename": payload.get("original_filename", "")}
+
+
+# ---------------- ASK YOUR DATA (Phase 11) ----------------
+# Conversational follow-up over the current analysis. The LLM only proposes
+# deterministic tool calls; the backend computes every number with a
+# provenance token; the agent is hard-bounded.
+
+@app.post("/api/ask")
+@limiter.limit(config.RATE_LIMIT_UPLOAD)
+async def api_ask(request: Request, body: AskRequest,
+                  user=Depends(allow_clerk_or_guest)):
+    if not config.ASK_DATA_ENABLED:
+        raise HTTPException(status_code=404, detail="Ask Your Data is disabled.")
+
+    payload = get_repository().get(user["session_key"])
+    contract_dict = (
+        (payload or {}).get("dataset_profile", {}).get("contract")
+    )
+    if not payload or not contract_dict:
+        raise HTTPException(
+            status_code=404,
+            detail="Run an analysis first, then ask follow-up questions.",
+        )
+
+    from src.contract.models import DatasetContract
+    from src.contract.df_cache import get_df_cache
+
+    try:
+        contract = DatasetContract.model_validate(contract_dict)
+    except Exception:
+        raise HTTPException(status_code=409,
+                            detail="This analysis's contract is unreadable.")
+
+    df = get_df_cache().get(contract.schema_fingerprint)
+    if df is None:
+        return {
+            "status": "unavailable",
+            "answer": "Follow-up questions aren't available for this "
+                      "analysis anymore (the working data has expired). "
+                      "Re-run the analysis to ask again.",
+            "steps": [],
+        }
+
+    from src.analysis.ask import run_ask
+    result = await asyncio.to_thread(run_ask, df, contract, body.question)
+    return result
+
+
 @app.patch("/api/dashboard/{trace_id}/registry", response_model=RegistryPatchResponse)
 @limiter.limit(config.RATE_LIMIT_UPLOAD)
 async def api_patch_registry(
@@ -535,8 +711,13 @@ async def api_patch_registry(
         raise HTTPException(status_code=404, detail="No dashboard found for this session yet.")
 
     try:
-        updated = apply_registry_overrides(
-            payload, [o.model_dump(exclude_none=True) for o in body.overrides]
+        # Heavy L1→L3→L4→render recompute — must run off the event loop so a
+        # single schema edit doesn't stall every other request (matches the
+        # /ask handler's asyncio.to_thread offload; S10.1 regression guard).
+        updated = await asyncio.to_thread(
+            apply_registry_overrides,
+            payload,
+            [o.model_dump(exclude_none=True) for o in body.overrides],
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -628,11 +809,30 @@ async def api_jobs_upload(
     filename = dataset.filename
     if ".." in filename or filename.startswith("/"):
         raise HTTPException(status_code=400, detail="Invalid filename.")
-    if not filename.lower().endswith(".csv"):
-        raise HTTPException(status_code=400, detail="Only CSV files allowed.")
+    if _detect_upload_format(filename) is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported file type. Allowed: "
+            + ", ".join(config.INGEST_ALLOWED_FORMATS) + ".",
+        )
 
     # Caps enforced now, while we still hold the (fresh) auth context.
     contents = await _read_upload_capped(dataset)
+
+    store = get_job_store()
+    # S10.1 idempotency: identical bytes from the same session reuse the
+    # in-flight/finished job (no duplicate spool, no recompute). A prior
+    # failed/cancelled run does not block a fresh attempt.
+    data_hash = hashlib.sha256(contents).hexdigest()
+    existing = store.find_active_by_hash(user["session_key"], data_hash)
+    if existing:
+        rec = store.get(existing) or {}
+        return JSONResponse(
+            status_code=202,
+            content={"status": "accepted", "job_id": existing,
+                     "trace_id": rec.get("trace_id"),
+                     "backend": "idempotent-reuse", "idempotent": True},
+        )
 
     job_id = str(uuid.uuid4())
     trace_id = str(uuid.uuid4())
@@ -641,12 +841,15 @@ async def api_jobs_upload(
     with open(file_path, "wb") as fh:
         fh.write(contents)
 
-    store = get_job_store()
+    from src.auth import owner_key as _owner_key
+    owner = _owner_key(user)
     store.create(job_id, session_key=user["session_key"],
-                 trace_id=trace_id, filename=filename)
+                 trace_id=trace_id, filename=filename, data_hash=data_hash,
+                 owner_key=owner)
     backend = await submit_analysis_job(
         job_id=job_id, session_key=user["session_key"], trace_id=trace_id,
         file_path=file_path, filename=filename, encoding=encoding,
+        owner_key=owner,
     )
     return JSONResponse(
         status_code=202,
@@ -731,7 +934,7 @@ async def read_splash():
     return FileResponse("frontend/dist/splash.html")
 
 @app.get("/debug-build-files")
-async def debug_build_files(user=Depends(require_clerk_user)):
+async def debug_build_files(user=Depends(require_admin_user)):
     if not config.ENABLE_DEBUG_ENDPOINTS:
         raise HTTPException(status_code=404)
     dist_path = "frontend/dist"
@@ -781,7 +984,7 @@ async def serve_spa(full_path: str):
 TEST_FILE = Path("persistence_test.txt")
 
 @app.get("/test-persistence/{action}", response_class=PlainTextResponse)
-async def test_persistence(action: str, user=Depends(require_clerk_user)):
+async def test_persistence(action: str, user=Depends(require_admin_user)):
     if not config.ENABLE_DEBUG_ENDPOINTS:
         raise HTTPException(status_code=404)
     if action == "write":

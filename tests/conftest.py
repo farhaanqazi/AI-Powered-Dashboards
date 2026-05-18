@@ -52,14 +52,28 @@ def _reset_storage():
     engine.dispose()
 
 
+@pytest.fixture(autouse=True)
+def _reset_job_store():
+    """Fresh in-memory job store per test — the S10.1 idempotency index is
+    per-process state and must not leak across cases."""
+    from src.jobs.store import reset_job_store_for_tests
+    reset_job_store_for_tests()
+    yield
+    reset_job_store_for_tests()
+
+
 @pytest.fixture
 def client():
     from fastapi.testclient import TestClient
+    from src.auth import sign_guest_session_id
     import main as main_module
     c = TestClient(main_module.app)
+    # Present a server-SIGNED guest id, exactly like the real frontend does
+    # after the handshake. An unsigned id is (correctly) rejected by the IDOR
+    # fix and would mint a fresh session per request.
     c.headers.update({
         "X-Guest-Mode": "1",
-        "X-Guest-Session-Id": "pytest-session",
+        "X-Guest-Session-Id": sign_guest_session_id("pytest-session"),
     })
     yield c
 

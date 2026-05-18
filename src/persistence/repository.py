@@ -9,11 +9,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import uuid
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from src import config
-from src.persistence.models import DashboardRecord
+from src.persistence.models import AnalysisHistoryRecord, DashboardRecord
 
 
 def _utcnow() -> datetime:
@@ -69,11 +71,75 @@ class DashboardRepository:
                 return None
             return rec.payload
 
+    # --- Phase 10 S10.4: per-owner analysis history (append-only) ---
+
+    def record_history(
+        self, owner_key: str, *, session_key: str, trace_id: str, payload: dict
+    ) -> None:
+        """Append an immutable snapshot of a finished analysis."""
+        now = _utcnow()
+        with self._sf() as s:
+            s.add(AnalysisHistoryRecord(
+                id=str(uuid.uuid4()),
+                owner_key=owner_key,
+                session_key=session_key,
+                trace_id=trace_id,
+                original_filename=payload.get("original_filename", "") or "",
+                payload=payload,
+                created_at=now,
+                expires_at=now + timedelta(seconds=self._ttl),
+            ))
+            s.commit()
+
+    def list_history(self, owner_key: str, limit: int = 50) -> list[dict]:
+        """Lightweight summaries (no payload) for the owner, newest first."""
+        now = _utcnow()
+        with self._sf() as s:
+            rows = s.execute(
+                select(AnalysisHistoryRecord)
+                .where(
+                    AnalysisHistoryRecord.owner_key == owner_key,
+                    AnalysisHistoryRecord.expires_at > now,
+                )
+                .order_by(AnalysisHistoryRecord.created_at.desc())
+                .limit(limit)
+            ).scalars().all()
+            return [
+                {
+                    "trace_id": r.trace_id,
+                    "original_filename": r.original_filename,
+                    "created_at": _as_aware(r.created_at).isoformat(),
+                }
+                for r in rows
+            ]
+
+    def get_history(self, owner_key: str, trace_id: str) -> Optional[dict]:
+        """Reopen a past analysis the owner is entitled to (org/user/guest
+        scoped). Returns the stored payload, or None if absent/expired."""
+        now = _utcnow()
+        with self._sf() as s:
+            r = s.execute(
+                select(AnalysisHistoryRecord)
+                .where(
+                    AnalysisHistoryRecord.owner_key == owner_key,
+                    AnalysisHistoryRecord.trace_id == trace_id,
+                    AnalysisHistoryRecord.expires_at > now,
+                )
+                .order_by(AnalysisHistoryRecord.created_at.desc())
+                .limit(1)
+            ).scalars().first()
+            return r.payload if r is not None else None
+
     def purge_expired(self) -> int:
         now = _utcnow()
         with self._sf() as s:
             result = s.execute(
                 delete(DashboardRecord).where(DashboardRecord.expires_at <= now)
+            )
+            s.execute(
+                delete(AnalysisHistoryRecord).where(
+                    AnalysisHistoryRecord.expires_at <= now
+                )
             )
             s.commit()
             return result.rowcount or 0

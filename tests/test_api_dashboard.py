@@ -1,5 +1,7 @@
 """Tests for GET /api/dashboard (session-keyed retrieval)."""
 
+from src.auth import sign_guest_session_id as _sgn
+
 
 def test_dashboard_returns_empty_when_no_upload_yet(client):
     response = client.get("/api/dashboard")
@@ -26,20 +28,20 @@ def test_dashboard_is_per_session(client, upload_files):
     """Different guest session ids must not see each other's dashboards."""
     upload = client.post(
         "/api/upload", files=upload_files,
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("alice")},
     )
     assert upload.status_code == 200
 
     bob = client.get(
         "/api/dashboard",
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "bob"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("bob")},
     )
     assert bob.status_code == 200
     assert bob.json()["status"] == "empty"
 
     alice = client.get(
         "/api/dashboard",
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "alice"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("alice")},
     )
     assert alice.status_code == 200
     assert alice.json()["status"] == "ready"

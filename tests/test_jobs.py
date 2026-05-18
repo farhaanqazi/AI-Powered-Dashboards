@@ -7,6 +7,8 @@ import time
 
 import pytest
 
+from src.auth import sign_guest_session_id as _sgn
+
 
 def _wait_terminal(client, job_id, timeout=60):
     deadline = time.time() + timeout
@@ -47,7 +49,7 @@ def test_job_status_is_session_scoped(client, upload_files):
     # A different guest session must not see someone else's job.
     other = client.get(
         f"/api/jobs/{job_id}",
-        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": "someone-else"},
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": _sgn("someone-else")},
     )
     assert other.status_code == 404
 

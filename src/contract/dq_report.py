@@ -16,9 +16,18 @@ from src.contract.models import DatasetContract
 
 
 def evaluate_acceptance(contract: DatasetContract) -> Tuple[bool, List[str]]:
-    """S6.3: a contract auto-accepts (auto-locks, no review) only when mean
-    per-field confidence ≥ ``config.AUTO_ACCEPT_CONFIDENCE`` AND a grain was
-    detected. Returns (accepted, reasons).
+    """S6.3 (calibrated 2026-05-18): a contract auto-accepts (auto-locks, no
+    review) only when ALL hold — a grain was detected, the **mean** per-field
+    confidence ≥ ``config.AUTO_ACCEPT_CONFIDENCE`` (overall quality bar), AND
+    no single column is below ``config.CRITICAL_FIELD_CONFIDENCE_FLOOR`` (the
+    catastrophe guard). Returns (accepted, reasons).
+
+    Why two gates, not a raw minimum: a raw min sent datasets to review for a
+    single legitimately-fuzzy text column (~0.6), causing review fatigue. A raw
+    mean let one catastrophically mis-typed column (0.10 among 0.95s) auto-lock.
+    Mean keeps the overall bar; the floor only trips on worse-than-coin-flip
+    columns — catching the genuinely-bad case without the false interruptions.
+    The displayed ``mean_confidence`` metric is unaffected.
 
     NOTE (PII model change, supersedes the original fail-closed invariant):
     the deterministic dashboard never sends data anywhere, so PII does NOT
@@ -34,12 +43,19 @@ def evaluate_acceptance(contract: DatasetContract) -> Tuple[bool, List[str]]:
         )
     confs = [f.confidence for f in contract.fields.values()] or [0.0]
     mean_conf = sum(confs) / len(confs)
+    min_conf = min(confs)
     if mean_conf < config.AUTO_ACCEPT_CONFIDENCE:
         reasons.append(
-            f"Column types were detected with low certainty "
+            f"Overall column-type certainty is low "
             f"({mean_conf * 100:.0f}%), below the auto-approve level "
             f"({config.AUTO_ACCEPT_CONFIDENCE * 100:.0f}%) — a quick check is "
             f"recommended."
+        )
+    if min_conf < config.CRITICAL_FIELD_CONFIDENCE_FLOOR:
+        reasons.append(
+            f"At least one column's type is highly uncertain "
+            f"({min_conf * 100:.0f}%) and was likely mis-detected — please "
+            f"review that column before continuing."
         )
     accepted = not reasons
     return accepted, reasons

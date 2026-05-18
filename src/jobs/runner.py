@@ -29,6 +29,7 @@ def run_analysis_job(
     file_path: str,
     filename: str,
     encoding: Optional[str] = None,
+    owner_key: Optional[str] = None,
 ) -> None:
     """Run the pipeline for a spooled upload, streaming progress into the job
     store and persisting the finished dashboard. Never raises — terminal
@@ -61,9 +62,19 @@ def run_analysis_job(
                 # Same persistence the synchronous path uses (session-keyed).
                 from src.persistence.repository import get_repository
 
-                get_repository().save(
-                    session_key, trace_id=trace_id, payload=payload
-                )
+                repo = get_repository()
+                repo.save(session_key, trace_id=trace_id, payload=payload)
+                # S10.4: append to the owner's history (best-effort).
+                if owner_key:
+                    try:
+                        repo.record_history(
+                            owner_key, session_key=session_key,
+                            trace_id=trace_id, payload=payload,
+                        )
+                    except Exception:  # noqa: BLE001 - history non-critical
+                        logger.exception(
+                            "job %s: failed to record history", job_id
+                        )
                 logger.info(
                     "job %s done: persisted dashboard trace=%s",
                     job_id, trace_id,

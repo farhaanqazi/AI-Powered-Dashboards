@@ -9,6 +9,7 @@ const ProcessingPage = lazy(() => import('./components/upload/ProcessingPage'));
 const DashboardPage = lazy(() => import('./components/dashboard/DashboardPage'));
 import Header from './components/common/Header';
 import Footer from './components/common/Footer';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import { useDashboardStore } from './dashboardStore';
 import './styles/design-system.css';
 import './styles/App.css';
@@ -196,13 +197,15 @@ function App() {
         <>
           <Header />
           <main className="flex-grow">
-            <Suspense fallback={<RouteFallback />}>
-              <Routes>
-                <Route path="/" element={<UploadPage />} />
-                <Route path="/processing" element={<Protected><ProcessingPage /></Protected>} />
-                <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
-              </Routes>
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<RouteFallback />}>
+                <Routes>
+                  <Route path="/" element={<UploadPage />} />
+                  <Route path="/processing" element={<Protected><ProcessingPage /></Protected>} />
+                  <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+                </Routes>
+              </Suspense>
+            </ErrorBoundary>
           </main>
           <Footer />
         </>

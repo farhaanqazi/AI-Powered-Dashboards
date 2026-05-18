@@ -22,21 +22,35 @@ class SSRFError(Exception):
     """Raised when a URL fails SSRF validation."""
 
 
-def _ip_is_blocked(ip: str) -> bool:
-    """Block loopback, private, link-local (incl. 169.254.169.254 metadata),
-    reserved, multicast and unspecified addresses."""
-    try:
-        addr = ipaddress.ip_address(ip)
-    except ValueError:
-        return True
-    return (
+def _addr_is_blocked(addr) -> bool:
+    if (
         addr.is_private
         or addr.is_loopback
         or addr.is_link_local
         or addr.is_reserved
         or addr.is_multicast
         or addr.is_unspecified
-    )
+    ):
+        return True
+    # Unwrap IPv4-in-IPv6 forms so e.g. ``::ffff:169.254.169.254`` (or 6to4 /
+    # NAT64) can't smuggle a blocked IPv4 past Python builds that don't
+    # delegate these properties to the embedded address. Version-independent.
+    for attr in ("ipv4_mapped", "sixtofour"):
+        embedded = getattr(addr, attr, None)
+        if embedded is not None and _addr_is_blocked(embedded):
+            return True
+    return False
+
+
+def _ip_is_blocked(ip: str) -> bool:
+    """Block loopback, private, link-local (incl. 169.254.169.254 metadata),
+    reserved, multicast and unspecified addresses — including IPv4-mapped IPv6
+    encodings of any of the above."""
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return True
+    return _addr_is_blocked(addr)
 
 
 def _resolve_and_check_host(host: str) -> None:
@@ -75,6 +89,30 @@ def _validate_fetch_url(url: str) -> None:
         _resolve_and_check_host(host)
 
 
+def _peer_ip(resp):
+    """Best-effort extraction of the IP this streamed response is actually
+    connected to. Returns None if it can't be determined (caller then keeps
+    the pre-connection validation as the guarantee — never weaker)."""
+    sock = None
+    for getter in (
+        lambda: resp.raw._connection.sock,
+        lambda: resp.raw._fp.fp.raw._sock,
+        lambda: resp.raw.connection.sock,
+    ):
+        try:
+            sock = getter()
+            if sock is not None:
+                break
+        except Exception:
+            continue
+    if sock is None:
+        return None
+    try:
+        return sock.getpeername()[0]
+    except Exception:
+        return None
+
+
 def _ssrf_safe_get(url: str):
     """GET ``url`` with redirects followed manually, re-validating every hop,
     capping redirect count, enforcing a hard byte cap while streaming."""
@@ -92,6 +130,17 @@ def _ssrf_safe_get(url: str):
         resp = session.get(
             current, timeout=timeout, allow_redirects=False, stream=True
         )
+        # TOCTOU defence: _validate_fetch_url resolved DNS, then requests did
+        # its OWN independent resolution for this connection. Re-check the IP
+        # we are ACTUALLY connected to before reading anything — this closes
+        # the DNS-rebinding window between validation and connection.
+        if not config.ALLOW_PRIVATE_URL_FETCH:
+            peer = _peer_ip(resp)
+            if peer is not None and _ip_is_blocked(peer):
+                resp.close()
+                raise SSRFError(
+                    f"Connection resolved to non-public address {peer}."
+                )
         if resp.is_redirect or resp.status_code in (301, 302, 303, 307, 308):
             loc = resp.headers.get("Location")
             resp.close()
@@ -280,6 +329,54 @@ def load_csv_from_file(
         return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}", warnings=warnings)
 
 
+def load_table_from_file(
+    file_storage,
+    filename: Optional[str] = None,
+    max_rows: int = 500000,
+    encoding: Optional[str] = None,
+) -> LoadResult:
+    """Phase 10 S10.3 — format-aware loader behind the parser interface.
+
+    CSV delegates to :func:`load_csv_from_file` (its encoding sniffing /
+    latin1 retry path is unchanged). Parquet/Excel/JSON/NDJSON go through the
+    S10.2 engine seam. Returns the same :class:`LoadResult` contract, so
+    callers (pipeline, jobs) are agnostic to the source format.
+    """
+    from src.data.formats import detect_format, read_dataframe
+
+    fmt = detect_format(filename) if filename else "csv"
+    if fmt is None:
+        return LoadResult(
+            success=False, error_code="UNSUPPORTED_FORMAT",
+            detail=f"Unsupported file type: {filename!r}",
+        )
+    if fmt == "csv":
+        return load_csv_from_file(
+            file_storage, max_rows=max_rows, encoding=encoding
+        )
+    try:
+        if hasattr(file_storage, "seek"):
+            file_storage.seek(0)
+        raw = file_storage.read()
+        if isinstance(raw, str):
+            raw = raw.encode(encoding or "utf-8", errors="replace")
+        df, warnings = read_dataframe(
+            raw, filename, max_rows=max_rows, encoding=encoding
+        )
+        logger.info(
+            "Loaded %s (%s) with %d rows, %d cols",
+            filename, fmt, len(df), len(df.columns),
+        )
+        return LoadResult(success=True, df=df, warnings=warnings)
+    except ValueError as e:
+        return LoadResult(success=False, error_code="UNSUPPORTED_FORMAT",
+                          detail=str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Failed to load %s: %s", filename, e)
+        return LoadResult(success=False, error_code="PARSE_ERROR",
+                          detail=f"Could not read the file: {e}")
+
+
 def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> LoadResult:
     """
     Load a CSV directly from a URL (e.g. GitHub raw link).
@@ -370,6 +467,29 @@ def load_csv_from_url(url: str, timeout: int = 30, max_rows: int = 500000) -> Lo
         return LoadResult(success=False, error_code="UNEXPECTED_URL_ERROR", detail=f"An unexpected error occurred: {str(e)}", warnings=warnings)
 
 
+def _guard_kaggle_csv_size(path: str) -> Optional[LoadResult]:
+    """Reject an on-disk Kaggle CSV that is too large to load before
+    ``pd.read_csv`` pulls the whole frame into RAM and OOM-kills the single
+    container. Returns a failure LoadResult to short-circuit, or None to
+    proceed."""
+    try:
+        size = os.path.getsize(path)
+    except OSError:
+        return None
+    if size > config.MAX_UPLOAD_BYTES:
+        return LoadResult(
+            success=False,
+            error_code="FILE_TOO_LARGE",
+            detail=(
+                f"This Kaggle file is about {size // (1024 * 1024)} MB, over "
+                f"the {config.MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit. "
+                f"Loading it would exhaust server memory — please choose a "
+                f"smaller dataset or file."
+            ),
+        )
+    return None
+
+
 def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int = 60, max_rows: int = 500000) -> LoadResult:
     """
     Load a CSV from a Kaggle dataset using kagglehub with validation and error handling.
@@ -406,6 +526,9 @@ def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int
             if not os.path.isfile(target):
                 logger.error(f"CSV file '{csv_name}' not found in Kaggle dataset folder: {path}")
                 return LoadResult(success=False, error_code="CSV_NOT_FOUND", detail=f"Specific CSV file '{csv_name}' not found in the dataset.")
+            too_big = _guard_kaggle_csv_size(target)
+            if too_big is not None:
+                return too_big
             df = pd.read_csv(target)
             logger.info(f"Successfully loaded specific CSV file from Kaggle dataset: {csv_name}")
 
@@ -425,6 +548,9 @@ def load_csv_from_kaggle(slug: str, csv_name: Optional[str] = None, timeout: int
 
         first_csv = os.path.join(path, files[0])
         logger.info(f"Loading first CSV file from Kaggle dataset: {files[0]}")
+        too_big = _guard_kaggle_csv_size(first_csv)
+        if too_big is not None:
+            return too_big
         df = pd.read_csv(first_csv)
         logger.info(f"Successfully loaded CSV from Kaggle dataset with {len(df)} rows and {len(df.columns)} columns")
 
