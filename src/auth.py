@@ -1,4 +1,6 @@
 """Clerk JWT verification for FastAPI."""
+from __future__ import annotations  # PEP 604 (str | None) is eval'd at def-time
+
 import base64
 import hashlib
 import hmac

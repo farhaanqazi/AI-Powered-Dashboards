@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardStore } from '../../dashboardStore';
 // The PDF/export stack (jsPDF + html-to-image, ~hundreds of KB) is loaded
@@ -57,6 +58,9 @@ const DashboardPage = () => {
   const { data: dashboardData, loading, error, refresh, lastUpdated } = useDashboardStore();
   const theme = useDashboardStore((s) => s.theme);
   const setExportHandler = useDashboardStore((s) => s.setExportHandler);
+  const setExportProgress = useDashboardStore((s) => s.setExportProgress);
+  const exporting = useDashboardStore((s) => s.exporting);
+  const exportProgress = useDashboardStore((s) => s.exportProgress);
   const hasMounted = useRef(false);
   const navigate = useNavigate();
   const captureRef = useRef(null);
@@ -85,19 +89,24 @@ const DashboardPage = () => {
         await exportDashboardToPDF({
           setActiveTab,
           getCaptureEl: () => captureRef.current,
+          onProgress: setExportProgress,
         });
       } finally {
         setActiveTab(original);
+        setExportProgress(null);
       }
     });
     return () => setExportHandler(null);
-  }, [setExportHandler]);
+  }, [setExportHandler, setExportProgress]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
-    if (hasMounted.current) refresh();
-    else hasMounted.current = true;
+    if (!hasMounted.current) { hasMounted.current = true; return; }
+    // While a PDF export is cycling tabs, do NOT refetch on every switch —
+    // the store also guards this, but skipping here avoids the wasted render.
+    if (useDashboardStore.getState().exporting) return;
+    refresh();
   }, [activeTab, refresh]);
 
   useEffect(() => {
@@ -179,6 +188,39 @@ const DashboardPage = () => {
 
   return (
     <div className={`dash-shell${theme === 'light' ? ' theme-light' : ''}`}>
+      {/* Full-screen export overlay — portaled to <body> so (a) it is never
+          inside the captured element, and (b) the .dash-shell export-mode
+          CSS (which kills animations) can't freeze its spinner. It hides the
+          tab-cycling that the capture loop performs underneath. */}
+      {exporting && createPortal(
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 200,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '0.9rem',
+            background: theme === 'light' ? 'rgba(248,250,252,0.94)' : 'rgba(2,6,23,0.9)',
+            backdropFilter: 'blur(4px)',
+            WebkitBackdropFilter: 'blur(4px)',
+            color: theme === 'light' ? '#0f172a' : '#e2e8f0',
+          }}
+        >
+          <i className="fas fa-circle-notch fa-spin" style={{ fontSize: '2rem', color: '#60a5fa' }} />
+          <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>Exporting PDF…</div>
+          <div style={{ fontSize: '0.85rem', opacity: 0.75 }}>
+            {exportProgress
+              ? `${exportProgress.label}${exportProgress.total ? ` — ${exportProgress.index}/${exportProgress.total}` : ''}`
+              : 'Preparing…'}
+          </div>
+        </div>,
+        document.body,
+      )}
       {/* Aurora gradient mesh */}
       <div className="dash-aurora dash-aurora-a" />
       <div className="dash-aurora dash-aurora-b" />

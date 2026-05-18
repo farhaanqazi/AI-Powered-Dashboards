@@ -37,6 +37,9 @@ export const useDashboardStore = create((set, get) => ({
   lastUpdated: 0,
   exporting: false,
   exportHandler: null,
+  // { index, total, label } while a PDF export runs; null otherwise.
+  exportProgress: null,
+  setExportProgress: (p) => set({ exportProgress: p || null }),
   isGuest: readGuest(),
   // 'dark' (default futuristic) | 'light' (white contrast theme).
   theme: readTheme(),
@@ -66,10 +69,14 @@ export const useDashboardStore = create((set, get) => ({
     } catch (err) {
       console.error('PDF export failed', err);
     } finally {
-      set({ exporting: false });
+      set({ exporting: false, exportProgress: null });
     }
   },
   async refresh() {
+    // The PDF export cycles activeTab through every tab; the tab-change
+    // effect must NOT trigger a backend refetch each time (4 redundant
+    // round-trips per export). Data is already loaded — keep it.
+    if (get().exporting) return;
     if (get().loading) return;
     set({ loading: true, error: null });
     try {
