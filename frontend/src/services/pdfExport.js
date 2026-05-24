@@ -13,7 +13,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const PDF_BG = '#0b1226';
 
 function findShell() {
-  return document.querySelector('.dash-shell');
+  // Only ever the off-screen export surface — never the visible .dash-shell,
+  // so toggling export-mode can't flicker the dashboard the user is viewing.
+  // (The surface also carries the class statically in JSX; this is a no-op
+  // safety net for when it's already mounted.)
+  return document.getElementById('pdf-export-surface');
 }
 
 // Resolve as soon as the tab's charts have actually finished rendering, instead

@@ -66,6 +66,10 @@ const DashboardPage = () => {
   const captureRef = useRef(null);
   const activeTabRef = useRef(activeTab);
   const particleRootRef = useRef(null);
+  // Off-screen export: a tab the PDF capture drives WITHOUT changing the
+  // visible `activeTab`, so the user keeps their view + full interactivity.
+  const [exportTab, setExportTab] = useState(null);
+  const exportSurfaceRef = useRef(null);
 
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
@@ -83,16 +87,18 @@ const DashboardPage = () => {
 
   useEffect(() => {
     setExportHandler(async () => {
-      const original = activeTabRef.current;
       try {
         const { exportDashboardToPDF } = await import('../../services/pdfExport');
+        // Drive the OFF-SCREEN surface, never the visible tab — the user
+        // keeps their current view and can keep clicking around while the
+        // PDF builds in the background.
         await exportDashboardToPDF({
-          setActiveTab,
-          getCaptureEl: () => captureRef.current,
+          setActiveTab: setExportTab,
+          getCaptureEl: () => exportSurfaceRef.current,
           onProgress: setExportProgress,
         });
       } finally {
-        setActiveTab(original);
+        setExportTab(null);
         setExportProgress(null);
       }
     });
@@ -136,6 +142,28 @@ const DashboardPage = () => {
     }
   }, []);
 
+  const renderTabComponent = (tabKey) => {
+    switch (tabKey) {
+      case 'overview':
+        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
+      case 'eda':
+        return <EDATab data={dashboardData} loading={loading} error={error} />;
+      case 'visualizations':
+        return <VisualizationsTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
+      case 'column_profiling':
+        return <ColumnsTab data={dashboardData} />;
+      case 'data_quality':
+        return (
+          <DataQualityTab
+            data={dashboardData}
+            onGoToColumns={() => setActiveTab('column_profiling')}
+          />
+        );
+      default:
+        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
+    }
+  };
+
   const renderTabContent = () => {
     if (loading) {
       return (
@@ -162,25 +190,7 @@ const DashboardPage = () => {
       );
     }
 
-    switch (activeTab) {
-      case 'overview':
-        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
-      case 'eda':
-        return <EDATab data={dashboardData} loading={loading} error={error} />;
-      case 'visualizations':
-        return <VisualizationsTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
-      case 'column_profiling':
-        return <ColumnsTab data={dashboardData} />;
-      case 'data_quality':
-        return (
-          <DataQualityTab
-            data={dashboardData}
-            onGoToColumns={() => setActiveTab('column_profiling')}
-          />
-        );
-      default:
-        return <OverviewTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
-    }
+    return renderTabComponent(activeTab);
   };
 
   const profile = dashboardData?.dataset_profile;
@@ -192,31 +202,64 @@ const DashboardPage = () => {
           inside the captured element, and (b) the .dash-shell export-mode
           CSS (which kills animations) can't freeze its spinner. It hides the
           tab-cycling that the capture loop performs underneath. */}
+      {/* Non-blocking progress pill. pointer-events:none so it never steals a
+          click — the dashboard underneath stays fully interactive while the
+          PDF builds. Portaled to <body> so it is outside any captured node. */}
       {exporting && createPortal(
         <div
           role="status"
           aria-live="polite"
           style={{
             position: 'fixed',
-            inset: 0,
+            right: '1.25rem',
+            bottom: '1.25rem',
             zIndex: 200,
             display: 'flex',
-            flexDirection: 'column',
             alignItems: 'center',
-            justifyContent: 'center',
-            gap: '0.9rem',
-            background: theme === 'light' ? 'rgba(248,250,252,0.94)' : 'rgba(2,6,23,0.9)',
-            backdropFilter: 'blur(4px)',
-            WebkitBackdropFilter: 'blur(4px)',
+            gap: '0.6rem',
+            padding: '0.7rem 1rem',
+            borderRadius: '0.75rem',
+            pointerEvents: 'none',
+            background: theme === 'light' ? 'rgba(255,255,255,0.96)' : 'rgba(15,23,42,0.95)',
             color: theme === 'light' ? '#0f172a' : '#e2e8f0',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
+            border: '1px solid rgba(148,163,184,0.25)',
           }}
         >
-          <i className="fas fa-circle-notch fa-spin" style={{ fontSize: '2rem', color: '#60a5fa' }} />
-          <div style={{ fontWeight: 600, fontSize: '1.05rem' }}>Exporting PDF…</div>
-          <div style={{ fontSize: '0.85rem', opacity: 0.75 }}>
-            {exportProgress
-              ? `${exportProgress.label}${exportProgress.total ? ` — ${exportProgress.index}/${exportProgress.total}` : ''}`
-              : 'Preparing…'}
+          <i className="fas fa-circle-notch fa-spin" style={{ color: '#60a5fa' }} />
+          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+            Exporting PDF…
+            <span style={{ fontWeight: 400, opacity: 0.75 }}>
+              {exportProgress
+                ? ` ${exportProgress.label}${exportProgress.total ? ` — ${exportProgress.index}/${exportProgress.total}` : ''}`
+                : ' Preparing…'}
+            </span>
+          </div>
+        </div>,
+        document.body,
+      )}
+      {/* Off-screen capture surface. Rendered fully laid out (NOT display:none —
+          Plotly needs real dimensions to size + paint) but parked far
+          off-screen, so the capture loop drives THIS, never the visible
+          dashboard. It carries .dash-shell.dash-export-mode so the PDF
+          export CSS (solid fills, no backdrop-filter) applies to its
+          subtree only. */}
+      {exporting && dashboardData && createPortal(
+        <div
+          id="pdf-export-surface"
+          ref={exportSurfaceRef}
+          className="dash-shell dash-export-mode"
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            left: '-100000px',
+            top: 0,
+            width: '1280px',
+            pointerEvents: 'none',
+          }}
+        >
+          <div className="glass-card p-6 md:p-7">
+            {exportTab ? renderTabComponent(exportTab) : null}
           </div>
         </div>,
         document.body,
