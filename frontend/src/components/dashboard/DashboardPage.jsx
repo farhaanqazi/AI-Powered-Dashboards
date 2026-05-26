@@ -6,6 +6,7 @@ import { useDashboardStore } from '../../dashboardStore';
 // on-demand only when the user actually clicks Export — never in the
 // dashboard's initial chunk.
 import OverviewTab from './OverviewTab';
+import InteractionBar from './InteractionBar';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
 import ColumnsTab from './ColumnsTab';
@@ -365,6 +366,10 @@ const DashboardPage = () => {
             </button>
           ))}
         </div>
+
+        {/* Active cross-highlight / filter chips (S14.3) — renders only when
+            an interaction is set; portal-free so it sits above the tab body. */}
+        {dashboardData && <InteractionBar />}
 
         {/* Tab content */}
         <div key={activeTab} className="glass-card p-6 md:p-7 dash-section-enter">

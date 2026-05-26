@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import ChartRenderer from '../charts/ChartRenderer';
 import ChartModal from '../charts/ChartModal';
+import LazyMount from '../charts/LazyMount';
 
 // Phase 13 S13.2 — dashboard composition. Charts are grouped into themed,
 // navigable sections instead of one flat dump. `section` is tagged by the
@@ -21,7 +22,7 @@ const TYPE_FALLBACK = {
 const sectionOf = (c) => c.section || TYPE_FALLBACK[c && c.type] || 'Other';
 const PER_SECTION_CAP = 4;
 
-const OverviewTab = ({ data, loading, error, refreshKey }) => {
+const OverviewTab = ({ data, loading, error, refreshKey, eager = false }) => {
   const safeData = data || {};
   const { kpis, primary_chart, category_charts, all_charts, eda_summary } = safeData;
   const aiNarrative = eda_summary && eda_summary.ai_narrative;
@@ -126,7 +127,9 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
               <span className="neon-badge neon-blue">Featured</span>
             </div>
             <div className="chart-container chart-shell h-96">
-              <ChartRenderer chartData={primary_chart} key={`primary-${refreshKey || 0}`} />
+              <LazyMount eager={eager} minHeight={300}>
+                <ChartRenderer chartData={primary_chart} key={`primary-${refreshKey || 0}`} />
+              </LazyMount>
             </div>
           </div>
         </div>
@@ -151,7 +154,9 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
                   {chart_data.title || column.charAt(0).toUpperCase() + column.slice(1)}
                 </h4>
                 <div className="chart-container chart-shell h-64">
-                  <ChartRenderer chartData={chart_data} key={`${column}-${refreshKey || 0}`} />
+                  <LazyMount eager={eager} minHeight={220}>
+                    <ChartRenderer chartData={chart_data} key={`${column}-${refreshKey || 0}`} />
+                  </LazyMount>
                 </div>
               </div>
             ))}
@@ -215,7 +220,9 @@ const OverviewTab = ({ data, loading, error, refreshKey }) => {
                         <i className="fas fa-up-right-and-down-left-from-center text-xs text-slate-500 flex-shrink-0" />
                       </div>
                       <div className="chart-container chart-shell h-64">
-                        <ChartRenderer chartData={chart} key={`${chart.id || index}-${refreshKey || 0}`} />
+                        <LazyMount eager={eager} minHeight={220}>
+                          <ChartRenderer chartData={chart} key={`${chart.id || index}-${refreshKey || 0}`} />
+                        </LazyMount>
                       </div>
                     </div>
                   ))}

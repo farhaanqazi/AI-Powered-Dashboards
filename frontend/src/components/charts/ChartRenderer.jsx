@@ -2,8 +2,15 @@ import React from 'react';
 import Plotly from 'plotly.js-basic-dist';
 import createPlotlyComponent from 'react-plotly.js/factory';
 import { useDashboardStore } from '../../dashboardStore';
+import { highlightOpacity } from '../../lib/clientFilter';
 
 const Plot = createPlotlyComponent(Plotly);
+
+// Categorical chart types that participate in cross-highlight (clicking a
+// mark focuses that category across charts on the same dimension).
+const HIGHLIGHTABLE = new Set([
+  'bar', 'category_count', 'category_summary', 'group_comparison', 'pie',
+]);
 
 const TRUNCATE_LEN = 18;
 
@@ -197,7 +204,7 @@ const baseLayout = (_title, extras = {}, T) => {
 const pickX = (item) => item.x ?? item.category ?? item.bin_range ?? item.date ?? '';
 const pickY = (item) => item.y ?? item.count ?? item.value ?? item.agg_value ?? 0;
 
-const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle, T }) => {
+const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle, T, markerOpacity }) => {
   const useHorizontal = shouldUseHorizontalBars(xValues);
   const catAxisVertical = buildCategoryAxis(xValues, T);
   const catAxisHorizontal = horizontalCategoryAxis(xValues, T);
@@ -210,6 +217,9 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
     orientation: useHorizontal ? 'h' : 'v',
     marker: {
       color,
+      // Per-bar opacity drives cross-highlight dimming. `undefined` (no active
+      // highlight on this dimension) leaves the prior full-opacity render intact.
+      opacity: markerOpacity || undefined,
       line: { color: T.markerLine, width: 0.5 },
     },
     hovertext: xValues,
@@ -231,8 +241,10 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
   return { data, layout };
 };
 
-const ChartRenderer = ({ chartData }) => {
+const ChartRenderer = ({ chartData, interactive = false }) => {
   const themeMode = useDashboardStore((s) => s.theme);
+  const highlight = useDashboardStore((s) => s.highlight);
+  const setHighlight = useDashboardStore((s) => s.setHighlight);
   const T = THEMES[themeMode] || THEMES.dark;
 
   if (!chartData || chartData.data == null) {
@@ -299,8 +311,14 @@ const ChartRenderer = ({ chartData }) => {
     const xTitle = chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'Category';
     const yTitle = chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
     const color = chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa';
+    // Cross-highlight dimming applies only to true category axes — never to
+    // histogram/distribution bins (their x is a numeric range, not a key).
+    const isCategorical = chartType !== 'histogram' && chartType !== 'distribution';
+    const markerOpacity = isCategorical
+      ? highlightOpacity(xValues, chartData.x_column || chartData.column, highlight)
+      : null;
     ({ data: plotlyData, layout } = renderCategoricalSeries(xValues, yValues, {
-      title, color, layoutExtras: layout, xTitle, yTitle, T,
+      title, color, layoutExtras: layout, xTitle, yTitle, T, markerOpacity,
     }));
   }
   else if (chartType === 'scatter') {
@@ -443,6 +461,20 @@ const ChartRenderer = ({ chartData }) => {
     <Plot
       data={plotlyData}
       layout={layout}
+      onClick={interactive && HIGHLIGHTABLE.has(chartType) ? (e) => {
+        // Click a mark → focus that category across charts on the same
+        // dimension (toggles off when the same mark is clicked again).
+        // Client-side only: it restyles already-shipped data, no server call.
+        const pt = e?.points?.[0];
+        const col = chartData.x_column || chartData.column;
+        if (!pt || !col) return;
+        const value = pt.label ?? pt.hovertext ?? pt.x ?? pt.y;
+        if (value == null) return;
+        const same = highlight
+          && String(highlight.column) === String(col)
+          && String(highlight.value) === String(value);
+        setHighlight(same ? null : { column: col, value });
+      } : undefined}
       config={{
         displayModeBar: true,
         responsive: true,
@@ -461,4 +493,4 @@ const ChartRenderer = ({ chartData }) => {
   );
 };
 
-export default ChartRenderer;
+export default React.memo(ChartRenderer);

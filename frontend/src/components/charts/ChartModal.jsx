@@ -48,8 +48,11 @@ const ChartModal = ({ chart, onClose }) => {
           </button>
         </div>
 
+        {/* The enlarged view is the interaction surface: clicking a mark sets
+            the cross-highlight. The grid cards only reflect it (their click
+            opens this modal), so there is no click collision. */}
         <div className="chart-container chart-shell chart-modal-canvas">
-          <ChartRenderer chartData={chart} key={`modal-${chart.id || title}`} />
+          <ChartRenderer chartData={chart} interactive key={`modal-${chart.id || title}`} />
         </div>
 
         {insight && (

@@ -1,5 +1,6 @@
 import React from 'react';
 import ChartRenderer from '../charts/ChartRenderer';
+import LazyMount from '../charts/LazyMount';
 
 const ChartPanel = ({ icon, iconColor, title, badgeTone, badgeLabel, eyebrow, children, height = 'h-96' }) => (
   <div className="glass-card p-6 chart-card">
@@ -18,12 +19,12 @@ const ChartPanel = ({ icon, iconColor, title, badgeTone, badgeLabel, eyebrow, ch
       <span className={`neon-badge ${badgeTone} flex-shrink-0`}>{badgeLabel}</span>
     </div>
     <div className={`chart-container chart-shell ${height}`}>
-      {children}
+      <LazyMount minHeight={300}>{children}</LazyMount>
     </div>
   </div>
 );
 
-const VisualizationsTab = ({ data, loading, error, refreshKey }) => {
+const VisualizationsTab = ({ data, loading, error, refreshKey, eager = false }) => {
   const safeData = data || {};
   const { eda_summary } = safeData;
 
