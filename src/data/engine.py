@@ -93,29 +93,26 @@ class DuckDBEngine(DataFrameEngine):
             logger.info("duckdb unavailable; falling back to pandas engine")
             return PandasEngine().read(raw, fmt, encoding=encoding)
         try:
-            con = duckdb.connect()
-            con.register_filesystem  # noqa: B018 - probe attr existence
-            if fmt == "csv":
-                rel = con.read_csv(io.BytesIO(raw))
-            elif fmt == "parquet":
-                import tempfile, os
+            import os
+            import tempfile
 
-                with tempfile.NamedTemporaryFile(
-                    suffix=".parquet", delete=False
-                ) as t:
+            con = duckdb.connect()
+            if fmt in ("csv", "parquet"):
+                # Read from a temp file, not BytesIO: duckdb's file-like path
+                # needs fsspec (an optional dep we don't ship), whereas the
+                # path-based table functions work standalone. read_csv_auto
+                # sniffs the dialect (delimiter/quote/types).
+                suffix = ".parquet" if fmt == "parquet" else ".csv"
+                fn = "read_parquet" if fmt == "parquet" else "read_csv_auto"
+                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as t:
                     t.write(raw)
                     tmp = t.name
                 try:
-                    return con.execute(
-                        f"SELECT * FROM read_parquet('{tmp}')"
-                    ).df()
+                    return con.execute(f"SELECT * FROM {fn}('{tmp}')").df()
                 finally:
                     os.unlink(tmp)
-            elif fmt in ("json", "ndjson", "jsonl"):
-                return PandasEngine().read(raw, fmt, encoding=encoding)
-            else:
-                return PandasEngine().read(raw, fmt, encoding=encoding)
-            return rel.df()
+            # json/ndjson/jsonl + anything else → pandas.
+            return PandasEngine().read(raw, fmt, encoding=encoding)
         except Exception as exc:
             logger.warning("duckdb read failed (%s); pandas fallback", exc)
             return PandasEngine().read(raw, fmt, encoding=encoding)

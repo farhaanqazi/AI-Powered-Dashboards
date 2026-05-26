@@ -241,13 +241,28 @@ def load_csv_from_file(
             elif confidence is not None and confidence < 0.6:
                 warnings.append(f"Low encoding confidence ({confidence:.2f}) for '{detected_encoding}'.")
 
+        # Robust delimiter detection: a ;/tab/|-separated file would otherwise
+        # be misread as a single comma-delimited column. DuckDB's sniffer picks
+        # the dialect; pandas still does the actual read (encoding + latin1
+        # retry below unchanged). No detection / comma → identical to before.
+        _delim = _sniff_csv_delimiter(file_storage)
+        _read_kw: dict = {}
+        if _delim and _delim != ",":
+            _read_kw["sep"] = _delim
+            _dname = _DELIM_NAMES.get(_delim, f"'{_delim}'")
+            warnings.append(
+                f"This looked like a {_dname}-separated file, so columns were "
+                f"split on '{_delim}' instead of commas."
+            )
+
         # Try reading with detected/override encoding first
         try:
             df = pd.read_csv(
                 file_storage,
                 encoding=detected_encoding,
                 engine='python',
-                on_bad_lines='skip'
+                on_bad_lines='skip',
+                **_read_kw,
             )
 
             # Clean up column names - remove problematic characters and handle unnamed columns
@@ -288,7 +303,8 @@ def load_csv_from_file(
                 file_storage,
                 encoding="latin1",
                 engine='python',
-                on_bad_lines='skip'
+                on_bad_lines='skip',
+                **_read_kw,
             )
 
             # Clean up column names - remove problematic characters and handle unnamed columns
@@ -327,6 +343,55 @@ def load_csv_from_file(
     except Exception as e:
         logger.exception(f"Unexpected error reading file object: {e}")
         return LoadResult(success=False, error_code="UNEXPECTED_FILE_ERROR", detail=f"An unexpected error occurred while reading the file: {str(e)}", warnings=warnings)
+
+
+_DELIM_NAMES = {";": "semicolon", "\t": "tab", "|": "pipe", ",": "comma"}
+
+
+def _sniff_csv_delimiter(file_storage) -> Optional[str]:
+    """Best-effort CSV delimiter detection via DuckDB's dialect sniffer.
+
+    Returns the delimiter character, or ``None`` when duckdb is unavailable or
+    sniffing fails (the caller then keeps pandas' comma default). Always rewinds
+    ``file_storage`` so the subsequent read is unaffected. A 1 MB sample is
+    plenty — the sniffer only needs to see the dialect, not the whole file.
+    """
+    try:
+        import duckdb
+    except Exception:
+        return None
+    import os
+    import tempfile
+    tmp = None
+    try:
+        try:
+            file_storage.seek(0)
+        except Exception:
+            pass
+        sample = file_storage.read(1_000_000)
+        try:
+            file_storage.seek(0)
+        except Exception:
+            pass
+        if not sample:
+            return None
+        if isinstance(sample, str):
+            sample = sample.encode("utf-8", errors="replace")
+        with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as t:
+            t.write(sample)
+            tmp = t.name
+        row = duckdb.connect().execute(
+            f"SELECT Delimiter FROM sniff_csv('{tmp}')"
+        ).fetchone()
+        return row[0] if row and row[0] else None
+    except Exception:
+        return None
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
 
 
 def load_table_from_file(

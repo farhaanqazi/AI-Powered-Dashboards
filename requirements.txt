@@ -9,6 +9,11 @@ pandas==2.2.0
 # it only ever "worked" because local dev venvs had them installed ad hoc.
 openpyxl==3.1.5   # .xlsx read/write
 pyarrow==21.0.0   # .parquet read/write (has cp39 manylinux + win wheels)
+# DuckDB powers robust CSV dialect sniffing (delimiter/quote/type auto-detect)
+# so ;/tab/|-separated uploads aren't misread as one comma column. Pinned <1.5
+# because 1.5.0 dropped Python 3.9 (the deployed runtime); 1.4.x is the last
+# 3.9 line. Optional at runtime — the reader falls back to pandas if absent.
+duckdb>=1.4,<1.5
 plotly==5.18.0
 kagglehub==0.2.2
 scipy==1.12.0
