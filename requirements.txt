@@ -3,6 +3,12 @@ uvicorn[standard]==0.27.0.post1
 PyJWT[crypto]==2.8.0
 python-dotenv==1.0.1
 pandas==2.2.0
+# Multi-format ingestion: INGEST_ALLOWED_FORMATS ships parquet/xlsx/xls by
+# default, so pandas needs these IO backends. Absent here previously => pandas
+# raised ModuleNotFoundError on .parquet/.xlsx uploads in the deployed image;
+# it only ever "worked" because local dev venvs had them installed ad hoc.
+openpyxl==3.1.5   # .xlsx read/write
+pyarrow==21.0.0   # .parquet read/write (has cp39 manylinux + win wheels)
 plotly==5.18.0
 kagglehub==0.2.2
 scipy==1.12.0
