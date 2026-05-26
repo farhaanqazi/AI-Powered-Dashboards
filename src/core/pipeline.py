@@ -209,7 +209,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
         df = _reshape_if_wide_timeseries(df)
         if df.empty:
             logger.warning("DataFrame is empty after initial prep.")
-            return DashboardState(
+            state = DashboardState(
                 dataset_profile={},
                 profile=[],
                 kpis=[],
@@ -221,19 +221,21 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                 critical_full_dataset_aggregates={},
                 eda_summary={}
             )
+            return state
 
         # --- INGEST CONTRACT GATE (Phase 1) ---
         with _time_layer("ingest_gate"):
             ingest = run_ingest_gate(df)
         if ingest.rejected:
             logger.warning(f"Ingest gate rejected dataset: {ingest.reject_reason}")
-            return _empty_dashboard_state(
+            state = _empty_dashboard_state(
                 original_filename,
                 errors=[ingest.reject_reason or "Dataset rejected by ingest gate."],
                 warnings=ingest.warnings,
                 dataset_profile={"data_quality": {
                     "rejected": True, "reject_reason": ingest.reject_reason}},
             )
+            return state
         df = ingest.df
         ingest_warnings = list(ingest.warnings)
 
@@ -274,12 +276,13 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
                    "columns": [p.__dict__ for p in enriched_profiles.values()]}
             _contract_into_profile(viz, contract, ingest, crit, dq)
             viz["status"] = "schema_review"
-            return _empty_dashboard_state(
+            state = _empty_dashboard_state(
                 original_filename, warnings=ingest_warnings,
                 dataset_profile=viz,
                 eda_summary={"status": "schema_review",
                              "data_quality_report": dq.model_dump(mode="json")},
             )
+            return state
 
         # Layer 3: Find relationships
         try:
@@ -521,26 +524,26 @@ def build_dashboard_from_df_generator(
         yield {"phase": "preparing", "message": "Reshaping data if needed...", "percent": 10}
         df = _reshape_if_wide_timeseries(df)
         if df.empty:
-            empty_state = DashboardState(
+            state = DashboardState(
                 dataset_profile={}, profile=[], kpis=[], charts=[], primary_chart=None,
                 category_charts={}, all_charts=[], critical_totals={},
                 critical_full_dataset_aggregates={}, eda_summary={},
             )
-            yield {"phase": "done", "message": "Empty dataset", "percent": 100, "state": empty_state}
+            yield {"phase": "done", "message": "Empty dataset", "percent": 100, "state": state}
             return
 
         yield {"phase": "ingest_gate", "message": "Screening & cleaning data...", "percent": 15}
         with _time_layer("ingest_gate"):
             ingest = run_ingest_gate(df)
         if ingest.rejected:
-            rej = _empty_dashboard_state(
+            state = _empty_dashboard_state(
                 original_filename,
                 errors=[ingest.reject_reason or "Dataset rejected by ingest gate."],
                 warnings=ingest.warnings,
                 dataset_profile={"data_quality": {
                     "rejected": True, "reject_reason": ingest.reject_reason}},
             )
-            yield {"phase": "done", "message": "Dataset rejected", "percent": 100, "state": rej}
+            yield {"phase": "done", "message": "Dataset rejected", "percent": 100, "state": state}
             return
         df = ingest.df
         ingest_warnings = list(ingest.warnings)
@@ -567,14 +570,14 @@ def build_dashboard_from_df_generator(
                    "columns": [p.__dict__ for p in enriched_profiles.values()]}
             _contract_into_profile(viz, contract, ingest, crit, dq)
             viz["status"] = "schema_review"
-            sr = _empty_dashboard_state(
+            state = _empty_dashboard_state(
                 original_filename, warnings=ingest_warnings,
                 dataset_profile=viz,
                 eda_summary={"status": "schema_review",
                              "data_quality_report": dq.model_dump(mode="json")},
             )
             yield {"phase": "done", "message": "Schema review required",
-                   "percent": 100, "state": sr}
+                   "percent": 100, "state": state}
             return
 
         yield {"phase": "relating", "message": "Finding correlations and relationships...", "percent": 50}
