@@ -48,7 +48,7 @@ const HelpModal = ({ onClose }) => (
         ))}
         <div className="pt-3 border-t border-gray-100 text-xs text-gray-500 space-y-1">
           <p><i className="fas fa-shield-halved text-green-500 mr-2" />100% private — files are never stored.</p>
-          <p><i className="fas fa-user-secret text-gray-400 mr-2" />No sign-up required — use “Continue as guest”. Sign in only to save work across devices.</p>
+          <p><i className="fas fa-circle-user text-gray-400 mr-2" />Sign in to upload your data and save your work across devices.</p>
         </div>
       </div>
       <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 text-right">
@@ -69,9 +69,6 @@ const Header = () => {
   const exporting = useDashboardStore((s) => s.exporting);
   const exportHandler = useDashboardStore((s) => s.exportHandler);
   const runExport = useDashboardStore((s) => s.runExport);
-  const isGuest = useDashboardStore((s) => s.isGuest);
-  const enableGuest = useDashboardStore((s) => s.enableGuest);
-  const disableGuest = useDashboardStore((s) => s.disableGuest);
   const theme = useDashboardStore((s) => s.theme);
   const toggleTheme = useDashboardStore((s) => s.toggleTheme);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -158,39 +155,12 @@ const Header = () => {
             )}
 
             <SignedOut>
-              {isGuest ? (
-                <>
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    <i className="fas fa-user-secret" /> Guest mode
-                  </span>
-                  <SignInButton mode="modal">
-                    <button className={signInBtn} title="Sign in to save your work">Sign in</button>
-                  </SignInButton>
-                  <button
-                    onClick={disableGuest}
-                    className={signInBtn}
-                    title="Exit guest mode"
-                  >
-                    Exit guest
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={enableGuest}
-                    className={signInBtn}
-                    title="Use the app without an account"
-                  >
-                    Continue as guest
-                  </button>
-                  <SignInButton mode="modal">
-                    <button className={signInBtn}>Sign in</button>
-                  </SignInButton>
-                  <SignUpButton mode="modal">
-                    <button className={signUpBtn}>Create account</button>
-                  </SignUpButton>
-                </>
-              )}
+              <SignInButton mode="modal">
+                <button className={signInBtn}>Sign in</button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <button className={signUpBtn}>Create account</button>
+              </SignUpButton>
             </SignedOut>
             <SignedIn>
               <UserButton afterSignOutUrl="/" />

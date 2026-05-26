@@ -110,7 +110,12 @@ def allow_clerk_or_guest(
     response: Response,
     creds: HTTPAuthorizationCredentials = Depends(_bearer),
 ) -> dict:
-    guest_requested = request.headers.get(GUEST_HEADER, "").strip() == "1"
+    # Invite-only kill-switch: when guest mode is disabled, ignore the guest
+    # header entirely so a valid Clerk token becomes mandatory below.
+    guest_requested = (
+        config.GUEST_MODE_ENABLED
+        and request.headers.get(GUEST_HEADER, "").strip() == "1"
+    )
 
     # A valid Clerk identity always wins over the guest header: a signed-in
     # user can never be silently demoted to a guest, and the guest header can
@@ -134,6 +139,25 @@ def allow_clerk_or_guest(
         return {"sub": "guest", "guest": True, "session_key": f"guest:{sid}"}
 
     raise HTTPException(status_code=401, detail="Authentication required")
+
+
+def guest_sid_header(user: dict) -> dict:
+    """Re-advertise the signed guest session id as a response header.
+
+    ``allow_clerk_or_guest`` sets this header on the temporal ``Response``, but
+    FastAPI drops dependency-set headers when an endpoint returns a ``Response``
+    object (e.g. ``JSONResponse``) directly — so the guest never learns the id
+    it must resend, and every request mints a fresh session (the "Job not
+    found" failure on the async upload path). Endpoints that return a Response
+    directly merge this dict into the response headers. No-op for Clerk users.
+    """
+    if not user.get("guest"):
+        return {}
+    session_key = user.get("session_key", "")
+    raw = session_key.split(":", 1)[1] if ":" in session_key else session_key
+    if not raw:
+        return {}
+    return {GUEST_SID_HEADER: _sign_guest_sid(raw)}
 
 
 def owner_key(user: dict) -> str:

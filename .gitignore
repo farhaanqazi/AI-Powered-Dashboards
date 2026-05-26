@@ -48,6 +48,7 @@ node_modules/
 
 # Local scratch / AI agent assets (skills, handoffs, mirrored repos)
 _local/
+docs/superpowers/
 
 # IDE / agent state
 .claude/

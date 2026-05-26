@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from src.core.pipeline import build_dashboard_from_df
+from src.core.pipeline import build_dashboard_from_df, build_dashboard_from_df_generator
 
 # Define the path to the fixture relative to the test file
 # This makes the test runner find the file correctly
@@ -82,3 +82,26 @@ def test_pipeline_end_to_end_from_dataframe():
     if 'description' in column_roles:
         # description should be identified as text
         assert column_roles['description'] in ['text', 'categorical'], f"description should be text, got {column_roles['description']}"
+
+
+def test_generator_early_return_not_critical_failure(monkeypatch):
+    """Regression: early-return branches (empty / rejected / schema_review)
+    build a valid DashboardState and yield it, but historically left the local
+    `state` var unset, so the finally-block logged a spurious CRITICAL_FAILURE
+    even though the pipeline succeeded (seen in prod traces on schema-review
+    halts). The status must reflect the returned state, not a crash."""
+    import src.diagnostics.tracer as tracer
+
+    captured = {}
+    monkeypatch.setattr(tracer, "record_initial_state", lambda *a, **k: "t-id")
+    monkeypatch.setattr(tracer, "record_custom_event", lambda *a, **k: None)
+    monkeypatch.setattr(
+        tracer, "record_pipeline_end",
+        lambda tid, status="SUCCESS", errors=None: captured.update(
+            status=status, errors=errors),
+    )
+
+    events = list(build_dashboard_from_df_generator(pd.DataFrame()))
+    done = [e for e in events if e.get("phase") == "done"]
+    assert done and done[-1].get("state") is not None
+    assert captured.get("status") != "CRITICAL_FAILURE", captured

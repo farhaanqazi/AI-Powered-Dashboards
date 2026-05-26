@@ -28,7 +28,7 @@ from src.core.pipeline import (
     build_dashboard_from_file_generator,
 )
 from src.data.parser import load_csv_from_url, load_csv_from_kaggle
-from src.auth import require_clerk_user, require_admin_user, allow_clerk_or_guest
+from src.auth import require_clerk_user, require_admin_user, allow_clerk_or_guest, guest_sid_header
 from src.api.schemas import (
     UploadResponse,
     LoadExternalResponse,
@@ -81,7 +81,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Guest-Session-Id"],
 )
 
 # Middleware execution order is LIFO (last added = outermost). Final order:
@@ -891,6 +891,7 @@ async def api_jobs_upload(
             content={"status": "accepted", "job_id": existing,
                      "trace_id": rec.get("trace_id"),
                      "backend": "idempotent-reuse", "idempotent": True},
+            headers=guest_sid_header(user),
         )
 
     job_id = str(uuid.uuid4())
@@ -914,6 +915,7 @@ async def api_jobs_upload(
         status_code=202,
         content={"status": "accepted", "job_id": job_id,
                  "trace_id": trace_id, "backend": backend},
+        headers=guest_sid_header(user),
     )
 
 

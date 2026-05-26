@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { SignedIn, SignedOut, SignInButton, SignUpButton, useUser } from '@clerk/clerk-react';
-import { useDashboardStore } from '../../dashboardStore';
+import { SignedOut, SignInButton, SignUpButton, useUser } from '@clerk/clerk-react';
 import { validateExternalSource, sniffCsvFile } from '../../services/api';
 
 const formatFileSize = (bytes) => {
@@ -18,10 +17,9 @@ const UploadPage = () => {
   const [error, setError] = useState('');
   const [validating, setValidating] = useState(null); // 'file' | 'external' | null
   const navigate = useNavigate();
-  const isGuest = useDashboardStore((s) => s.isGuest);
-  const enableGuest = useDashboardStore((s) => s.enableGuest);
   const { isSignedIn } = useUser();
-  const allowed = isSignedIn || isGuest;
+  // Guest mode is disabled — uploading requires a Clerk session.
+  const allowed = isSignedIn;
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -135,7 +133,7 @@ const UploadPage = () => {
                     </div>
                     <div className="flex items-center">
                       <i className="fas fa-user-plus text-green-500 mr-2"></i>
-                      <span>No sign-up required</span>
+                      <span>Free account</span>
                     </div>
                   </div>
                 </div>
@@ -165,24 +163,6 @@ const UploadPage = () => {
                             <i className="fas fa-sign-in-alt mr-2"></i> Sign in
                           </button>
                         </SignInButton>
-                        <div className="relative my-1">
-                          <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-gray-200"></div>
-                          </div>
-                          <div className="relative flex justify-center text-xs">
-                            <span className="px-3 bg-white text-gray-400 uppercase tracking-wider">or</span>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={enableGuest}
-                          className="w-full py-3 px-4 rounded-lg font-medium text-gray-700 hover:bg-gray-50 transition-colors border border-dashed border-gray-300"
-                        >
-                          <i className="fas fa-user-secret mr-2 text-gray-500"></i> Continue as a guest
-                        </button>
-                        <p className="text-xs text-gray-400 mt-1">
-                          Guest mode keeps everything in your browser. Sign in later to save your work.
-                        </p>
                       </div>
                     </div>
                   </SignedOut>

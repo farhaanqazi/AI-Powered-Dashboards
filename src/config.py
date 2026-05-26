@@ -190,6 +190,12 @@ GUEST_SESSION_SECRET = (
     os.environ.get("GUEST_SESSION_SECRET", "").strip() or os.urandom(32).hex()
 )
 
+# When False, anonymous guest access is rejected and a valid Clerk identity is
+# required on every endpoint that uses ``allow_clerk_or_guest`` — turning the
+# app into invite-only (combine with a Clerk allow-list / restricted sign-ups).
+# Default True preserves the open guest-mode behaviour.
+GUEST_MODE_ENABLED = _env_bool("GUEST_MODE_ENABLED", True)
+
 # --- Ingest Contract Gate (Phase 1) ---
 # Case-insensitive exact-match cell values coerced to NA before profiling.
 INGEST_SENTINELS = [

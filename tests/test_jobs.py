@@ -74,3 +74,36 @@ def test_legacy_sync_upload_still_works(client, upload_files):
     r = client.post("/api/upload", files=upload_files)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "success"
+
+
+def test_guest_first_contact_sid_roundtrip(upload_files):
+    """Regression: a guest with NO signed id yet (the real frontend's first
+    contact) must receive a server-signed X-Guest-Session-Id back on the
+    JSONResponse upload path, and resending it must preserve job ownership.
+
+    Bug: JSONResponse drops the guest sid header that allow_clerk_or_guest
+    sets on the temporal Response, so every request minted a fresh guest
+    identity and the very next poll 404'd with 'Job not found' — the prod
+    failure seen on paddy.csv / airqua.csv. The conftest `client` fixture
+    masked it by pre-signing an id.
+    """
+    from fastapi.testclient import TestClient
+    import main as main_module
+
+    c = TestClient(main_module.app)
+    sub = c.post(
+        "/api/jobs/upload", files=upload_files,
+        headers={"X-Guest-Mode": "1"},  # no session id — first contact
+    )
+    assert sub.status_code == 202, sub.text
+    issued = sub.headers.get("X-Guest-Session-Id")
+    assert issued, "upload must hand back a server-signed guest session id"
+
+    job_id = sub.json()["job_id"]
+    # Resend the issued id exactly as the fixed frontend will.
+    poll = c.get(
+        f"/api/jobs/{job_id}",
+        headers={"X-Guest-Mode": "1", "X-Guest-Session-Id": issued},
+    )
+    assert poll.status_code == 200, poll.text
+    assert poll.json()["job_id"] == job_id

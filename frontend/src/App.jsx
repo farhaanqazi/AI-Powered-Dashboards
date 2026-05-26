@@ -15,8 +15,8 @@ import './styles/design-system.css';
 import './styles/App.css';
 
 function Protected({ children }) {
-  const isGuest = useDashboardStore((s) => s.isGuest);
-  if (isGuest) return children;
+  // Guest mode is disabled — a Clerk session is required for every protected
+  // route. Signed-out visitors are sent to sign-in.
   return (
     <>
       <SignedIn>{children}</SignedIn>

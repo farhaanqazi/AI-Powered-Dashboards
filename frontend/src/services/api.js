@@ -20,6 +20,19 @@ function guestSessionId() {
   catch { return ''; }
 }
 
+// Persist the server-issued, signed guest session id so every later request
+// resends the SAME identity. Without this the backend mints a fresh guest id
+// per request and ownership-scoped lookups (e.g. polling an async job) 404 with
+// "Job not found". The value is opaque to the client — store it verbatim.
+function persistGuestSessionId(value) {
+  if (!value) return;
+  try {
+    if (localStorage.getItem('dataInsight:guestSessionId') !== value) {
+      localStorage.setItem('dataInsight:guestSessionId', value);
+    }
+  } catch { /* storage unavailable — degrade to per-request sessions */ }
+}
+
 async function authHeaders() {
   const token = await getClerkToken();
   if (token) return { Authorization: `Bearer ${token}` };
@@ -41,6 +54,20 @@ api.interceptors.request.use(async (config) => {
   config.headers = { ...config.headers, ...headers };
   return config;
 });
+
+// Capture the signed guest id the server hands back (axios lowercases header
+// keys) on both success and error responses, so guest identity survives across
+// requests.
+api.interceptors.response.use(
+  (response) => {
+    persistGuestSessionId(response?.headers?.['x-guest-session-id']);
+    return response;
+  },
+  (error) => {
+    persistGuestSessionId(error?.response?.headers?.['x-guest-session-id']);
+    return Promise.reject(error);
+  },
+);
 
 export const uploadFile = async (file) => {
   const formData = new FormData();
@@ -133,6 +160,10 @@ export const uploadFileStream = async (file, onPhase, { signal } = {}) => {
     const text = await submit.text().catch(() => '');
     throw new Error(plainError(text, submit.status));
   }
+  // The submit response carries the freshly-minted guest id; persist it BEFORE
+  // building the event-stream headers so the poll resends the SAME session the
+  // job was created under (otherwise the events stream 404s "Job not found").
+  persistGuestSessionId(submit.headers.get('X-Guest-Session-Id'));
   const { job_id: jobId } = await submit.json();
   const headers = await authHeaders();
 
