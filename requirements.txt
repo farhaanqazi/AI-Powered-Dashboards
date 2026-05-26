@@ -15,6 +15,11 @@ pyarrow==21.0.0   # .parquet read/write (has cp39 manylinux + win wheels)
 # 3.9 line. Optional at runtime — the reader falls back to pandas if absent.
 duckdb>=1.4,<1.5
 plotly==5.18.0
+# Server-side PDF export (replaces the flaky in-browser html-to-image screenshot
+# that produced blank pages). Pure-Python, ships a cp39 manylinux wheel (no
+# compile, no system libs, no headless browser) and renders charts as native
+# vector graphics — ~3 MB, negligible next to the ML stack. See src/reporting.
+reportlab==4.0.9
 kagglehub==0.2.2
 scipy==1.12.0
 # Phase 9 S9.2 statistical depth. src/analysis/statistical_depth.py degrades

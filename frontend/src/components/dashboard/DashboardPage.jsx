@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useDashboardStore } from '../../dashboardStore';
-// The PDF/export stack (jsPDF + html-to-image, ~hundreds of KB) is loaded
-// on-demand only when the user actually clicks Export — never in the
-// dashboard's initial chunk.
+// PDF export is now built server-side (GET /api/dashboard/export.pdf) — no
+// in-browser screenshot stack ships to the client anymore.
 import OverviewTab from './OverviewTab';
 import InteractionBar from './InteractionBar';
 import EDATab from './EDATab';
@@ -67,10 +66,6 @@ const DashboardPage = () => {
   const captureRef = useRef(null);
   const activeTabRef = useRef(activeTab);
   const particleRootRef = useRef(null);
-  // Off-screen export: a tab the PDF capture drives WITHOUT changing the
-  // visible `activeTab`, so the user keeps their view + full interactivity.
-  const [exportTab, setExportTab] = useState(null);
-  const exportSurfaceRef = useRef(null);
 
   useEffect(() => { activeTabRef.current = activeTab; }, [activeTab]);
 
@@ -88,18 +83,13 @@ const DashboardPage = () => {
 
   useEffect(() => {
     setExportHandler(async () => {
+      // PDF is now built server-side (ReportLab) — reliable, no in-browser
+      // screenshot. We just stream the blob down and let the browser save it.
+      setExportProgress({ label: 'Building PDF on the server', index: 0, total: 0 });
       try {
-        const { exportDashboardToPDF } = await import('../../services/pdfExport');
-        // Drive the OFF-SCREEN surface, never the visible tab — the user
-        // keeps their current view and can keep clicking around while the
-        // PDF builds in the background.
-        await exportDashboardToPDF({
-          setActiveTab: setExportTab,
-          getCaptureEl: () => exportSurfaceRef.current,
-          onProgress: setExportProgress,
-        });
+        const { downloadDashboardPdf } = await import('../../services/api');
+        await downloadDashboardPdf();
       } finally {
-        setExportTab(null);
         setExportProgress(null);
       }
     });
@@ -235,32 +225,6 @@ const DashboardPage = () => {
                 ? ` ${exportProgress.label}${exportProgress.total ? ` — ${exportProgress.index}/${exportProgress.total}` : ''}`
                 : ' Preparing…'}
             </span>
-          </div>
-        </div>,
-        document.body,
-      )}
-      {/* Off-screen capture surface. Rendered fully laid out (NOT display:none —
-          Plotly needs real dimensions to size + paint) but parked far
-          off-screen, so the capture loop drives THIS, never the visible
-          dashboard. It carries .dash-shell.dash-export-mode so the PDF
-          export CSS (solid fills, no backdrop-filter) applies to its
-          subtree only. */}
-      {exporting && dashboardData && createPortal(
-        <div
-          id="pdf-export-surface"
-          ref={exportSurfaceRef}
-          className="dash-shell dash-export-mode"
-          aria-hidden="true"
-          style={{
-            position: 'fixed',
-            left: '-100000px',
-            top: 0,
-            width: '1280px',
-            pointerEvents: 'none',
-          }}
-        >
-          <div className="glass-card p-6 md:p-7">
-            {exportTab ? renderTabComponent(exportTab) : null}
           </div>
         </div>,
         document.body,

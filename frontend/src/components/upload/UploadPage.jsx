@@ -11,6 +11,13 @@ const formatFileSize = (bytes) => {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 };
 
+// Mirror the backend caps (config.MAX_UPLOAD_BYTES). Block uploads over the
+// hard limit client-side so the user isn't made to wait for a full upload that
+// the server would only reject with a 413 at the end; warn (but allow) above
+// the soft threshold so they know a large file will be slower.
+const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;  // hard limit — upload refused
+const WARN_UPLOAD_BYTES = 25 * 1024 * 1024;  // soft threshold — warn, still allow
+
 const UploadPage = () => {
   const [file, setFile] = useState(null);
   const [externalSource, setExternalSource] = useState('');
@@ -20,6 +27,10 @@ const UploadPage = () => {
   const { isSignedIn } = useUser();
   // Guest mode is disabled — uploading requires a Clerk session.
   const allowed = isSignedIn;
+
+  // Size verdict for the currently-selected file.
+  const oversize = !!file && file.size > MAX_UPLOAD_BYTES;
+  const sizeWarn = !!file && file.size > WARN_UPLOAD_BYTES && file.size <= MAX_UPLOAD_BYTES;
 
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
@@ -31,6 +42,15 @@ const UploadPage = () => {
     setError('');
     if (!file) {
       setError('Please select a CSV file to upload.');
+      return;
+    }
+    // Hard cap: refuse before uploading. The server enforces the same 100 MB
+    // limit (HTTP 413), but blocking here saves the user a long, doomed upload.
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(
+        `This file is ${formatFileSize(file.size)}, over the 100 MB upload limit. `
+        + 'Please upload a file of 100 MB or less (or filter it down first).',
+      );
       return;
     }
     setValidating('file');
@@ -100,7 +120,7 @@ const UploadPage = () => {
                     </div>
                     <div>
                       <h3 className="font-semibold text-gray-900 mb-1">Upload your file here →</h3>
-                      <p className="text-gray-600">Drag & drop your .csv file or click to browse (supports files up to 50 MB).</p>
+                      <p className="text-gray-600">Drag & drop your .csv file or click to browse (supports files up to 100 MB).</p>
                     </div>
                   </li>
 
@@ -216,15 +236,37 @@ const UploadPage = () => {
                               <i className="fas fa-times"></i>
                             </button>
                           </div>
+
+                          {/* Over the hard limit — upload is blocked. */}
+                          {oversize && (
+                            <div className="mt-3 flex items-start gap-2 rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700" role="alert">
+                              <i className="fas fa-circle-exclamation mt-0.5 flex-shrink-0"></i>
+                              <span>
+                                This file is <strong>{formatFileSize(file.size)}</strong> — over the
+                                {' '}<strong>100 MB</strong> limit. Please choose a file of 100 MB or less.
+                              </span>
+                            </div>
+                          )}
+
+                          {/* Large but allowed — mild heads-up about slower upload. */}
+                          {sizeWarn && (
+                            <div className="mt-3 flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
+                              <i className="fas fa-triangle-exclamation mt-0.5 flex-shrink-0"></i>
+                              <span>
+                                Heads up: at <strong>{formatFileSize(file.size)}</strong> (over 25 MB),
+                                this file will take longer to upload and analyze.
+                              </span>
+                            </div>
+                          )}
                         </div>
                       )}
 
                       <button
                         type="submit"
-                        disabled={!file || validating !== null}
+                        disabled={!file || oversize || validating !== null}
                         aria-busy={validating === 'file'}
                         className={`w-full py-3 px-4 rounded-lg font-medium transition-colors ${
-                          file && validating === null
+                          file && !oversize && validating === null
                             ? 'bg-blue-600 text-white hover:bg-blue-700'
                             : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         }`}

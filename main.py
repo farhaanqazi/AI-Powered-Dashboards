@@ -1,5 +1,5 @@
 from fastapi import FastAPI, File, UploadFile, Form, Request, HTTPException, Depends
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, FileResponse, StreamingResponse, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -627,6 +627,41 @@ async def api_get_dashboard(user=Depends(allow_clerk_or_guest)):
         "critical_full_dataset_aggregates": dashboard_data.get("critical_full_dataset_aggregates", {}),
         "eda_summary": dashboard_data.get("eda_summary", {})
     }
+
+
+@app.get("/api/dashboard/export.pdf")
+async def api_export_dashboard_pdf(user=Depends(allow_clerk_or_guest)):
+    """Server-side PDF export. Renders the session's current dashboard payload
+    to a PDF via ReportLab (replaces the flaky in-browser screenshot). Scoped
+    to the caller's session, same as GET /api/dashboard."""
+    payload = get_repository().get(user["session_key"])
+    if not payload:
+        raise HTTPException(
+            status_code=404,
+            detail="No dashboard to export yet. Upload a dataset first.",
+        )
+    try:
+        from src.reporting import build_dashboard_pdf
+        pdf_bytes = build_dashboard_pdf(payload)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("PDF export failed")
+        raise HTTPException(status_code=500, detail="Could not build the PDF export.")
+
+    name = _safe_pdf_filename(payload.get("original_filename"))
+    headers = {
+        "Content-Disposition": f'attachment; filename="{name}"',
+        **guest_sid_header(user),
+    }
+    return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+
+
+def _safe_pdf_filename(original: Optional[str]) -> str:
+    """A download filename derived from the dataset, stripped of anything that
+    could break the Content-Disposition header."""
+    stem = (original or "dashboard").rsplit(".", 1)[0]
+    safe = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in stem).strip()
+    safe = (safe or "dashboard")[:60]
+    return f"{safe} - dashboard {datetime.utcnow().date().isoformat()}.pdf"
 
 
 # ---------------- ANALYSIS HISTORY (Phase 10 S10.4) ----------------

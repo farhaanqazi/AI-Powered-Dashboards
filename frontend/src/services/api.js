@@ -240,6 +240,27 @@ export const getDashboardData = async () => {
   return response.data;
 };
 
+// Server-side PDF export (replaces the in-browser screenshot). The backend
+// renders the session's dashboard payload to a PDF; we just stream the blob
+// and trigger a download with the server-provided filename.
+export const downloadDashboardPdf = async () => {
+  const response = await api.get('/dashboard/export.pdf', { responseType: 'blob' });
+  const cd = response.headers?.['content-disposition'] || '';
+  const match = /filename="?([^"]+)"?/i.exec(cd);
+  const filename = match ? match[1] : `dashboard-${new Date().toISOString().slice(0, 10)}.pdf`;
+  const url = URL.createObjectURL(response.data);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+};
+
 // Phase 7 (S7.5): submit human schema-review overrides. The backend keys the
 // dashboard by session, so the trace id is only a guard — 'current' is fine
 // when the GET payload doesn't carry one.
