@@ -370,6 +370,58 @@ def _eda_flow(eda: Dict[str, Any], ss) -> list:
                      ("description", "label", "title", "text"), 5)
     flow += _bullets("Recommendations", eda.get("recommendations"),
                      ("title", "description", "text", "name"), 5)
+    flow += _ml_flow(eda.get("ml_insights"), ss)
+    return flow
+
+
+def _ml_chart_block(chart, fallback_title, ss) -> list:
+    if not isinstance(chart, dict):
+        return []
+    drawing = _chart_drawing(chart)
+    if drawing is None:
+        return []
+    title = _txt(chart.get("title"), 70) or fallback_title
+    return [KeepTogether([
+        Paragraph(_esc(title), ss["ChartTitle"]), drawing, Spacer(1, 6),
+    ])]
+
+
+def _ml_flow(ml: Dict[str, Any], ss) -> list:
+    """Phase 15 — ML insights: supervised drivers, segments, anomalies, forecast.
+
+    Accepts the nested ``{"supervised", "segments", "anomalies", "forecast"}``
+    bundle. Each block is rendered only when available."""
+    if not isinstance(ml, dict):
+        return []
+    sup = ml.get("supervised") if isinstance(ml.get("supervised"), dict) else None
+    seg = ml.get("segments") if isinstance(ml.get("segments"), dict) else None
+    an = ml.get("anomalies") if isinstance(ml.get("anomalies"), dict) else None
+    fc = ml.get("forecast") if isinstance(ml.get("forecast"), dict) else None
+    if not any(x and x.get("available") for x in (sup, seg, an, fc)):
+        return []
+
+    flow: list = [Paragraph("Predictions &amp; Drivers", ss["Section"])]
+    if sup and sup.get("available"):
+        if sup.get("verdict"):
+            flow.append(Paragraph(_esc(_txt(sup["verdict"], 800)), ss["Body"]))
+        flow += _ml_chart_block(sup.get("chart"), "What drives the target", ss)
+        for note in (sup.get("notes") or [])[:3]:
+            flow.append(Paragraph("• " + _esc(_txt(note, 300)), ss["Small"]))
+    if seg and seg.get("available"):
+        flow.append(Paragraph(
+            f"Segments: {seg.get('k')} natural groups "
+            f"(silhouette {seg.get('silhouette')}).", ss["Body"]))
+        flow += _ml_chart_block(seg.get("chart"), "Segment map", ss)
+    if an and an.get("available") and an.get("n_outliers"):
+        feats = ", ".join(f.get("feature", "") for f in (an.get("top_features") or [])[:5])
+        flow.append(Paragraph(
+            f"Anomalies: {an.get('n_outliers')} unusual rows "
+            f"({round(an.get('fraction', 0) * 100, 1)}%)"
+            + (f"; driven by {_esc(feats)}." if feats else "."), ss["Body"]))
+    if fc and fc.get("available"):
+        if fc.get("verdict"):
+            flow.append(Paragraph(_esc(_txt(fc["verdict"], 600)), ss["Body"]))
+        flow += _ml_chart_block(fc.get("chart"), "Forecast", ss)
     return flow
 
 

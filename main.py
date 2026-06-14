@@ -768,6 +768,17 @@ async def api_interact(request: Request, body: InteractRequest,
         raise HTTPException(status_code=409,
                             detail="This analysis's contract is unreadable.")
 
+    # S15.4 — what-if predict / re-segment route through the same endpoint but
+    # use the cached ML model (predict needs no frame; re-segment needs the
+    # frame but no contract-tool catalogue).
+    calc = (body.calculation or "").lower()
+    if calc == "predict":
+        from src.analysis.ml.predict import run_predict
+        return await asyncio.to_thread(
+            run_predict, contract.schema_fingerprint,
+            dict(body.params or {}).get("features", body.params or {}),
+        )
+
     df = get_df_cache().get(contract.schema_fingerprint)
     if df is None:
         return {
@@ -775,6 +786,13 @@ async def api_interact(request: Request, body: InteractRequest,
             "error": "The working data for this analysis has expired. "
                      "Re-run the analysis to interact again.",
         }
+
+    if calc == "resegment":
+        from src.analysis.ml.predict import run_resegment
+        cols = list((body.params or {}).get("columns", []))
+        return await asyncio.to_thread(
+            run_resegment, contract.schema_fingerprint, df, cols
+        )
 
     from src.analysis.ask import run_interaction_cached
     spec = {"calculation": body.calculation, "params": body.params,

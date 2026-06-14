@@ -332,19 +332,37 @@ const ChartRenderer = ({ chartData, interactive = false }) => {
       yValues = dataObj.y || [];
     }
     const yIsLog = shouldUseLogScale(yValues);
-    plotlyData = [{
-      x: xValues,
-      y: yValues,
-      type: 'scatter',
-      mode: dataObj?.mode || 'markers',
-      marker: {
-        color: '#fbbf24',
-        size: 7,
-        opacity: 0.8,
-        line: { color: T.pointLine, width: 1 },
-      },
-      hovertemplate: '%{x}<br>%{y}<extra></extra>',
-    }];
+    // A `group` key on each point (e.g. cluster segments) splits the cloud into
+    // one colour-coded trace per group; otherwise it's a single gold series.
+    const groups = dataIsArray ? chartData.data.map(it => it.group).filter(g => g != null) : [];
+    if (groups.length) {
+      const palette = ['#60a5fa', '#f472b6', '#34d399', '#fbbf24', '#a78bfa', '#22d3ee', '#fb7185'];
+      const uniq = Array.from(new Set(chartData.data.map(it => it.group)));
+      plotlyData = uniq.map((g, i) => {
+        const pts = chartData.data.filter(it => it.group === g);
+        return {
+          x: pts.map(p => p.x), y: pts.map(p => p.y), name: String(g),
+          type: 'scatter', mode: 'markers',
+          marker: { color: palette[i % palette.length], size: 7, opacity: 0.78,
+            line: { color: T.pointLine, width: 1 } },
+          hovertemplate: `${g}<br>%{x}, %{y}<extra></extra>`,
+        };
+      });
+    } else {
+      plotlyData = [{
+        x: xValues,
+        y: yValues,
+        type: 'scatter',
+        mode: dataObj?.mode || 'markers',
+        marker: {
+          color: '#fbbf24',
+          size: 7,
+          opacity: 0.8,
+          line: { color: T.pointLine, width: 1 },
+        },
+        hovertemplate: '%{x}<br>%{y}<extra></extra>',
+      }];
+    }
     layout = baseLayout(title, {
       ...layout,
       xaxis: { title: chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'X', automargin: true },

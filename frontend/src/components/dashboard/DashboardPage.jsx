@@ -8,6 +8,7 @@ import OverviewTab from './OverviewTab';
 import InteractionBar from './InteractionBar';
 import EDATab from './EDATab';
 import VisualizationsTab from './VisualizationsTab';
+import PredictionsTab from './PredictionsTab';
 import ColumnsTab from './ColumnsTab';
 import DataQualityTab from './DataQualityTab';
 import '../../styles/dashboard-futuristic.css';
@@ -17,6 +18,7 @@ const TABS = [
   { key: 'overview',          label: 'Overview',     icon: 'fa-chart-line' },
   { key: 'eda',               label: 'AI Insights',  icon: 'fa-brain' },
   { key: 'visualizations',    label: 'Charts',       icon: 'fa-chart-bar' },
+  { key: 'predictions',       label: 'Predictions',  icon: 'fa-wand-magic-sparkles' },
   { key: 'column_profiling',  label: 'Columns',      icon: 'fa-table' },
 ];
 
@@ -141,6 +143,8 @@ const DashboardPage = () => {
         return <EDATab data={dashboardData} loading={loading} error={error} />;
       case 'visualizations':
         return <VisualizationsTab data={dashboardData} loading={loading} error={error} refreshKey={lastUpdated} />;
+      case 'predictions':
+        return <PredictionsTab data={dashboardData} loading={loading} error={error} />;
       case 'column_profiling':
         return <ColumnsTab data={dashboardData} />;
       case 'data_quality':

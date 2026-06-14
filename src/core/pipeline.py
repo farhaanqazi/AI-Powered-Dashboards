@@ -58,6 +58,36 @@ def _attach_statistical_depth(eda_summary, df, enriched_profiles) -> None:
         logger.warning("statistical depth attach failed: %s", e)
 
 
+def _attach_ml_insights(eda_summary, df, enriched_profiles, contract=None) -> None:
+    """Phase 15 — fold the deterministic ML insights (supervised driver
+    analysis S15.1, unsupervised segments + anomalies S15.2, forecast S15.3)
+    into the EDA summary so they persist as ground truth and feed the
+    Predictions tab + PDF. The fitted supervised model is cached by schema
+    fingerprint for the S15.4 what-if path. Best-effort: each report never
+    raises, and a failure here never breaks the pipeline."""
+    if not isinstance(eda_summary, dict):
+        return
+    try:
+        from src.analysis.ml import (
+            compute_anomalies,
+            compute_forecast,
+            compute_ml_insights,
+            compute_segments,
+        )
+
+        fingerprint = getattr(contract, "schema_fingerprint", None)
+        eda_summary["ml_insights"] = {
+            "supervised": compute_ml_insights(
+                df, enriched_profiles, fingerprint=fingerprint
+            ),
+            "segments": compute_segments(df, enriched_profiles),
+            "anomalies": compute_anomalies(df, enriched_profiles),
+            "forecast": compute_forecast(df, enriched_profiles),
+        }
+    except Exception as e:  # pragma: no cover - defensive
+        logger.warning("ml insights attach failed: %s", e)
+
+
 def _empty_dashboard_state(original_filename, *, errors=None, warnings=None,
                            dataset_profile=None, eda_summary=None) -> DashboardState:
     """A no-charts DashboardState used for rejected / review-gated datasets."""
@@ -306,6 +336,7 @@ def build_dashboard_from_df(df: pd.DataFrame, max_cols: Optional[int] = 50,
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
             _attach_statistical_depth(eda_summary, df, enriched_profiles)
+            _attach_ml_insights(eda_summary, df, enriched_profiles, contract)
         except Exception as e:
             msg = f"EDA failed: {e}"
             errors.append(msg)
@@ -596,6 +627,7 @@ def build_dashboard_from_df_generator(
             if eda_errors:
                 errors.extend([f"EDA: {err}" for err in eda_errors])
             _attach_statistical_depth(eda_summary, df, enriched_profiles)
+            _attach_ml_insights(eda_summary, df, enriched_profiles, contract)
         except Exception as e:
             errors.append(f"EDA failed: {e}")
             logger.exception("EDA failure")

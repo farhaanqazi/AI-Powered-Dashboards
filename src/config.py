@@ -137,6 +137,51 @@ STAT_DEPTH_MAX_ROWS = int(os.environ.get("STAT_DEPTH_MAX_ROWS", 20000))
 STAT_DEPTH_MAX_COLS = int(os.environ.get("STAT_DEPTH_MAX_COLS", 40))
 STAT_DEPTH_RANDOM_STATE = int(os.environ.get("STAT_DEPTH_RANDOM_STATE", 0))
 
+# --- ML Insights (Phase 15) ---
+# Supervised driver analysis ("what drives X"): auto-pick a target from the
+# Layer-2 roles, cross-validate a HistGradientBoosting model against a
+# linear/logistic baseline, and report permutation feature importance with an
+# honest CV metric and a plain-English verdict. Every number is computed here,
+# never by the LLM. The module is defensive — a missing sklearn or a degenerate
+# dataset yields ``{"available": False}``, never an exception.
+ML_INSIGHTS_ENABLED = _env_bool("ML_INSIGHTS_ENABLED", True)
+# Explicit target column override; "" auto-picks from Layer-2 roles.
+ML_TARGET = os.environ.get("ML_TARGET", "").strip()
+# Deterministic, seeded row cap so model fitting stays bounded.
+ML_MAX_ROWS = int(os.environ.get("ML_MAX_ROWS", 20000))
+# Below this row count cross-validation is not trustworthy — skip.
+ML_MIN_ROWS = int(os.environ.get("ML_MIN_ROWS", 50))
+ML_CV_FOLDS = int(os.environ.get("ML_CV_FOLDS", 5))
+ML_RANDOM_STATE = int(os.environ.get("ML_RANDOM_STATE", 0))
+# One-hot expansion ceiling; highest-cardinality categoricals are dropped first.
+ML_MAX_FEATURES = int(os.environ.get("ML_MAX_FEATURES", 50))
+# A categorical target with more classes than this is treated as too granular.
+ML_MAX_CLASSES = int(os.environ.get("ML_MAX_CLASSES", 12))
+# A categorical *feature* above this cardinality is dropped (one-hot blow-up).
+ML_MAX_CAT_CARDINALITY = int(os.environ.get("ML_MAX_CAT_CARDINALITY", 30))
+ML_PERMUTATION_REPEATS = int(os.environ.get("ML_PERMUTATION_REPEATS", 5))
+# A numeric feature correlated with the target above this is treated as leakage.
+ML_LEAKAGE_CORR = float(os.environ.get("ML_LEAKAGE_CORR", 0.999))
+# How many ranked drivers to surface in the importance chart / table.
+ML_TOP_FEATURES = int(os.environ.get("ML_TOP_FEATURES", 15))
+# Segmentation (S15.2): silhouette searches k in 2..ML_MAX_SEGMENTS; the PCA
+# scatter is capped to keep the shipped payload lean.
+ML_MAX_SEGMENTS = int(os.environ.get("ML_MAX_SEGMENTS", 6))
+ML_SCATTER_MAX_POINTS = int(os.environ.get("ML_SCATTER_MAX_POINTS", 1500))
+# Forecasting (S15.3): only when a datetime + a measure exist; needs a minimum
+# history to fit Holt-Winters, and forecasts this many steps ahead.
+ML_FORECAST_HORIZON = int(os.environ.get("ML_FORECAST_HORIZON", 12))
+ML_FORECAST_MIN_POINTS = int(os.environ.get("ML_FORECAST_MIN_POINTS", 24))
+
+# What-if / predict (S15.4): the supervised model fitted at analysis time is
+# kept in an in-process TTL+LRU cache keyed on schema-fingerprint+target, so
+# `/api/interact` can score user-supplied feature values deterministically with
+# NO retrain and NO LLM. On a cache miss the UX matches df_cache expiry — the
+# user is told to re-run the analysis (no silent refit).
+ML_MODEL_CACHE_ENABLED = _env_bool("ML_MODEL_CACHE_ENABLED", True)
+ML_MODEL_CACHE_MAX_ENTRIES = int(os.environ.get("ML_MODEL_CACHE_MAX_ENTRIES", 32))
+ML_MODEL_CACHE_TTL_SECONDS = int(os.environ.get("ML_MODEL_CACHE_TTL_SECONDS", 3600))
+
 # --- Security Hardening (Phase 0) ---
 # Fail-closed posture for the Semantic Contract Layer. When sensitivity cannot
 # be determined, treat the dataset as sensitive rather than open. When PII is
