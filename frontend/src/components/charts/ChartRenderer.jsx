@@ -57,6 +57,41 @@ const THEMES = {
 // Neon-friendly categorical palette
 const CAT_PALETTE = ['#60a5fa', '#a78bfa', '#34d399', '#fbbf24', '#f472b6', '#22d3ee', '#fb923c', '#c4b5fd', '#5eead4', '#fda4af'];
 
+// Phase 16 S16.1 — per-intent smart colour defaults. A chart's section/intent
+// drives its accent so the dashboard reads as a coherent system (Breakdowns
+// blue, Distributions violet, Trends cyan, Relationships amber, Predictions
+// emerald) instead of every chart defaulting to the same hue.
+const INTENT_COLOR = {
+  category_count: '#60a5fa',
+  category_summary: '#60a5fa',
+  group_comparison: '#38bdf8',
+  histogram: '#a78bfa',
+  distribution: '#a78bfa',
+  time_series: '#22d3ee',
+  scatter: '#fbbf24',
+  feature_importance: '#34d399',
+};
+
+const intentColor = (chartData, fallback = '#60a5fa') =>
+  INTENT_COLOR[chartData?.intent || chartData?.type] || fallback;
+
+// Compact, locale-aware number formatting for on-chart value labels
+// (1.2k / 3.4M) so labels stay short and the data-ink ratio stays high.
+const fmtCompact = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  const abs = Math.abs(n);
+  if (abs >= 1e9) return `${(n / 1e9).toFixed(1)}B`;
+  if (abs >= 1e6) return `${(n / 1e6).toFixed(1)}M`;
+  if (abs >= 1e3) return `${(n / 1e3).toFixed(1)}k`;
+  if (Number.isInteger(n)) return n.toLocaleString();
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+};
+
+// Direct value labels stay on only when the axis isn't crowded — past this the
+// labels overlap and hurt readability (data-ink discipline, S16.3).
+const VALUE_LABEL_MAX_BARS = 12;
+
 const truncateLabel = (label, maxLen = 14) => {
   const str = String(label ?? '');
   if (str.length <= maxLen) return str;
@@ -204,11 +239,62 @@ const baseLayout = (_title, extras = {}, T) => {
 const pickX = (item) => item.x ?? item.category ?? item.bin_range ?? item.date ?? '';
 const pickY = (item) => item.y ?? item.count ?? item.value ?? item.agg_value ?? 0;
 
-const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle, T, markerOpacity }) => {
+const mean = (vals) => {
+  const nums = (vals || []).map(Number).filter(Number.isFinite);
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+};
+
+// S16.2 — ordinary least-squares fit of y over the point index (0..n-1) for a
+// deterministic trendline overlay. Returns null when there's too little signal.
+const linearFit = (yValues) => {
+  const ys = (yValues || []).map(Number);
+  const idx = ys.map((y, i) => (Number.isFinite(y) ? i : null)).filter((v) => v != null);
+  if (idx.length < 5) return null;
+  const xs = idx;
+  const ysv = idx.map((i) => ys[i]);
+  const n = xs.length;
+  const mx = xs.reduce((a, b) => a + b, 0) / n;
+  const my = ysv.reduce((a, b) => a + b, 0) / n;
+  let num = 0;
+  let den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (xs[i] - mx) * (ysv[i] - my);
+    den += (xs[i] - mx) ** 2;
+  }
+  if (den === 0) return null;
+  const slope = num / den;
+  return { slope, intercept: my - slope * mx };
+};
+
+// S16.2 — a dashed "average" reference line so every bar is read against the
+// mean. Built as a layout shape + annotation (works in plotly basic-dist).
+const meanReferenceShapes = (yValues, { useHorizontal, yIsLog, T }) => {
+  const m = mean(yValues);
+  if (m == null || yIsLog || yValues.length < 3) return { shapes: [], annotations: [] };
+  const axisProps = useHorizontal
+    ? { xref: 'x', x0: m, x1: m, yref: 'paper', y0: 0, y1: 1 }
+    : { yref: 'y', y0: m, y1: m, xref: 'paper', x0: 0, x1: 1 };
+  const annPos = useHorizontal
+    ? { xref: 'x', x: m, yref: 'paper', y: 1, xanchor: 'left', yanchor: 'bottom' }
+    : { xref: 'paper', x: 1, yref: 'y', y: m, xanchor: 'right', yanchor: 'bottom' };
+  return {
+    shapes: [{ type: 'line', ...axisProps,
+      line: { color: T.tick, width: 1.25, dash: 'dot' }, layer: 'below' }],
+    annotations: [{ ...annPos, text: `avg ${fmtCompact(m)}`, showarrow: false,
+      font: { color: T.tick, size: 10 } }],
+  };
+};
+
+const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras, xTitle, yTitle, T, markerOpacity, showLabels = true, meanReference = false }) => {
   const useHorizontal = shouldUseHorizontalBars(xValues);
   const catAxisVertical = buildCategoryAxis(xValues, T);
   const catAxisHorizontal = horizontalCategoryAxis(xValues, T);
   const yIsLog = shouldUseLogScale(yValues);
+
+  // S16.1 — direct value labels when the axis isn't crowded (and not log-scaled,
+  // where an absolute label on a compressed axis misleads).
+  const labelled = showLabels && !yIsLog && xValues.length <= VALUE_LABEL_MAX_BARS;
+  const labels = labelled ? yValues.map(fmtCompact) : undefined;
 
   const data = [{
     x: useHorizontal ? yValues : xValues,
@@ -221,15 +307,28 @@ const renderCategoricalSeries = (xValues, yValues, { title, color, layoutExtras,
       // highlight on this dimension) leaves the prior full-opacity render intact.
       opacity: markerOpacity || undefined,
       line: { color: T.markerLine, width: 0.5 },
+      cornerradius: 5,  // S16.1 — soft rounded bars
     },
+    text: labels,
+    texttemplate: labelled ? '%{text}' : undefined,
+    textposition: labelled ? 'outside' : undefined,
+    textfont: labelled ? { color: T.tick, size: 11, family: 'Inter, ui-sans-serif, system-ui, sans-serif' } : undefined,
+    cliponaxis: false,
     hovertext: xValues,
     hovertemplate: useHorizontal
       ? '%{y}<br>%{x:,}<extra></extra>'
       : '%{hovertext}<br>%{y:,}<extra></extra>',
   }];
 
+  const ref = meanReference
+    ? meanReferenceShapes(yValues, { useHorizontal, yIsLog, T })
+    : { shapes: [], annotations: [] };
+
   const layout = baseLayout(title, {
     ...layoutExtras,
+    bargap: 0.28,  // S16.1 — airier spacing
+    shapes: [...(layoutExtras?.shapes || []), ...ref.shapes],
+    annotations: [...(layoutExtras?.annotations || []), ...ref.annotations],
     xaxis: useHorizontal
       ? { title: yTitle, type: yIsLog ? 'log' : 'linear' }
       : { title: xTitle, ...catAxisVertical },
@@ -310,7 +409,9 @@ const ChartRenderer = ({ chartData, interactive = false }) => {
     }
     const xTitle = chartData.x_title || chartData.x_column || dataObj?.xaxis?.title || 'Category';
     const yTitle = chartData.y_title || chartData.y_column || dataObj?.yaxis?.title || (chartType === 'histogram' || chartType === 'distribution' ? 'Frequency' : 'Value');
-    const color = chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa';
+    // S16.1 — colour by the chart's intent (falls back to type) so the section
+    // it belongs to reads as a coherent colour family.
+    const color = intentColor(chartData, chartType === 'histogram' || chartType === 'distribution' ? '#a78bfa' : '#60a5fa');
     // Cross-highlight dimming applies only to true category axes — never to
     // histogram/distribution bins (their x is a numeric range, not a key).
     const isCategorical = chartType !== 'histogram' && chartType !== 'distribution';
@@ -319,6 +420,11 @@ const ChartRenderer = ({ chartData, interactive = false }) => {
       : null;
     ({ data: plotlyData, layout } = renderCategoricalSeries(xValues, yValues, {
       title, color, layoutExtras: layout, xTitle, yTitle, T, markerOpacity,
+      // Bins are dense and numeric — direct labels there clutter; keep them for
+      // true categories only (S16.3 data-ink).
+      showLabels: isCategorical,
+      // S16.2 — average reference line on true category comparisons only.
+      meanReference: isCategorical,
     }));
   }
   else if (chartType === 'scatter') {
@@ -380,19 +486,36 @@ const ChartRenderer = ({ chartData, interactive = false }) => {
       yValues = dataObj.y || [];
     }
     const yIsLog = shouldUseLogScale(yValues);
+    const tsColor = intentColor(chartData, '#34d399');
     plotlyData = [{
       x: xValues,
       y: yValues,
       type: 'scatter',
       mode: xValues.length > 2000 ? 'lines' : 'lines+markers',
-      line: { color: '#34d399', width: 2.5, shape: 'spline', smoothing: 0.6 },
-      marker: { color: '#34d399', size: 6, line: { color: T.pointLine, width: 1 } },
+      name: chartData.y_column || 'Value',
+      line: { color: tsColor, width: 2.5, shape: 'spline', smoothing: 0.6 },
+      marker: { color: tsColor, size: 6, line: { color: T.pointLine, width: 1 } },
       fill: 'tozeroy',
       fillcolor: 'rgba(52,211,153,0.10)',
       hovertemplate: '%{x}<br>%{y}<extra></extra>',
     }];
+    // S16.2 — least-squares trendline overlay so the underlying direction reads
+    // through noisy series (annotated trend lines). Skip for forecasts (the
+    // forecast already carries its own projection) and very short series.
+    const fit = chartData.intent === 'forecast' ? null : linearFit(yValues);
+    if (fit) {
+      plotlyData.push({
+        x: xValues,
+        y: xValues.map((_, i) => fit.intercept + fit.slope * i),
+        type: 'scatter', mode: 'lines', name: 'Trend',
+        line: { color: T.tick, width: 1.5, dash: 'dash' },
+        hoverinfo: 'skip',
+      });
+    }
     layout = baseLayout(title, {
       ...layout,
+      showlegend: !!fit,
+      legend: { orientation: 'h', y: 1.08, x: 1, xanchor: 'right', font: { color: T.font, size: 10 } },
       xaxis: { title: chartData.x_title || chartData.x_column || 'Date', automargin: true },
       yaxis: { title: chartData.y_title || chartData.y_column || 'Value', type: yIsLog ? 'log' : 'linear', automargin: true },
     }, T);

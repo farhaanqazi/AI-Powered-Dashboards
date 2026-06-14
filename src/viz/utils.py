@@ -198,6 +198,12 @@ def _build_category_count_data(
         logger.warning(f"No valid data entries after processing column '{column}'")
         return None
 
+    # Phase 16 S16.3 — low-signal suppression: a single bar conveys no
+    # comparison, so the chart does not earn its place on the dashboard.
+    if len(table_data) < 2:
+        logger.info(f"Suppressing low-signal single-category chart for '{column}'")
+        return None
+
     # Validate and normalize the chart payload
     title = f"Count of {column.replace('_', ' ')}"
     if hasattr(title, 'title'):  # If title is a string, call its title method
