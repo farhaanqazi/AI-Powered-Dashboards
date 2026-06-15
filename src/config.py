@@ -6,6 +6,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return os.environ.get(name, str(default)).strip().lower() in ("1", "true", "yes", "on")
 
 
+def _env_str(name: str, default: str) -> str:
+    """Like ``os.environ.get`` but a *present-but-blank* value (e.g. ``FOO=`` in
+    a .env) falls back to ``default`` instead of returning ``""``. Critical for
+    path/URL settings: an empty ``JOB_SPOOL_DIR`` made ``os.makedirs("")`` raise
+    FileNotFoundError on upload. Blank means "unset", not "use empty"."""
+    val = os.environ.get(name)
+    return val if val is not None and val.strip() != "" else default
+
+
 # --- General Configuration ---
 APP_TITLE = "AI-Powered Dashboard Generator"
 APP_DESCRIPTION = "Upload a CSV or point to a URL/Kaggle dataset and instantly get smart column roles, KPIs, correlations, and ready-to-use visuals with zero manual setup."
@@ -71,7 +80,7 @@ LLM_RESPONSE_CACHE_MAX_ENTRIES = int(
 )
 
 # --- Persistence Configuration ---
-DATABASE_URL = os.environ.get(
+DATABASE_URL = _env_str(
     "DATABASE_URL",
     "sqlite:///./_local/dashboards.db",
 )
@@ -92,7 +101,7 @@ DASHBOARD_TTL_SECONDS = int(os.environ.get("DASHBOARD_TTL_SECONDS", 86400))
 JOB_QUEUE_ENABLED = _env_bool("JOB_QUEUE_ENABLED", False)
 # Where the uploaded file is spooled so a separate worker process can read it
 # (the worker can't see the request's in-memory bytes).
-JOB_SPOOL_DIR = os.environ.get(
+JOB_SPOOL_DIR = _env_str(
     "JOB_SPOOL_DIR", os.path.join(tempfile.gettempdir(), "di_job_spool")
 )
 JOB_TTL_SECONDS = int(os.environ.get("JOB_TTL_SECONDS", 86400))
@@ -329,7 +338,7 @@ CLEANED_DF_CACHE_TTL_SECONDS = int(
 # mem → client → parquet so interactivity survives a restart. Self-pruning by
 # age; fully disableable.
 CLEANED_DF_DURABLE_ENABLED = _env_bool("CLEANED_DF_DURABLE_ENABLED", True)
-CLEANED_DF_DURABLE_DIR = os.environ.get(
+CLEANED_DF_DURABLE_DIR = _env_str(
     "CLEANED_DF_DURABLE_DIR",
     os.path.join(tempfile.gettempdir(), "di_clean_frames"),
 )
