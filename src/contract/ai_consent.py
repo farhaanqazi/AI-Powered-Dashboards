@@ -109,6 +109,23 @@ def apply_ai_consent(payload: Dict[str, Any]) -> Dict[str, Any]:
         eda["use_cases"] = ai["use_cases"]
     if ai.get("recommendations"):
         eda["recommendations"] = ai["recommendations"]
+
+    # The original PII-gated build short-circuits before the deterministic
+    # statistical-depth + ML-insights stages, so the dashboard came back
+    # without them (empty Predictions tab). These are local-only computation —
+    # no AI egress — so re-attach them now that the cleaned frame is in hand.
+    # Lazy import avoids a pipeline<->consent import cycle.
+    try:
+        from src.core.pipeline import (
+            _attach_ml_insights,
+            _attach_statistical_depth,
+        )
+
+        _attach_statistical_depth(eda, df, profiles)
+        _attach_ml_insights(eda, df, profiles, contract)
+    except Exception as exc:  # never block consent on a best-effort stage
+        logger.warning("Consent re-run ML/stats attach failed (%s)", exc)
+
     payload["eda_summary"] = eda
 
     dq["report"] = report
