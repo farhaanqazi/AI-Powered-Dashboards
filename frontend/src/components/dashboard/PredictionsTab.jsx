@@ -33,6 +33,33 @@ const directionTone = (d) => {
   }
 };
 
+// --- Plain-language helpers (translate ML output for non-experts) ----------
+// The silhouette score (0–1) measures how cleanly the groups separate. Laymen
+// don't know the scale, so map it to an honest phrase; keep the number on hover.
+const separationLabel = (s) => {
+  const v = Number(s);
+  if (!Number.isFinite(v)) return { word: 'rough grouping', tone: 'neon-amber' };
+  if (v < 0.25) return { word: 'groups overlap a lot', tone: 'neon-amber' };
+  if (v < 0.5)  return { word: 'loosely separated', tone: 'neon-blue' };
+  if (v < 0.7)  return { word: 'clearly separated', tone: 'neon-emerald' };
+  return { word: 'very distinct groups', tone: 'neon-emerald' };
+};
+
+// Turn an internal feature signal (incl. one-hot "Col=Value") into a sentence.
+const humanizeFeature = (feature, direction) => {
+  const up = direction === 'higher';
+  if (typeof feature === 'string' && feature.includes('=')) {
+    const idx = feature.indexOf('=');
+    const col = feature.slice(0, idx).replace(/_/g, ' ');
+    const val = feature.slice(idx + 1);
+    return `${up ? 'More often' : 'Less often'} ${col} = ${val}`;
+  }
+  const nice = String(feature).replace(/_/g, ' ');
+  return `${up ? 'Higher' : 'Lower'} ${nice} than average`;
+};
+
+const prettyName = (s) => String(s).replace(/_/g, ' ');
+
 const Metric = ({ label, value, hint }) => (
   <div className="glass-soft p-4 rounded-xl">
     <div className="text-[10px] uppercase tracking-[0.28em] text-slate-400 mb-1">{label}</div>
@@ -208,77 +235,116 @@ const SupervisedSection = ({ ml }) => {
 };
 
 // --- Segments (S15.2) -----------------------------------------------------
-const SegmentsSection = ({ seg }) => (
+const SegmentsSection = ({ seg }) => {
+  const sep = separationLabel(seg.silhouette);
+  return (
   <>
     <div className="glass-card p-6">
       <div className="flex items-start justify-between gap-4 mb-2">
         <h2 className="text-lg md:text-xl font-semibold text-slate-100">
-          {seg.k} natural segments
+          We found {seg.k} natural groups in your data
         </h2>
-        <span className="neon-badge neon-purple flex-shrink-0">Silhouette {seg.silhouette}</span>
+        <span
+          className={`neon-badge ${sep.tone} flex-shrink-0`}
+          title={`Silhouette score ${seg.silhouette} (0–1; higher means the groups separate more cleanly)`}
+        >
+          {sep.word}
+        </span>
       </div>
-      <p className="text-sm text-slate-400">
-        Unsupervised KMeans over {seg.n_features} scaled features across {seg.n_rows_used?.toLocaleString()} rows.
+      <p className="text-sm text-slate-300">
+        Your {seg.n_rows_used?.toLocaleString()} rows were sorted into {seg.k} groups of
+        rows that behave alike, by comparing {seg.n_features} columns at once. Nobody
+        labelled these — the groups emerge from the data itself.
       </p>
     </div>
     {seg.chart && (
-      <ChartCard icon="fa-shapes" color="#a78bfa" title="Segment map (PCA projection)"
-        badge="KMeans" badgeTone="neon-purple" chart={seg.chart} />
+      <ChartCard icon="fa-shapes" color="#a78bfa" title="Group map"
+        badge="Auto-grouped" badgeTone="neon-purple" chart={seg.chart} />
     )}
+    <div className="glass-soft p-4 rounded-xl">
+      <p className="text-xs text-slate-400 leading-relaxed">
+        <i className="fas fa-circle-info mr-2 text-slate-500" />
+        Each dot is one row. Rows that are alike sit close together, so look for
+        the separate clouds — and how much they overlap. The two axes are just a
+        compressed summary of all {seg.n_features} columns, so the exact position
+        of any single dot isn't meant to be read directly.
+      </p>
+    </div>
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       {(seg.segments || []).map((s) => (
         <div key={s.label} className="glass-soft p-4 rounded-xl">
           <div className="flex items-center justify-between mb-2">
             <span className="font-semibold text-slate-100">{s.label}</span>
-            <span className="text-xs text-slate-400">{Math.round(s.share * 100)}% · {s.size.toLocaleString()}</span>
+            <span className="text-xs text-slate-400">{Math.round(s.share * 100)}% · {s.size.toLocaleString()} rows</span>
           </div>
+          <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-1.5">What stands out here</div>
           <ul className="space-y-1">
             {(s.distinguishing || []).map((d) => (
               <li key={d.feature} className="text-xs text-slate-300 flex items-center gap-2">
-                <i className={`fas ${d.direction === 'higher' ? 'fa-arrow-up text-emerald-300' : 'fa-arrow-down text-rose-300'}`} />
-                <span className="truncate">{d.feature}</span>
-                <span className="text-slate-500">({d.direction})</span>
+                <i className={`fas ${d.direction === 'higher' ? 'fa-arrow-up text-emerald-300' : 'fa-arrow-down text-rose-300'} flex-shrink-0`} />
+                <span className="truncate" title={humanizeFeature(d.feature, d.direction)}>
+                  {humanizeFeature(d.feature, d.direction)}
+                </span>
               </li>
             ))}
             {!(s.distinguishing || []).length && (
-              <li className="text-xs text-slate-500">Close to the overall average.</li>
+              <li className="text-xs text-slate-500">Pretty average across the board.</li>
             )}
           </ul>
         </div>
       ))}
     </div>
   </>
-);
+  );
+};
 
 // --- Anomalies (S15.2) ----------------------------------------------------
-const AnomaliesSection = ({ an }) => (
+const AnomaliesSection = ({ an }) => {
+  const pct = Math.round(an.fraction * 100);
+  const many = pct >= 20;
+  return (
   <div className="glass-card p-6">
     <div className="flex items-start justify-between gap-4 mb-3">
       <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-3">
         <span className="section-icon"><i className="fas fa-triangle-exclamation" style={{ color: '#fb7185' }} /></span>
-        Row-level anomalies
+        Rows that look unusual
       </h2>
-      <span className="neon-badge neon-rose flex-shrink-0">
-        {an.n_outliers.toLocaleString()} · {Math.round(an.fraction * 100)}%
+      <span
+        className="neon-badge neon-rose flex-shrink-0"
+        title="Found automatically with an Isolation Forest outlier detector"
+      >
+        {an.n_outliers.toLocaleString()} · {pct}%
       </span>
     </div>
-    <p className="text-sm text-slate-300 mb-3">
-      IsolationForest flagged {an.n_outliers.toLocaleString()} of {an.n_rows_used?.toLocaleString()} rows as unusual.
+    <p className="text-sm text-slate-300 mb-1">
+      {an.n_outliers.toLocaleString()} of {an.n_rows_used?.toLocaleString()} rows ({pct}%) stand
+      out as different from the typical pattern in your data.
     </p>
+    {many && (
+      <p className="text-xs text-amber-300/80 mb-2">
+        That's a large share — usually a sign the data is naturally varied, not that
+        a third of it is wrong. Treat it as worth a look, not an alarm.
+      </p>
+    )}
     {!!(an.top_features || []).length && (
       <>
-        <div className="text-[10px] uppercase tracking-[0.28em] text-slate-400 mb-2">Top contributing features</div>
+        <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500 mb-2 mt-3">What makes them stand out</div>
         <div className="flex flex-wrap gap-2">
-          {an.top_features.map((f) => (
-            <span key={f.feature} className="neon-badge neon-amber text-[11px]">
-              {f.feature} <span className="text-slate-400 ml-1">{f.contribution}</span>
+          {an.top_features.map((f, i) => (
+            <span
+              key={f.feature}
+              className="neon-badge neon-amber text-[11px]"
+              title={`Contribution score ${f.contribution}`}
+            >
+              {i + 1}. {prettyName(f.feature)}
             </span>
           ))}
         </div>
       </>
     )}
   </div>
-);
+  );
+};
 
 // --- Forecast (S15.3) -----------------------------------------------------
 const ForecastSection = ({ fc }) => (

@@ -116,8 +116,8 @@ describe('PredictionsTab', () => {
       },
     };
     render(<PredictionsTab data={data} />);
-    expect(screen.getByText(/3 natural segments/i)).toBeInTheDocument();
-    expect(screen.getByText(/Row-level anomalies/i)).toBeInTheDocument();
+    expect(screen.getByText(/3 natural groups/i)).toBeInTheDocument();
+    expect(screen.getByText(/Rows that look unusual/i)).toBeInTheDocument();
     expect(screen.getByText(/near-term outlook is rising/i)).toBeInTheDocument();
   });
 
