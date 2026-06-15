@@ -39,7 +39,10 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
+        // NOTE: do NOT strip the `/api` prefix — the FastAPI backend defines
+        // every route *with* `/api` (e.g. `/api/jobs/upload`). Rewriting it away
+        // sent requests to `/jobs/upload`, which only matched the catch-all GET
+        // route → 405 Method Not Allowed on upload in local dev.
       },
       '/upload': {
         target: 'http://localhost:8000',
