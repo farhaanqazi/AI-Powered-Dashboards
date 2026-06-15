@@ -82,3 +82,5 @@ frontend/.vite/
 supplement/
 !tests/fixtures/
 !tests/fixtures/**
+*.db
+tests/_pytest_dashboards.db
