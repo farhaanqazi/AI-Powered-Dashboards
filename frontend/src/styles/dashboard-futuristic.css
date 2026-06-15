@@ -290,19 +290,19 @@
 @media (min-width: 640px) {
   .dash-shell .dash-tabs { grid-template-columns: repeat(3, 1fr); }
 }
-/* All tabs equal width on one row from tablet up. */
+/* All six tabs equal width on one row from tablet up. */
 @media (min-width: 900px) {
-  .dash-shell .dash-tabs { grid-template-columns: repeat(5, 1fr); }
+  .dash-shell .dash-tabs { grid-template-columns: repeat(6, 1fr); gap: 0.5rem; }
 }
 .dash-shell .dash-tab {
   position: relative;
-  /* Compact horizontal pill so all five fit one equal-width row. */
-  padding: 0.85rem 1rem;
+  /* Compact horizontal pill so all six fit one equal-width row. */
+  padding: 0.6rem 0.7rem;
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 0.45rem;
   min-width: 0;            /* allow equal 1fr cells to shrink */
   border-radius: 0.85rem;
   font-size: 0.9rem;
@@ -318,19 +318,19 @@
   -webkit-backdrop-filter: blur(14px) saturate(140%);
 }
 .dash-shell .dash-tab i {
-  width: 2rem;
-  height: 2rem;
+  width: 1.65rem;
+  height: 1.65rem;
   flex: 0 0 auto;
-  border-radius: 0.6rem;
+  border-radius: 0.55rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   background: rgba(15,23,42,0.6);
   border: 1px solid rgba(255,255,255,0.08);
 }
 .dash-shell .dash-tab > span:not(.tab-dot) {
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -356,8 +356,8 @@
 }
 .dash-shell .dash-tab .tab-dot {
   position: absolute;
-  top: 1rem;
-  right: 1rem;
+  top: 0.5rem;
+  right: 0.5rem;
   width: 6px; height: 6px;
   border-radius: 9999px;
   background: currentColor;

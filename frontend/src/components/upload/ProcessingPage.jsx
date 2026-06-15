@@ -294,7 +294,7 @@ const ProcessingPage = () => {
         ))}
       </div>
 
-      <div className="relative z-10 mx-auto flex max-w-6xl flex-col items-center px-6 py-12">
+      <div className="relative z-10 mx-auto flex max-w-7xl flex-col items-center px-6 py-8">
         {/* Top bar: source badge + cancel */}
         <div className="mb-10 flex w-full items-center justify-between">
           <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2.5 backdrop-blur-md">
@@ -315,6 +315,12 @@ const ProcessingPage = () => {
             Cancel
           </button>
         </div>
+
+        {/* Two-column work area: progress hero (left) + live cards (right).
+            Collapses to one column below lg, so small screens are unchanged. */}
+        <div className="grid w-full grid-cols-1 gap-8 lg:grid-cols-2 lg:items-start">
+          {/* LEFT — progress hero + phase pipeline */}
+          <div className="flex w-full flex-col">
 
         {/* Hero: orb + headline */}
         <div className="grid w-full grid-cols-1 items-center gap-10 md:grid-cols-[auto_1fr]">
@@ -339,7 +345,7 @@ const ProcessingPage = () => {
           {/* Headline + quote + progress */}
           <div className="text-center md:text-left">
             <div className="mb-1 text-xs uppercase tracking-[0.3em] text-white/40">Crunching numbers</div>
-            <h1 key={currentPhase?.label} className="proc-phase-fade bg-gradient-to-r from-blue-300 via-fuchsia-300 to-amber-200 bg-clip-text pb-1 text-3xl font-bold leading-[1.2] tracking-tight text-transparent md:text-5xl">
+            <h1 key={currentPhase?.label} className="proc-phase-fade bg-gradient-to-r from-blue-300 via-fuchsia-300 to-amber-200 bg-clip-text pb-1 text-3xl font-bold leading-[1.2] tracking-tight text-transparent md:text-4xl">
               {currentPhase?.label || 'Starting…'}
             </h1>
             <p className="mt-3 text-base text-white/70 md:text-lg">{phaseMessage || 'Working…'}</p>
@@ -373,7 +379,7 @@ const ProcessingPage = () => {
         </div>
 
         {/* Phase pipeline */}
-        <div className="mt-14 flex w-full max-w-3xl items-center justify-between">
+        <div className="mt-10 flex w-full items-center justify-between">
           {PHASES.map((p, i) => {
             const isDone = i < currentIdx;
             const isActive = i === currentIdx;
@@ -425,9 +431,13 @@ const ProcessingPage = () => {
             );
           })}
         </div>
+          </div>{/* /LEFT */}
+
+          {/* RIGHT — live activity + timing breakdown */}
+          <div className="flex w-full flex-col gap-6">
 
         {/* Activity feed */}
-        <div className="mt-12 w-full max-w-2xl rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
+        <div className="w-full rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
           <div className="mb-3 flex items-center justify-between text-[11px] uppercase tracking-widest text-white/40">
             <span className="flex items-center gap-2">
               <span className="proc-live-dot" />
@@ -469,7 +479,7 @@ const ProcessingPage = () => {
 
         {/* Timing breakdown — exposes bottlenecks for column/row-heavy datasets */}
         {breakdown.items.length > 0 && (
-          <div className="mt-6 w-full max-w-2xl rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
+          <div className="w-full rounded-2xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-md">
             <div className="mb-3 flex items-center justify-between text-[11px] uppercase tracking-widest text-white/40">
               <span className="flex items-center gap-2">
                 <i className="fas fa-stopwatch text-amber-300/70" />
@@ -519,6 +529,8 @@ const ProcessingPage = () => {
             )}
           </div>
         )}
+          </div>{/* /RIGHT */}
+        </div>{/* /two-column work area */}
 
         {/* Error state */}
         {error && (
