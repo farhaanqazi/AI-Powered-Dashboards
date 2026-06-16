@@ -1,0 +1,29 @@
+{
+  "_README": "DRAFT for human review. Agent-authored intents are deliberately neutral (not chosen to flatter the system). REVIEW EVERY intent, confirm every role_type, and rewrite 2-3 intents from scratch so the set is not fully self-authored. Big tables marked cap_rows are pre-sampled deterministically (seed 42) to a fixed file; both arms AND ground truth run on that capped file. Rename to manifest.json once approved.",
+  "seed": 42,
+  "tables": [
+    { "file": "Titanic-Dataset.csv", "role_type": "identifier", "intent": "Which passenger attributes are associated with survival?" },
+    { "file": "List of Unicorns in the World.csv", "role_type": "identifier", "intent": "Which countries and industries have the most unicorn companies, and at what valuations?" },
+
+    { "file": "paddy.csv", "role_type": "ratio", "intent": "What field and weather factors relate to paddy yield?" },
+    { "file": "data (2).csv", "role_type": "ratio", "intent": "Which student attributes are associated with dropping out versus graduating?" },
+    { "file": "drug use_final.csv", "role_type": "ratio", "intent": "How does reported drug use vary across age groups?" },
+
+    { "file": "supermarket_sales.csv", "role_type": "time_series", "intent": "How do sales and gross income vary across branches, product lines, and dates?" },
+    { "file": "netflix.csv", "role_type": "time_series", "intent": "How has the catalogue's composition changed over time by type and country?" },
+    { "file": "goalscorers.csv", "role_type": "time_series", "intent": "Which teams and players scored most, and how does scoring vary over time?" },
+    { "file": "Online Retail.csv", "role_type": "time_series", "cap_rows": 120000, "intent": "What are the revenue trends over time and the top products and countries?" },
+
+    { "file": "Electric_Vehicle_Population_Size_History_By_County_.csv", "role_type": "panel", "intent": "How has electric-vehicle adoption changed over time across counties?" },
+    { "file": "youth_unemployment_global.csv", "role_type": "panel", "intent": "How does youth unemployment compare across countries and over time?" },
+    { "file": "owid-covid-data.csv", "role_type": "panel", "cap_rows": 120000, "intent": "How do COVID cases and deaths compare across countries over time?" },
+
+    { "file": "study_performance.csv", "role_type": "mixed", "intent": "How do exam scores differ by parental education, lunch type, and test preparation?" },
+    { "file": "House_Rent_Dataset.csv", "role_type": "mixed", "intent": "How does monthly rent vary by city, size, and furnishing status?" },
+    { "file": "hotel_bookings.csv", "role_type": "mixed", "cap_rows": 120000, "intent": "What factors are associated with booking cancellations?" },
+    { "file": "healthcare_dataset.csv", "role_type": "mixed", "intent": "How do billing amounts and stay lengths vary by medical condition and admission type?" },
+    { "file": "car_prices.csv", "role_type": "mixed", "cap_rows": 120000, "intent": "What factors relate to a used car's selling price?" },
+    { "file": "ai_student_impact_dataset (1).csv", "role_type": "mixed", "intent": "How does AI-tool usage relate to student performance and study hours?" },
+    { "file": "Air_bnb.csv", "role_type": "mixed", "cap_rows": 120000, "intent": "How do listing prices vary by neighbourhood, room type, and availability?" }
+  ]
+}
