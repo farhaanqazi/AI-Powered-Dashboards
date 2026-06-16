@@ -1,0 +1,56 @@
+{
+  "charts": [
+    [
+      "distribution",
+      null,
+      null,
+      null
+    ],
+    [
+      "time_series",
+      null,
+      null,
+      null
+    ]
+  ],
+  "eda_keys": [
+    "critical_totals",
+    "data_quality_report",
+    "errors",
+    "key_indicators",
+    "ml_insights",
+    "patterns_and_relationships",
+    "recommendations",
+    "statistical_depth",
+    "use_cases"
+  ],
+  "kpis": [
+    [
+      "amount",
+      "304.00 (\u00b1476.95)",
+      null
+    ]
+  ],
+  "roles": [
+    [
+      "amount",
+      "numeric"
+    ],
+    [
+      "category",
+      "text"
+    ],
+    [
+      "description",
+      "text"
+    ],
+    [
+      "record_id",
+      "identifier"
+    ],
+    [
+      "transaction_date",
+      "datetime"
+    ]
+  ]
+}

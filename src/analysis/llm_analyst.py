@@ -191,6 +191,28 @@ _SCHEMA_HINT = {
     ],
 }
 
+# L3-only schema fragment + instruction. Appended to the prompt ONLY at
+# authority level 3, so off/L0/L1/L2 responses — and the frozen path — are
+# unchanged. The model proposes a recipe; the engine computes + tokens the value.
+_DERIVED_SCHEMA = [
+    {
+        "op": "the operation, e.g. 'ratio' (the only one the engine executes today)",
+        "numerator": "exact numeric column name (for ratio)",
+        "denominator": "exact numeric column name (for ratio)",
+        "label": "business-meaningful name for the derived quantity (NO numbers)",
+        "why": "one short clause on why this answers the question better than a raw column",
+    }
+]
+_DERIVED_INSTRUCTION = (
+    "\n\nYou MAY ALSO propose up to 5 DERIVED quantities under a 'derived' key — "
+    "new measures that answer the question better than any single column, given as "
+    "RECIPES the engine will compute. NEVER compute or state the value yourself; "
+    "give only the recipe. The engine executes a ratio of two existing numeric "
+    "columns. If a derived quantity you want is NOT expressible as such a ratio, "
+    "still propose it with op set to its real operation (e.g. 'growth_rate', "
+    "'index') — it goes on record; the engine computes what it can and logs the rest."
+)
+
 
 def _kpi_value(profile: EnrichedProfile, metric: str) -> str:
     """Deterministically format a KPI value FROM GROUND TRUTH. The model chose
@@ -385,6 +407,99 @@ def _build_eda(
     return key_indicators, use_cases, recommendations
 
 
+# --- Benchmark authority knob (Document B; additive + flag-gated) ------------
+# Env `BENCHMARK_AUTHORITY_LEVEL` in {0,1,2,3}; unset => None => OFF. When OFF
+# (and at level 2) the default merge runs unchanged, so the frozen production
+# path is byte-for-byte identical. Invariant at EVERY level: the LLM proposes
+# specifications; the engine computes + tokens every value (the fence).
+def _authority_level():
+    import os
+    raw = os.environ.get("BENCHMARK_AUTHORITY_LEVEL")
+    if not raw:
+        return None
+    try:
+        lvl = int(float(raw))
+    except (TypeError, ValueError):
+        return None
+    return lvl if lvl in (0, 1, 2, 3) else None
+
+
+def _merge_ai_fallback(kpis, charts, fallback_kpis, fallback_specs):
+    """The default 'merge, never shrink' behavior, extracted verbatim so the
+    flag-off and level-2 paths reproduce production exactly."""
+    def _sig(spec):
+        return (spec.get("intent"), spec.get("x_field"), spec.get("y_field"))
+
+    ai_sigs = {_sig(c) for c in charts}
+    charts = charts + [s for s in fallback_specs if _sig(s) not in ai_sigs]
+
+    ai_src = {k.get("_src") for k in kpis if k.get("_src")}
+    if len(kpis) < 6:
+        for hk in fallback_kpis:
+            lbl = str(hk.get("label", ""))
+            if lbl.startswith("Corr: ") and " & " in lbl:
+                a, b = lbl[6:].split(" & ", 1)
+                src = ("corr", frozenset([a.strip(), b.strip()]))
+            else:
+                src = ("col", lbl)
+            if src not in ai_src:
+                kpis.append(hk)
+    for k in kpis:
+        k.pop("_src", None)
+    return kpis, charts
+
+
+def _strip_chart_aggs(charts):
+    """L1: the LLM picks chart type + fields, but aggregation reverts to the
+    engine default (the LLM does not yet have authority over aggregations)."""
+    out = []
+    for c in charts:
+        c2 = dict(c)
+        if c2.get("intent") == "time_series":
+            c2["agg_func"] = "mean"  # engine default
+        else:
+            c2.pop("agg_func", None)
+        out.append(c2)
+    return out
+
+
+def _build_derived_kpis(parsed, enriched_profiles):
+    """L3 only. The LLM may propose a derived quantity as a RECIPE; the engine
+    computes the value (fence) and tokens it. Supported recipe: ratio of two
+    columns = sum(num)/sum(den) via the fence's recompute_ratio. A proposal that
+    cannot be reduced to a recipe is skipped — displaying it would require an
+    LLM-asserted (untraceable) value, which Trust flags as a real finding."""
+    from src.contract.role_router import recompute_ratio
+    out, unreducible = [], []
+    for d in (parsed.get("derived") or [])[:5]:
+        if not isinstance(d, dict):
+            continue
+        op = d.get("op")
+        num, den = d.get("numerator"), d.get("denominator")
+        nsum = (enriched_profiles.get(num).stats or {}).get("sum") if num in enriched_profiles else None
+        dsum = (enriched_profiles.get(den).stats or {}).get("sum") if den in enriched_profiles else None
+        if op == "ratio" and nsum is not None and dsum:
+            val = recompute_ratio(float(nsum), float(dsum))
+            out.append({
+                "label": str(d.get("label") or f"{num} per {den}"),
+                "value": f"{val:,.2f}",
+                "type": "derived",
+                "score": 0.9,
+                "provenance": {
+                    "source": f"ratio:{num}|{den}",
+                    "metric": "ratio",
+                    "token": f"L4.ratio.{num}|{den}",
+                },
+            })
+        else:
+            # Authority outran the fence: a proposal the engine cannot reduce to
+            # an executable recipe. Recorded as a RESULT (the empirical boundary),
+            # never displayed — showing it needs an LLM-asserted, untraceable value.
+            unreducible.append({"label": d.get("label"), "op": op,
+                                "numerator": num, "denominator": den})
+    return out, unreducible
+
+
 def run_ai_analyst(
     enriched_profiles: Dict[str, EnrichedProfile],
     relational_insights: List[RelationalInsight],
@@ -416,18 +531,25 @@ def run_ai_analyst(
         logger.warning("AI analyst disabled: no usable LLM provider")
         return fallback
 
+    _level = _authority_level()
     try:
         payload = _ground_truth(
             enriched_profiles, relational_insights, eda_summary, contract,
             redact_sensitive=redact_sensitive,
         )
+        _schema = _SCHEMA_HINT
+        _extra = ""
+        if _level == 3:  # only L3 augments the prompt -> identity preserved elsewhere
+            _schema = {**_SCHEMA_HINT, "derived": _DERIVED_SCHEMA}
+            _extra = _DERIVED_INSTRUCTION
         parsed = provider.complete_json(
             system=_SYSTEM_PROMPT,
             user=(
                 "GROUND-TRUTH DATA (the only facts you may use):\n"
                 + json.dumps(payload, default=str)
+                + _extra
                 + "\n\nReturn JSON with exactly these keys: "
-                + json.dumps(_SCHEMA_HINT)
+                + json.dumps(_schema)
             ),
             temperature=0.2,
         )
@@ -463,34 +585,24 @@ def run_ai_analyst(
         )
         return fallback
 
-    # Merge, never shrink: AI-labelled items come first (better titles), then
-    # every heuristic item the model didn't already cover is appended. This
-    # keeps the full chart breadth the heuristic produced (20+) while the AI
-    # only improves ordering and naming on top.
-    def _sig(spec):
-        return (spec.get("intent"), spec.get("x_field"), spec.get("y_field"))
-
-    ai_sigs = {_sig(c) for c in charts}
-    charts += [s for s in fallback_specs if _sig(s) not in ai_sigs]
-
-    # KPI merge: the heuristic labels columns by raw name ("HBA1C_LEVEL") and
-    # would duplicate an AI KPI that already covers the same column with a
-    # human label. Dedup by SOURCE (column / corr-pair), not label text. If the
-    # model gave a full set, drop the raw heuristic backfill entirely — that
-    # raw-name leak is exactly the "amateur" look we're removing.
-    ai_src = {k.get("_src") for k in kpis if k.get("_src")}
-    if len(kpis) < 6:
-        for hk in fallback_kpis:
-            lbl = str(hk.get("label", ""))
-            if lbl.startswith("Corr: ") and " & " in lbl:
-                a, b = lbl[6:].split(" & ", 1)
-                src = ("corr", frozenset([a.strip(), b.strip()]))
-            else:
-                src = ("col", lbl)
-            if src not in ai_src:
-                kpis.append(hk)
-    for k in kpis:
-        k.pop("_src", None)
+    # Authority knob (Document B). OFF (None) and level 2 == the default
+    # "merge, never shrink" behavior — AI-labelled items first, then every
+    # heuristic item the model didn't cover, preserving full chart breadth.
+    # (_level was computed before the LLM call so the L3 prompt could augment.)
+    _unreducible = []
+    if _level == 0:
+        # Deterministic selection only — no LLM authority over what to show.
+        kpis, charts = list(fallback_kpis), list(fallback_specs)
+    elif _level == 1:
+        # LLM picks chart types/fields; KPIs deterministic; aggregation default.
+        kpis, charts = list(fallback_kpis), _strip_chart_aggs(charts)
+    else:
+        kpis, charts = _merge_ai_fallback(kpis, charts, fallback_kpis, fallback_specs)
+        if _level == 3:
+            # Free composition: engine-computed + tokened derived recipes only;
+            # proposals it can't reduce are logged as the authority/fence boundary.
+            derived, _unreducible = _build_derived_kpis(parsed, enriched_profiles)
+            kpis = kpis + derived
 
     if not kpis and not charts:
         return fallback
@@ -501,7 +613,7 @@ def run_ai_analyst(
         f"{len(ai_kis)} key-indicators, "
         f"{len(ai_use_cases)} use-cases, {len(ai_recs)} recs"
     )
-    return {
+    result = {
         "kpis": kpis,
         "chart_specs": charts,
         "narrative": narrative,
@@ -509,6 +621,10 @@ def run_ai_analyst(
         "use_cases": ai_use_cases,
         "recommendations": ai_recs,
     }
+    if _level == 3:
+        # L3-only key (off/L2 return shape unchanged): the located boundary.
+        result["authority_unreducible"] = _unreducible
+    return result
 
 
 _VALID_ROLES = {"boolean", "datetime", "numeric", "identifier",
